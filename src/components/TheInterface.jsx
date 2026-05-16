@@ -195,16 +195,23 @@ export default function TheInterface() {
       }
     }
 
-    // Run tools AFTER agents have discussed — build clean prompt from user request
+    // Run tools AFTER agents have discussed
+    // Use the agents combined responses as the image prompt
     if (intents.length > 0) {
       setToolsWorking(true)
-      // Use the original user text as the image prompt — it's cleaner than agent responses
-      // Strip conversational filler and keep the core visual description
-      const cleanPrompt = text
-        .replace(/can you|please|make me|create|generate|show me|i want|i'd like|could you/gi, "")
-        .replace(/a picture of|an image of|photo of|image of/gi, "")
-        .trim()
-      const imagePrompt = cleanPrompt || text
+
+      // Build a rich image prompt from all agent responses
+      const agentResponses = conversationRef.current
+        .filter(m => m.role === "assistant")
+        .map(m => m.content)
+        .join(" ")
+
+      // Extract visual descriptions from agent responses
+      // Take the most descriptive content and combine with user intent
+      const imagePrompt = agentResponses.length > 50
+        ? `${text} — ${agentResponses.slice(0, 800)}`
+        : text
+
       try {
         for (const intent of intents) {
           const output = await runTool(intent.toolId, imagePrompt, settings)
