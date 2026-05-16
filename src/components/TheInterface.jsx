@@ -232,8 +232,26 @@ export default function TheInterface() {
       {/* Header */}
       <div style={{ padding:"12px 18px", borderBottom:"1px solid rgba(99,102,241,0.15)", display:"flex", alignItems:"center", justifyContent:"space-between", background:"rgba(8,10,15,0.95)", backdropFilter:"blur(16px)" }}>
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-          <div style={{ fontSize:15, fontWeight:700, color:"rgba(255,255,255,0.92)" }}>Agent Interface</div>
-          <div style={{ fontSize:10, color:"rgba(255,255,255,0.35)", fontFamily:"monospace" }}>One interface. All your AI.</div>
+          <svg width="32" height="32" viewBox="0 0 36 36" fill="none">
+            <rect width="36" height="36" rx="9" fill="#1C1F28"/>
+            <rect width="36" height="36" rx="9" fill={accent} fillOpacity="0.12"/>
+            {[0,72,144,216,288].map((deg,i) => {
+              const r1=9.5,r2=12,rad=(deg-90)*Math.PI/180
+              const x1=18+r1*Math.cos(rad),y1=18+r1*Math.sin(rad)
+              const x2=18+r2*Math.cos(rad),y2=18+r2*Math.sin(rad)
+              return <g key={i}>
+                <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="white" strokeWidth="0.9" opacity="0.35"/>
+                <circle cx={x2} cy={y2} r="2.2" fill={["#E8A87C","#74C69D","#7EB8F7","#C084FC","#FBBF24"][i]} opacity="0.95"/>
+              </g>
+            })}
+            <circle cx="18" cy="18" r="10.5" stroke="white" strokeWidth="0.8" fill="none" opacity="0.25" strokeDasharray="2 2"/>
+            <circle cx="18" cy="18" r="3.2" fill="white" opacity="0.98"/>
+            <circle cx="18" cy="18" r="1.2" fill={accent}/>
+          </svg>
+          <div>
+            <div style={{ fontSize:15, fontWeight:700, color:"rgba(255,255,255,0.92)" }}>Agent Interface</div>
+            <div style={{ fontSize:9, color:"rgba(255,255,255,0.35)", fontFamily:"monospace" }}>One interface. All your AI.</div>
+          </div>
         </div>
         <div style={{ display:"flex", alignItems:"center", gap:6 }}>
           {/* Mode toggle */}
