@@ -314,7 +314,7 @@ async function runTool(toolId, prompt, settings) {
   const gptKey = settings?.agents?.gpt?.key || ''
   const claudeKey = settings?.agents?.claude?.key || ''
 
-  console.log('runTool called:', toolId, 'gptKey:', gptKey ? 'present' : 'missing')
+  console.log('runTool called:', toolId, 'gptKey length:', gptKey.length, 'first 8:', gptKey.slice(0,8))
 
   if (toolId === "dalle") {
     if (!gptKey) return { type:"image", url:"https://images.unsplash.com/photo-1524024973431-2ad916746881?w=800&q=80", prompt, tool:"dalle", mock:true }
