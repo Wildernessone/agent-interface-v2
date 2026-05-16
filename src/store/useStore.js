@@ -14,20 +14,19 @@ const DEFAULT_SETTINGS = {
   },
   tools: {
     dalle:      { enabled: false, key: '' },
-    suno:       { enabled: false, key: '' },
-    elevenlabs: { enabled: false, key: '' },
-    perplexity: { enabled: false, key: '' },
+    stability:  { enabled: false, key: '' },
+    ideogram:   { enabled: false, key: '' },
+    flux:       { enabled: false, key: '' },
     runway:     { enabled: false, key: '' },
     kling:      { enabled: false, key: '' },
-    udio:       { enabled: false, key: '' },
-    stability:  { enabled: false, key: '' },
-    midjourney: { enabled: false, key: '' },
-    flux:       { enabled: false, key: '' },
     veo:        { enabled: false, key: '' },
     pika:       { enabled: false, key: '' },
-    seedance:   { enabled: false, key: '' },
+    suno:       { enabled: false, key: '' },
+    udio:       { enabled: false, key: '' },
+    elevenlabs_music: { enabled: false, key: '' },
+    elevenlabs: { enabled: false, key: '' },
     playht:     { enabled: false, key: '' },
-    whisper:    { enabled: false, key: '' },
+    perplexity: { enabled: false, key: '' },
     tavily:     { enabled: false, key: '' },
     brave:      { enabled: false, key: '' },
   },
@@ -36,35 +35,30 @@ const DEFAULT_SETTINGS = {
 }
 
 export const useStore = create((set, get) => ({
-  // ── Auth ──────────────────────────────────────────
   user: null,
   session: null,
   setUser: (user) => set({ user }),
   setSession: (session) => set({ session }),
 
-  // ── Settings ──────────────────────────────────────
   settings: DEFAULT_SETTINGS,
   settingsLoaded: false,
+  _saveTimer: null,
 
   updateSetting: (key, value) => {
-    set(state => ({
-      settings: { ...state.settings, [key]: value }
-    }))
-    // Auto-save to Supabase after 1 second
+    set(state => ({ settings: { ...state.settings, [key]: value } }))
     clearTimeout(get()._saveTimer)
     const timer = setTimeout(() => get().saveSettings(), 1000)
     set({ _saveTimer: timer })
   },
 
-  // ── Load settings from Supabase ───────────────────
   loadSettings: async () => {
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session) return
-
     try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
       const [{ data: s }, { data: k }] = await Promise.all([
-        supabase.from('user_settings').select('*').single(),
-        supabase.from('user_api_keys').select('*').single(),
+        supabase.from('user_settings').select('*').eq('user_id', user.id).single(),
+        supabase.from('user_api_keys').select('*').eq('user_id', user.id).single(),
       ])
 
       if (s || k) {
@@ -81,6 +75,12 @@ export const useStore = create((set, get) => ({
               gpt:     { enabled: s?.enabled_agents?.gpt?.enabled     ?? true,  key: k?.gpt_key     || '' },
               gemini:  { enabled: s?.enabled_agents?.gemini?.enabled  ?? false, key: k?.gemini_key  || '' },
             },
+            tools: {
+              ...state.settings.tools,
+              suno:       { ...state.settings.tools.suno,       key: k?.suno_key       || '' },
+              elevenlabs: { ...state.settings.tools.elevenlabs, key: k?.elevenlabs_key || '' },
+              perplexity: { ...state.settings.tools.perplexity, key: k?.perplexity_key || '' },
+            },
           },
           settingsLoaded: true,
         }))
@@ -93,79 +93,60 @@ export const useStore = create((set, get) => ({
     }
   },
 
-  // ── Save settings to Supabase ─────────────────────
   saveSettings: async () => {
     const { settings } = get()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-
     try {
-      await Promise.all([
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
+      const [{ error: e1 }, { error: e2 }] = await Promise.all([
         supabase.from('user_settings').upsert({
           user_id: user.id,
           theme_id: settings.themeId,
           accent: settings.accent,
           font_size: settings.fontSize,
-          plan: settings.plan,
-          trial_days_left: settings.trialDaysLeft,
+          plan: settings.plan || 'free',
+          trial_days_left: settings.trialDaysLeft ?? 15,
           enabled_agents: {
-            claude:  { enabled: settings.agents.claude.enabled },
-            gpt:     { enabled: settings.agents.gpt.enabled },
-            gemini:  { enabled: settings.agents.gemini.enabled },
+            claude:  { enabled: settings.agents.claude?.enabled ?? true },
+            gpt:     { enabled: settings.agents.gpt?.enabled ?? true },
+            gemini:  { enabled: settings.agents.gemini?.enabled ?? false },
           },
           updated_at: new Date().toISOString(),
-        }),
+        }, { onConflict: 'user_id' }),
+
         supabase.from('user_api_keys').upsert({
           user_id: user.id,
-          claude_key:      settings.agents.claude.key,
-          gpt_key:         settings.agents.gpt.key,
-          gemini_key:      settings.agents.gemini.key,
-          suno_key:        settings.tools.suno?.key || '',
-          elevenlabs_key:  settings.tools.elevenlabs?.key || '',
-          perplexity_key:  settings.tools.perplexity?.key || '',
+          claude_key:     settings.agents.claude?.key || '',
+          gpt_key:        settings.agents.gpt?.key || '',
+          gemini_key:     settings.agents.gemini?.key || '',
+          suno_key:       settings.tools.suno?.key || '',
+          elevenlabs_key: settings.tools.elevenlabs?.key || '',
+          perplexity_key: settings.tools.perplexity?.key || '',
           updated_at: new Date().toISOString(),
-        }),
+        }, { onConflict: 'user_id' }),
       ])
+
+      if (e1) console.error('Settings save error:', e1)
+      if (e2) console.error('Keys save error:', e2)
     } catch (e) {
-      console.error('Save settings error:', e)
+      console.error('Save error:', e)
     }
   },
 
-  // ── Conversation ──────────────────────────────────
   turns: [],
   activeAgentId: null,
   conversationId: null,
 
-  addTurn: (turn) => set(state => ({
-    turns: [...state.turns, turn],
-    activeAgentId: turn.id,
-  })),
-
-  appendChunk: (id, chunk) => set(state => ({
-    turns: state.turns.map(t =>
-      t.id === id ? { ...t, text: (t.text || '') + chunk } : t
-    ),
-  })),
-
+  addTurn: (turn) => set(state => ({ turns: [...state.turns, turn], activeAgentId: turn.id })),
+  appendChunk: (id, chunk) => set(state => ({ turns: state.turns.map(t => t.id === id ? { ...t, text: (t.text || '') + chunk } : t) })),
   finishTurn: () => set({ activeAgentId: null }),
-
-  addErrorTurn: (agentId, errorType) => set(state => ({
-    turns: [...state.turns, {
-      id: `err-${agentId}-${Date.now()}`,
-      type: 'error',
-      agent: agentId,
-      errorType,
-    }],
-    activeAgentId: null,
-  })),
-
+  addErrorTurn: (agentId, errorType) => set(state => ({ turns: [...state.turns, { id: `err-${agentId}-${Date.now()}`, type: 'error', agent: agentId, errorType }], activeAgentId: null })),
   clearTurns: () => set({ turns: [], activeAgentId: null }),
 
-  // ── Voice ─────────────────────────────────────────
   voiceMode: false,
   listening: false,
   voiceStatus: 'idle',
-
   setVoiceMode: (val) => set({ voiceMode: val }),
   setListening: (val) => set({ listening: val }),
   setVoiceStatus: (val) => set({ voiceStatus: val }),
