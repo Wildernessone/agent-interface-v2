@@ -396,13 +396,19 @@ async function runTool(toolId, prompt, settings) {
         headers,
         body: JSON.stringify({ prompt: prompt.slice(0,900) }),
       })
-      const data = await res.json()
-      const url = data.data?.[0]?.url
-      if (url) return { type:"image", url, prompt, tool:"dalle" }
-      console.error("DALL-E error:", data.error)
+      const rawText = await res.text()
+      console.log("DALL-E raw:", rawText.slice(0,500))
+      let data
+      try { data = JSON.parse(rawText) } catch(e) { console.error("Parse error:", e); return { type:"image", url:"https://images.unsplash.com/photo-1524024973431-2ad916746881?w=800&q=80", prompt, tool:"dalle", mock:true } }
+      if (data.error || data.details) { console.error("Image failed:", JSON.stringify(data)); return { type:"image", url:"https://images.unsplash.com/photo-1524024973431-2ad916746881?w=800&q=80", prompt, tool:"dalle", mock:true } }
+      const b64 = data.data?.[0]?.b64_json
+      const imgUrl = data.data?.[0]?.url
+      console.log("model used:", data.model_used, "b64:", !!b64, "url:", !!imgUrl)
+      if (b64) return { type:"image", url:`data:image/png;base64,${b64}`, prompt, tool:"dalle" }
+      if (imgUrl) return { type:"image", url:imgUrl, prompt, tool:"dalle" }
       return { type:"image", url:"https://images.unsplash.com/photo-1524024973431-2ad916746881?w=800&q=80", prompt, tool:"dalle", mock:true }
     } catch(e) {
-      console.error("DALL-E error:", e)
+      console.error("DALL-E fetch error:", e)
       return { type:"image", url:"https://images.unsplash.com/photo-1524024973431-2ad916746881?w=800&q=80", prompt, tool:"dalle", mock:true }
     }
   }
