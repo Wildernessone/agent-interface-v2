@@ -200,16 +200,24 @@ export default function TheInterface() {
     if (intents.length > 0) {
       setToolsWorking(true)
 
-      // Build a rich image prompt from all agent responses
+      // Build image prompt from agent responses
+      // Agents describe the visual concept — use that as the generation prompt
       const agentResponses = conversationRef.current
         .filter(m => m.role === "assistant")
         .map(m => m.content)
         .join(" ")
 
-      // Extract visual descriptions from agent responses
-      // Take the most descriptive content and combine with user intent
-      const imagePrompt = agentResponses.length > 50
-        ? `${text} — ${agentResponses.slice(0, 800)}`
+      // Clean up agent text — remove meta-commentary, keep visual descriptions
+      const cleanAgentText = agentResponses
+        .replace(/I('ll| will| can't| cannot| don't| would).*?\./gi, "")
+        .replace(/let me|here's|here is|generating|creating|making|I've created/gi, "")
+        .replace(/would you like|feel free|let me know|any adjustments/gi, "")
+        .replace(/\[.*?\]/g, "") // remove [brackets]
+        .replace(/!\[.*?\]\(.*?\)/g, "") // remove markdown images
+        .trim()
+
+      const imagePrompt = cleanAgentText.length > 30
+        ? cleanAgentText.slice(0, 900)
         : text
 
       try {
