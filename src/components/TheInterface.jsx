@@ -205,11 +205,16 @@ export default function TheInterface() {
         .replace(/a picture of|an image of|photo of|image of/gi, "")
         .trim()
       const imagePrompt = cleanPrompt || text
-      for (const intent of intents) {
-        const output = await runTool(intent.toolId, imagePrompt, settings)
-        addTurn({ id: `tool-${intent.toolId}-${Date.now()}`, type: "tool", output })
+      try {
+        for (const intent of intents) {
+          const output = await runTool(intent.toolId, imagePrompt, settings)
+          addTurn({ id: `tool-${intent.toolId}-${Date.now()}`, type: "tool", output })
+        }
+      } catch(e) {
+        console.error("Tool error:", e)
+      } finally {
+        setToolsWorking(false)
       }
-      setToolsWorking(false)
     }
   }
 
