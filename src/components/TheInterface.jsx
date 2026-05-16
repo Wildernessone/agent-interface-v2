@@ -101,17 +101,11 @@ export default function TheInterface() {
     conversationRef.current = [...conversationRef.current, { role: "user", content: text }]
 
     const intents = detectToolIntents(text, enabledTools)
-    if (intents.length > 0) {
-      setToolsWorking(true)
-      for (const intent of intents) {
-        const output = await runTool(intent.toolId, intent.prompt, settings)
-        addTurn({ id: `tool-${intent.toolId}-${Date.now()}`, type: "tool", output })
-      }
-      setToolsWorking(false)
-    }
-
     const selected = targets.includes("all") ? activeAgents : activeAgents.filter(a => targets.includes(a.id))
     const totalRounds = detectRounds(text)
+
+    // Track the last agent response for tool prompt refinement
+    let lastAgentResponse = ""
 
     for (let round = 0; round < totalRounds; round++) {
       if (round > 0) {
@@ -161,6 +155,19 @@ export default function TheInterface() {
           else if (agent.id === "gpt") streamOpenAI(key, messages, onChunk, onDone, onError)
         })
       }
+    }
+
+    // Run tools AFTER agents have discussed — use refined prompt from conversation
+    if (intents.length > 0) {
+      setToolsWorking(true)
+      // Extract a refined prompt from the last agent response if available
+      const lastTurn = conversationRef.current.filter(m => m.role === "assistant").slice(-1)[0]
+      const refinedPrompt = lastTurn?.content || text
+      for (const intent of intents) {
+        const output = await runTool(intent.toolId, refinedPrompt, settings)
+        addTurn({ id: `tool-${intent.toolId}-${Date.now()}`, type: "tool", output })
+      }
+      setToolsWorking(false)
     }
   }
 
@@ -308,18 +315,19 @@ async function runTool(toolId, prompt, settings) {
   if (toolId === "dalle") {
     if (!gptKey) return { type:"image", url:"https://images.unsplash.com/photo-1524024973431-2ad916746881?w=800&q=80", prompt, tool:"dalle", mock:true }
     try {
-      const res = await fetch("https://api.openai.com/v1/images/generations", {
+      // Route through Cloudflare proxy to avoid CORS
+      const res = await fetch("https://claude-proxy.jamesreed.workers.dev/dalle", {
         method:"POST",
         headers:{"Content-Type":"application/json","Authorization":`Bearer ${gptKey}`},
-        body: JSON.stringify({ model:"dall-e-3", prompt:prompt.slice(0,900), n:1, size:"1024x1024", quality:"standard" }),
+        body: JSON.stringify({ prompt: prompt.slice(0,900) }),
       })
       const data = await res.json()
-      console.log('DALL-E response:', data)
       const url = data.data?.[0]?.url
       if (url) return { type:"image", url, prompt, tool:"dalle" }
-      return { type:"image", url:"https://images.unsplash.com/photo-1524024973431-2ad916746881?w=800&q=80", prompt, tool:"dalle", mock:true, error: data.error?.message }
+      console.error("DALL-E error:", data.error)
+      return { type:"image", url:"https://images.unsplash.com/photo-1524024973431-2ad916746881?w=800&q=80", prompt, tool:"dalle", mock:true }
     } catch(e) {
-      console.error('DALL-E error:', e)
+      console.error("DALL-E error:", e)
       return { type:"image", url:"https://images.unsplash.com/photo-1524024973431-2ad916746881?w=800&q=80", prompt, tool:"dalle", mock:true }
     }
   }
