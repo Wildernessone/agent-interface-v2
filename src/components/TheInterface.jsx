@@ -275,7 +275,22 @@ export default function TheInterface() {
       <div ref={scrollRef} style={{ flex:1, overflowY:"auto", padding:"20px 18px", display:"flex", flexDirection:"column", gap:14 }}>
         {turns.length === 0 && (
           <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", flex:1, gap:16, paddingTop:60, opacity:0.6 }}>
-            <div style={{ fontSize:32 }}>◈</div>
+            <svg width="64" height="64" viewBox="0 0 36 36" fill="none">
+              <rect width="36" height="36" rx="9" fill="#1C1F28"/>
+              <rect width="36" height="36" rx="9" fill={accent} fillOpacity="0.12"/>
+              {[0,72,144,216,288].map((deg,i) => {
+                const r1=9.5,r2=12,rad=(deg-90)*Math.PI/180
+                const x1=18+r1*Math.cos(rad),y1=18+r1*Math.sin(rad)
+                const x2=18+r2*Math.cos(rad),y2=18+r2*Math.sin(rad)
+                return <g key={i}>
+                  <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="white" strokeWidth="0.9" opacity="0.35"/>
+                  <circle cx={x2} cy={y2} r="2.2" fill={["#E8A87C","#74C69D","#7EB8F7","#C084FC","#FBBF24"][i]} opacity="0.95"/>
+                </g>
+              })}
+              <circle cx="18" cy="18" r="10.5" stroke="white" strokeWidth="0.8" fill="none" opacity="0.25" strokeDasharray="2 2"/>
+              <circle cx="18" cy="18" r="3.2" fill="white" opacity="0.98"/>
+              <circle cx="18" cy="18" r="1.2" fill={accent}/>
+            </svg>
             <div style={{ textAlign:"center" }}>
               <div style={{ fontSize:16, fontWeight:600, color:"rgba(255,255,255,0.7)", marginBottom:4 }}>One interface. All your AI.</div>
               <div style={{ fontSize:12, color:"rgba(255,255,255,0.3)", fontFamily:"monospace" }}>{activeAgents.length} agent{activeAgents.length!==1?"s":""} ready</div>
