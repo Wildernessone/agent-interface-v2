@@ -94,7 +94,7 @@ async function streamGemini(key, messages, onChunk, onDone, onError) {
 }
 
 export default function TheInterface() {
-  const { settings, turns, activeAgentId, voiceMode, addTurn, appendChunk, finishTurn, addErrorTurn, clearTurns, setVoiceMode } = useStore()
+  const { settings, turns, activeAgentId, voiceMode, addTurn, addToolTurn, appendChunk, finishTurn, addErrorTurn, clearTurns, setVoiceMode } = useStore()
   const [input, setInput] = useState("")
   const [targets, setTargets] = useState(["all"])
   const [responseMode, setResponseMode] = useState("concise")
@@ -225,7 +225,7 @@ export default function TheInterface() {
           console.log("Running tool:", intent.toolId)
           const output = await runTool(intent.toolId, imagePrompt, settings)
           console.log("Tool done:", intent.toolId, output?.type)
-          addTurn({ id: `tool-${intent.toolId}-${Date.now()}`, type: "tool", output })
+          addToolTurn({ id: `tool-${intent.toolId}-${Date.now()}`, type: "tool", output })
         }
       } catch(e) {
         console.error("Tool error:", e)

@@ -156,6 +156,7 @@ export const useStore = create((set, get) => ({
   addTurn: (turn) => set(state => ({ turns: [...state.turns, turn], activeAgentId: turn.id })),
   appendChunk: (id, chunk) => set(state => ({ turns: state.turns.map(t => t.id === id ? { ...t, text: (t.text || '') + chunk } : t) })),
   finishTurn: () => set({ activeAgentId: null }),
+  addToolTurn: (turn) => set(state => ({ turns: [...state.turns, turn] })), // doesn't set activeAgentId
   addErrorTurn: (agentId, errorType) => set(state => ({ turns: [...state.turns, { id: `err-${agentId}-${Date.now()}`, type: 'error', agent: agentId, errorType }], activeAgentId: null })),
   clearTurns: () => set({ turns: [], activeAgentId: null }),
 
