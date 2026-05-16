@@ -311,7 +311,7 @@ async function runTool(toolId, prompt, settings) {
       const res = await fetch("https://api.openai.com/v1/images/generations", {
         method:"POST",
         headers:{"Content-Type":"application/json","Authorization":`Bearer ${gptKey}`},
-        body: JSON.stringify({ model:"dall-e-3", prompt:prompt.slice(0,1000), n:1, size:"1024x1024" }),
+        body: JSON.stringify({ model:"dall-e-3", prompt:prompt.slice(0,900), n:1, size:"1024x1024", quality:"standard" }),
       })
       const data = await res.json()
       console.log('DALL-E response:', data)

@@ -105,8 +105,7 @@ export const useStore = create((set, get) => ({
           theme_id: settings.themeId,
           accent: settings.accent,
           font_size: settings.fontSize,
-          plan: settings.plan || 'free',
-          trial_days_left: settings.trialDaysLeft ?? 15,
+
           enabled_agents: {
             claude:  { enabled: settings.agents.claude?.enabled ?? true },
             gpt:     { enabled: settings.agents.gpt?.enabled ?? true },
