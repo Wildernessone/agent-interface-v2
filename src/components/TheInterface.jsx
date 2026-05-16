@@ -65,7 +65,7 @@ async function streamGemini(key, messages, onChunk, onDone, onError) {
     const contents = messages
       .filter(m => m.role !== "system")
       .map(m => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }))
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:streamGenerateContent?key=${key}&alt=sse`, {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:streamGenerateContent?key=${key}&alt=sse`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ contents }),
