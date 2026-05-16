@@ -354,9 +354,13 @@ async function runTool(toolId, prompt, settings) {
     if (!gptKey) return { type:"image", url:"https://images.unsplash.com/photo-1524024973431-2ad916746881?w=800&q=80", prompt, tool:"dalle", mock:true }
     try {
       // Route through Cloudflare proxy to avoid CORS
+      const stabilityKey = settings?.tools?.stability?.key || ""
+      const headers = { "Content-Type":"application/json" }
+      if (gptKey) headers["Authorization"] = `Bearer ${gptKey}`
+      if (stabilityKey) headers["x-stability-key"] = stabilityKey
       const res = await fetch("https://claude-proxy.jamesreed.workers.dev/dalle", {
         method:"POST",
-        headers:{"Content-Type":"application/json","Authorization":`Bearer ${gptKey}`},
+        headers,
         body: JSON.stringify({ prompt: prompt.slice(0,900) }),
       })
       const data = await res.json()
