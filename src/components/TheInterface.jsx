@@ -222,12 +222,15 @@ export default function TheInterface() {
 
       try {
         for (const intent of intents) {
+          console.log("Running tool:", intent.toolId)
           const output = await runTool(intent.toolId, imagePrompt, settings)
+          console.log("Tool done:", intent.toolId, output?.type)
           addTurn({ id: `tool-${intent.toolId}-${Date.now()}`, type: "tool", output })
         }
       } catch(e) {
         console.error("Tool error:", e)
       } finally {
+        console.log("Setting toolsWorking false")
         setToolsWorking(false)
       }
     }
