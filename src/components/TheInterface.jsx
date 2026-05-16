@@ -300,27 +300,43 @@ export default function TheInterface() {
 }
 
 async function runTool(toolId, prompt, settings) {
-  const gptKey = settings?.agents?.gpt?.key
-  if (toolId === "dalle" && gptKey) {
+  const gptKey = settings?.agents?.gpt?.key || ''
+  const claudeKey = settings?.agents?.claude?.key || ''
+
+  console.log('runTool called:', toolId, 'gptKey:', gptKey ? 'present' : 'missing')
+
+  if (toolId === "dalle") {
+    if (!gptKey) return { type:"image", url:"https://images.unsplash.com/photo-1524024973431-2ad916746881?w=800&q=80", prompt, tool:"dalle", mock:true }
     try {
       const res = await fetch("https://api.openai.com/v1/images/generations", {
-        method:"POST", headers:{"Content-Type":"application/json","Authorization":`Bearer ${gptKey}`},
+        method:"POST",
+        headers:{"Content-Type":"application/json","Authorization":`Bearer ${gptKey}`},
         body: JSON.stringify({ model:"dall-e-3", prompt:prompt.slice(0,1000), n:1, size:"1024x1024" }),
       })
       const data = await res.json()
+      console.log('DALL-E response:', data)
       const url = data.data?.[0]?.url
       if (url) return { type:"image", url, prompt, tool:"dalle" }
-    } catch(e) {}
+      return { type:"image", url:"https://images.unsplash.com/photo-1524024973431-2ad916746881?w=800&q=80", prompt, tool:"dalle", mock:true, error: data.error?.message }
+    } catch(e) {
+      console.error('DALL-E error:', e)
+      return { type:"image", url:"https://images.unsplash.com/photo-1524024973431-2ad916746881?w=800&q=80", prompt, tool:"dalle", mock:true }
+    }
   }
-  if (toolId === "perplexity" && settings?.tools?.perplexity?.key) {
+
+  if (toolId === "perplexity") {
+    const key = settings?.tools?.perplexity?.key || ''
+    if (!key) return { type:"search", text:`Search results for: "${prompt}" — add Perplexity key in Settings → Tools`, citations:[], tool:"perplexity", mock:true }
     try {
       const res = await fetch("https://api.perplexity.ai/chat/completions", {
-        method:"POST", headers:{"Content-Type":"application/json","Authorization":`Bearer ${settings.tools.perplexity.key}`},
+        method:"POST",
+        headers:{"Content-Type":"application/json","Authorization":`Bearer ${key}`},
         body: JSON.stringify({ model:"llama-3.1-sonar-small-128k-online", messages:[{role:"user",content:prompt}] }),
       })
       const data = await res.json()
       return { type:"search", text:data.choices?.[0]?.message?.content, citations:data.citations||[], tool:"perplexity" }
-    } catch(e) {}
+    } catch(e) { return { type:"search", text:"Search failed", citations:[], tool:"perplexity", mock:true } }
   }
-  return { type:"text", text:"Tool output — add API key in Settings", mock:true, tool:toolId }
+
+  return { type:"text", text:`Tool: ${toolId}`, mock:true, tool:toolId }
 }
