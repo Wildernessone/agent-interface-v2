@@ -277,7 +277,7 @@ export default function TheInterface() {
           <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", flex:1, gap:16, paddingTop:60, opacity:0.6 }}>
             <div style={{ fontSize:32 }}>◈</div>
             <div style={{ textAlign:"center" }}>
-              <div style={{ fontSize:16, fontWeight:600, color:"rgba(255,255,255,0.7)", marginBottom:4 }}>The Interface</div>
+              <div style={{ fontSize:16, fontWeight:600, color:"rgba(255,255,255,0.7)", marginBottom:4 }}>One interface. All your AI.</div>
               <div style={{ fontSize:12, color:"rgba(255,255,255,0.3)", fontFamily:"monospace" }}>{activeAgents.length} agent{activeAgents.length!==1?"s":""} ready</div>
             </div>
             <div style={{ display:"flex", gap:6, flexWrap:"wrap", justifyContent:"center", maxWidth:340 }}>
