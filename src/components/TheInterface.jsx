@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useStore } from '../store/useStore'
 import { buildSystemPrompt, detectToolIntents } from '../utils/buildSystemPrompt'
 import { VoiceEngine } from '../utils/voiceEngine'
+import Settings from './Settings'
 
 const AGENTS = [
   { id:"claude",  name:"Claude",  color:"#E8A87C", bg:"rgba(232,168,124,0.1)", border:"rgba(232,168,124,0.25)", avatar:"C" },
@@ -65,6 +66,7 @@ export default function TheInterface() {
   const [responseMode, setResponseMode] = useState("concise")
   const [toolsWorking, setToolsWorking] = useState(false)
   const [listening, setListening] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
   const scrollRef = useRef(null)
   const voiceRef = useRef(null)
   const conversationRef = useRef([])
@@ -201,7 +203,7 @@ export default function TheInterface() {
             {voiceMode ? "🔊" : "🔇"}
           </button>
           {/* Settings */}
-          <button style={{ width:32, height:32, borderRadius:8, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.1)", color:"rgba(255,255,255,0.4)", cursor:"pointer", fontSize:14 }}>⚙</button>
+          <button onClick={() => setShowSettings(true)} style={{ width:32, height:32, borderRadius:8, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.1)", color:"rgba(255,255,255,0.4)", cursor:"pointer", fontSize:14 }}>⚙</button>
         </div>
       </div>
 
@@ -293,6 +295,7 @@ export default function TheInterface() {
       <style>{`
         @keyframes shimmer { 0%{transform:translateX(-100%)} 100%{transform:translateX(100%)} }
       `}</style>
+      {showSettings && <Settings onClose={() => setShowSettings(false)} />}
     </div>
   )
 }
