@@ -3,6 +3,7 @@ import { useStore } from '../store/useStore'
 import { buildSystemPrompt, detectToolIntents } from '../utils/buildSystemPrompt'
 import { VoiceEngine } from '../utils/voiceEngine'
 import Settings from './Settings'
+import ToolOutput from './ToolOutput'
 
 const AGENTS = [
   { id:"claude",  name:"Claude",  color:"#E8A87C", bg:"rgba(232,168,124,0.1)", border:"rgba(232,168,124,0.25)", avatar:"C" },
@@ -231,11 +232,9 @@ export default function TheInterface() {
             </div>
           )
           if (turn.type === "tool") return (
-            <div key={turn.id} style={{ padding:"12px 14px", background:"rgba(99,102,241,0.08)", border:"1px solid rgba(99,102,241,0.2)", borderRadius:12 }}>
-              <div style={{ fontSize:10, color:"#6366f1", fontFamily:"monospace", marginBottom:6 }}>⚡ TOOL OUTPUT</div>
-              {turn.output?.type === "image" && turn.output?.url && <img src={turn.output.url} alt="generated" style={{ maxWidth:400, borderRadius:8, display:"block" }}/>}
-              {turn.output?.type === "search" && <div style={{ fontSize:13, color:"rgba(255,255,255,0.7)", lineHeight:1.6 }}>{turn.output.text}</div>}
-              {turn.output?.mock && <div style={{ fontSize:10, color:"rgba(255,255,255,0.3)", marginTop:6, fontFamily:"monospace" }}>demo — add API key for real output</div>}
+            <div key={turn.id} style={{ padding:"12px 14px", background:"rgba(99,102,241,0.06)", border:"1px solid rgba(99,102,241,0.15)", borderRadius:12 }}>
+              <div style={{ fontSize:10, color:"#6366f1", fontFamily:"monospace", marginBottom:4, letterSpacing:"0.07em" }}>⚡ {(turn.output?.tool || "TOOL").toUpperCase()} OUTPUT</div>
+              <ToolOutput output={turn.output} />
             </div>
           )
           if (turn.type === "error") {
