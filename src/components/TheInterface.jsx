@@ -195,14 +195,18 @@ export default function TheInterface() {
       }
     }
 
-    // Run tools AFTER agents have discussed — use refined prompt from conversation
+    // Run tools AFTER agents have discussed — build clean prompt from user request
     if (intents.length > 0) {
       setToolsWorking(true)
-      // Extract a refined prompt from the last agent response if available
-      const lastTurn = conversationRef.current.filter(m => m.role === "assistant").slice(-1)[0]
-      const refinedPrompt = lastTurn?.content || text
+      // Use the original user text as the image prompt — it's cleaner than agent responses
+      // Strip conversational filler and keep the core visual description
+      const cleanPrompt = text
+        .replace(/can you|please|make me|create|generate|show me|i want|i'd like|could you/gi, "")
+        .replace(/a picture of|an image of|photo of|image of/gi, "")
+        .trim()
+      const imagePrompt = cleanPrompt || text
       for (const intent of intents) {
-        const output = await runTool(intent.toolId, refinedPrompt, settings)
+        const output = await runTool(intent.toolId, imagePrompt, settings)
         addTurn({ id: `tool-${intent.toolId}-${Date.now()}`, type: "tool", output })
       }
       setToolsWorking(false)
