@@ -60,6 +60,39 @@ async function streamOpenAI(key, messages, onChunk, onDone, onError) {
   } catch(e) { onError?.(0, e.message); onDone() }
 }
 
+async function streamGemini(key, messages, onChunk, onDone, onError) {
+  try {
+    const contents = messages
+      .filter(m => m.role !== "system")
+      .map(m => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }))
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:streamGenerateContent?key=${key}&alt=sse`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contents }),
+    })
+    if (!res.ok) { const t = await res.text(); onError?.(res.status, t); onDone(); return }
+    const reader = res.body.getReader()
+    const dec = new TextDecoder()
+    let buf = ""
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buf += dec.decode(value, { stream: true })
+      const lines = buf.split("\n")
+      buf = lines.pop()
+      for (const l of lines) {
+        if (!l.startsWith("data: ")) continue
+        try {
+          const d = JSON.parse(l.slice(6))
+          const t = d.candidates?.[0]?.content?.parts?.[0]?.text
+          if (t) onChunk(t)
+        } catch {}
+      }
+    }
+    onDone()
+  } catch(e) { onError?.(0, e.message); onDone() }
+}
+
 export default function TheInterface() {
   const { settings, turns, activeAgentId, voiceMode, addTurn, appendChunk, finishTurn, addErrorTurn, clearTurns, setVoiceMode } = useStore()
   const [input, setInput] = useState("")
@@ -143,8 +176,8 @@ export default function TheInterface() {
           const onDone = () => {
             conversationRef.current = [...conversationRef.current, { role: "assistant", content: fullText }]
             finishTurn()
-            if (voiceMode && voiceRef.current) {
-              voiceRef.current.speak(fullText, agent.id, resolve)
+            if (voiceMode && voiceRef.current && fullText) {
+              voiceRef.current.speak(fullText.slice(0, 300), agent.id, resolve)
             } else {
               resolve()
             }
@@ -157,6 +190,7 @@ export default function TheInterface() {
           const key = settings.agents[agent.id]?.key
           if (agent.id === "claude") streamClaude(key, messages, onChunk, onDone, onError)
           else if (agent.id === "gpt") streamOpenAI(key, messages, onChunk, onDone, onError)
+          else if (agent.id === "gemini") streamGemini(key, messages, onChunk, onDone, onError)
         })
       }
     }
