@@ -96,10 +96,23 @@ export class VoiceEngine {
   async _speakBrowser(text, agentId) {
     if (!this.synth) return
     this.synth.cancel()
-    const BROWSER_VOICES = { claude: { name:"Daniel", pitch:0.95, rate:0.95 }, gpt: { name:"Google US English", pitch:1.0, rate:1.05 }, gemini: { name:"Samantha", pitch:1.1, rate:1.0 } }
+    // Distinct browser voices per agent - different pitch/rate makes them feel different
+    const BROWSER_VOICES = {
+      claude:  { names:["Daniel","Alex","Fred"],           pitch:0.92, rate:0.92, volume:1.0 },
+      gpt:     { names:["Google US English","Samantha"],   pitch:1.02, rate:1.08, volume:1.0 },
+      gemini:  { names:["Samantha","Karen","Victoria"],    pitch:1.12, rate:1.0,  volume:1.0 },
+      grok:    { names:["Alex","Google UK English Male"],  pitch:0.88, rate:1.05, volume:1.0 },
+    }
     const cfg = BROWSER_VOICES[agentId] || BROWSER_VOICES.claude
     const voices = this.synth.getVoices()
-    const voice = voices.find(v => v.name === cfg.name) || voices.find(v => v.lang.startsWith("en")) || voices[0]
+    // Try each preferred voice name in order
+    let voice = null
+    for (const name of cfg.names) {
+      voice = voices.find(v => v.name === name)
+      if (voice) break
+    }
+    // Fall back to any English voice
+    if (!voice) voice = voices.find(v => v.lang.startsWith("en") && !v.name.includes("Google")) || voices.find(v => v.lang.startsWith("en")) || voices[0]
     await new Promise(resolve => {
       const u = new SpeechSynthesisUtterance(text.slice(0,300))
       u.voice = voice
