@@ -16,7 +16,7 @@ const CLAUDE_PROXY = import.meta.env.VITE_CLAUDE_PROXY || "https://claude-proxy.
 
 async function streamClaude(key, messages, onChunk, onDone, onError) {
   try {
-    const res = await fetch(CLAUDE_PROXY, {
+    const res = await fetch("https://claude-proxy.jamesreed.workers.dev/claude", {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-api-key": key },
       body: JSON.stringify({ messages }),
@@ -37,10 +37,10 @@ async function streamClaude(key, messages, onChunk, onDone, onError) {
 
 async function streamOpenAI(key, messages, onChunk, onDone, onError) {
   try {
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    const res = await fetch("https://claude-proxy.jamesreed.workers.dev/gpt", {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${key}` },
-      body: JSON.stringify({ model: "gpt-4o", messages, stream: true, max_tokens: 600 }),
+      body: JSON.stringify({ messages }),
     })
     if (!res.ok) { const t = await res.text(); onError?.(res.status, t); onDone(); return }
     const reader = res.body.getReader()
