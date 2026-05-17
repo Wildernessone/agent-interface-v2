@@ -1,6 +1,6 @@
 
 export function buildSystemPrompt({ activeAgentIds=[], enabledTools={}, mode="concise", round=1, totalRounds=1, agentId="claude" }) {
-  const AGENT_NAMES = { claude:"Claude (Anthropic)", gpt:"ChatGPT (OpenAI)", gemini:"Gemini (Google)" }
+  const AGENT_NAMES = { claude:"Claude (Anthropic)", gpt:"ChatGPT (OpenAI)", gemini:"Gemini (Google)", grok:"Grok (xAI)" }
   const TOOL_CAPS = {
     dalle:       "generate images from text prompts",
     midjourney:  "generate cinematic AI images",
@@ -36,7 +36,12 @@ export function buildSystemPrompt({ activeAgentIds=[], enabledTools={}, mode="co
   }
   lines.push(`\nRULES:`)
   lines.push(mode === "concise" ? "- Keep responses to 2-3 sentences max. Be direct." : "- Give clear useful responses in 3-5 sentences.")
-  if (otherAgents.length > 0) lines.push("- Respond to what the other agents said, not just the user. Build on good ideas, push back on weak ones.")
+  if (otherAgents.length > 0) {
+    lines.push("- You are in a live conversation with other AIs. Read what they said carefully.")
+    lines.push("- Respond DIRECTLY to the other agents — agree, disagree, build on their ideas or challenge them.")
+    lines.push("- Reference what they said specifically: 'Claude made a good point about X' or 'I disagree with ChatGPT here because...'")
+    lines.push("- This is a roundtable debate, not parallel monologues. Make it a real conversation.")
+  }
   if (totalRounds > 1) {
     if (round === 1) lines.push(`\nRound ${round} of ${totalRounds} — give your initial take.`)
     else if (round < totalRounds) lines.push(`\nRound ${round} of ${totalRounds} — respond to what others just said.`)
