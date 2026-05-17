@@ -28,6 +28,18 @@ const TOOLS = [
   { id:"brave",      name:"Brave Search",  category:"Search", placeholder:"BSA-...",      desc:"Privacy-first search" },
 ]
 
+// Popular ElevenLabs voices with distinct personalities
+const ELEVENLABS_VOICES = [
+  { id:"ErXwobaYiN019PkySvjV", name:"Antoni",   desc:"Warm, thoughtful",    recommended:"claude" },
+  { id:"VR6AewLTigWG4xSOukaG", name:"Arnold",   desc:"Clear, direct",       recommended:"gpt" },
+  { id:"EXAVITQu4vr4xnSDxMaL", name:"Bella",    desc:"Bright, expressive",  recommended:"gemini" },
+  { id:"onwK4e9ZLuTAKqWW03F9", name:"Daniel",   desc:"Authoritative, deep", recommended:"grok" },
+  { id:"pNInz6obpgDQGcFmaJgB", name:"Adam",     desc:"Calm, measured",      recommended:null },
+  { id:"yoZ06aMxZJJ28mfd3POQ", name:"Sam",      desc:"Energetic, upbeat",   recommended:null },
+  { id:"jBpfuIE2acCO8z3wKNLl", name:"Gigi",    desc:"Friendly, warm",      recommended:null },
+  { id:"ThT5KcBeYPX3keUQqHPh", name:"Dorothy",  desc:"Gentle, reassuring",  recommended:null },
+]
+
 const THEMES = [
   { id:"dark",     label:"Dark",     bg:"#080A0F" },
   { id:"midnight", label:"Midnight", bg:"#04050A" },
@@ -92,7 +104,7 @@ export default function Settings({ onClose }) {
 
         {/* Tabs */}
         <div style={{ display:"flex", borderBottom:`1px solid ${theme.border}`, padding:"0 22px" }}>
-          {["agents","tools","display"].map(t => (
+          {["agents","tools","voice","display"].map(t => (
             <button key={t} onClick={() => setTab(t)} style={{ padding:"10px 14px 11px", border:"none", background:"transparent", cursor:"pointer", fontSize:11, fontFamily:"monospace", textTransform:"capitalize", color:tab===t?theme.text:theme.textMuted, borderBottom:tab===t?`2px solid ${accent}`:"2px solid transparent", transition:"all 0.15s" }}>{t}</button>
           ))}
         </div>
@@ -149,6 +161,51 @@ export default function Settings({ onClose }) {
               ))}
             </div>
           ))}
+
+          {/* VOICE */}
+          {tab === "voice" && <>
+            <div style={{ fontSize:12, color:theme.textMuted, fontFamily:"monospace", marginBottom:14, lineHeight:1.6 }}>
+              Choose distinct ElevenLabs voices for each agent. Add your ElevenLabs key in Tools → Voice first.
+            </div>
+            {AGENTS.map(agent => {
+              const currentVoiceId = settings.agentVoices?.[agent.id]?.elevenLabsId || 
+                ELEVENLABS_VOICES.find(v => v.recommended === agent.id)?.id || ELEVENLABS_VOICES[0].id
+              const currentVoice = ELEVENLABS_VOICES.find(v => v.id === currentVoiceId)
+              return (
+                <div key={agent.id} style={ss.section}>
+                  <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:12 }}>
+                    <div style={{ width:32, height:32, borderRadius:"50%", background:`${agent.color}18`, border:`1.5px solid ${agent.color}44`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:13, fontWeight:700, color:agent.color, fontFamily:"monospace" }}>{agent.avatar}</div>
+                    <div>
+                      <div style={{ fontSize:13, fontWeight:600, color:theme.text, fontFamily:"monospace" }}>{agent.name}</div>
+                      <div style={{ fontSize:10, color:theme.textMuted }}>Current: {currentVoice?.name} — {currentVoice?.desc}</div>
+                    </div>
+                  </div>
+                  <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+                    {ELEVENLABS_VOICES.map(voice => (
+                      <button key={voice.id} onClick={() => {
+                        const agentVoices = { ...(settings.agentVoices || {}) }
+                        agentVoices[agent.id] = { elevenLabsId: voice.id }
+                        updateSetting("agentVoices", agentVoices)
+                      }} style={{
+                        display:"flex", alignItems:"center", justifyContent:"space-between",
+                        padding:"8px 12px", borderRadius:9,
+                        border:`1px solid ${currentVoiceId===voice.id?accent:theme.border}`,
+                        background:currentVoiceId===voice.id?`${accent}15`:"transparent",
+                        cursor:"pointer", textAlign:"left",
+                      }}>
+                        <div>
+                          <span style={{ fontSize:12, color:currentVoiceId===voice.id?accent:theme.text, fontFamily:"monospace", fontWeight:currentVoiceId===voice.id?600:400 }}>{voice.name}</span>
+                          <span style={{ fontSize:10, color:theme.textFaint, marginLeft:8 }}>{voice.desc}</span>
+                          {voice.recommended === agent.id && <span style={{ fontSize:9, color:accent, marginLeft:8, fontFamily:"monospace" }}>recommended</span>}
+                        </div>
+                        {currentVoiceId===voice.id && <span style={{ color:accent, fontSize:12 }}>✓</span>}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )
+            })}
+          </>}
 
           {/* DISPLAY */}
           {tab === "display" && <>
