@@ -6,6 +6,7 @@ const AGENTS = [
   { id:"claude",  name:"Claude",  provider:"Anthropic", color:"#E8A87C", avatar:"C", placeholder:"sk-ant-api03-...", docsUrl:"https://console.anthropic.com/" },
   { id:"gpt",     name:"ChatGPT", provider:"OpenAI",    color:"#74C69D", avatar:"G", placeholder:"sk-proj-...",      docsUrl:"https://platform.openai.com/api-keys" },
   { id:"gemini",  name:"Gemini",  provider:"Google",    color:"#7EB8F7", avatar:"X", placeholder:"AIza...",          docsUrl:"https://aistudio.google.com/app/apikey" },
+  { id:"grok",    name:"Grok",    provider:"xAI",       color:"#E879F9", avatar:"GR", placeholder:"xai-...",           docsUrl:"https://console.x.ai/" },
 ]
 
 const TOOLS = [

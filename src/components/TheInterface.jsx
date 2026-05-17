@@ -9,6 +9,7 @@ const AGENTS = [
   { id:"claude",  name:"Claude",  color:"#E8A87C", bg:"rgba(232,168,124,0.1)", border:"rgba(232,168,124,0.25)", avatar:"C" },
   { id:"gpt",     name:"ChatGPT", color:"#74C69D", bg:"rgba(116,198,157,0.1)", border:"rgba(116,198,157,0.25)", avatar:"G" },
   { id:"gemini",  name:"Gemini",  color:"#7EB8F7", bg:"rgba(126,184,247,0.1)", border:"rgba(126,184,247,0.25)", avatar:"X" },
+  { id:"grok",    name:"Grok",    color:"#E879F9", bg:"rgba(232,121,249,0.1)", border:"rgba(232,121,249,0.25)", avatar:"GR" },
 ]
 
 const CLAUDE_PROXY = import.meta.env.VITE_CLAUDE_PROXY || "https://claude-proxy.jamesreed.workers.dev"
@@ -87,6 +88,32 @@ async function streamGemini(key, messages, onChunk, onDone, onError) {
           const t = d.candidates?.[0]?.content?.parts?.[0]?.text
           if (t) onChunk(t)
         } catch {}
+      }
+    }
+    onDone()
+  } catch(e) { onError?.(0, e.message); onDone() }
+}
+
+async function streamGrok(key, messages, onChunk, onDone, onError) {
+  try {
+    const res = await fetch("https://api.x.ai/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${key}` },
+      body: JSON.stringify({ model: "grok-3", messages, stream: true, max_tokens: 600 }),
+    })
+    if (!res.ok) { const t = await res.text(); onError?.(res.status, t); onDone(); return }
+    const reader = res.body.getReader()
+    const dec = new TextDecoder()
+    let buf = ""
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buf += dec.decode(value, { stream: true })
+      const lines = buf.split("\n")
+      buf = lines.pop()
+      for (const l of lines) {
+        if (!l.startsWith("data: ") || l.includes("[DONE]")) continue
+        try { const d = JSON.parse(l.slice(6)); const c = d.choices?.[0]?.delta?.content; if (c) onChunk(c) } catch {}
       }
     }
     onDone()
@@ -191,6 +218,7 @@ export default function TheInterface() {
           if (agent.id === "claude") streamClaude(key, messages, onChunk, onDone, onError)
           else if (agent.id === "gpt") streamOpenAI(key, messages, onChunk, onDone, onError)
           else if (agent.id === "gemini") streamGemini(key, messages, onChunk, onDone, onError)
+          else if (agent.id === "grok") streamGrok(key, messages, onChunk, onDone, onError)
         })
       }
     }

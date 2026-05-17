@@ -11,6 +11,7 @@ const DEFAULT_SETTINGS = {
     claude:  { enabled: true,  key: '' },
     gpt:     { enabled: true,  key: '' },
     gemini:  { enabled: false, key: '' },
+    grok:    { enabled: false, key: '' },
   },
   tools: {
     dalle:      { enabled: false, key: '' },
@@ -74,6 +75,7 @@ export const useStore = create((set, get) => ({
               claude:  { enabled: s?.enabled_agents?.claude?.enabled ?? true,  key: k?.claude_key  || '' },
               gpt:     { enabled: s?.enabled_agents?.gpt?.enabled     ?? true,  key: k?.gpt_key     || '' },
               gemini:  { enabled: s?.enabled_agents?.gemini?.enabled  ?? false, key: k?.gemini_key  || '' },
+              grok:    { enabled: s?.enabled_agents?.grok?.enabled    ?? false, key: k?.grok_key    || '' },
             },
             tools: {
               ...state.settings.tools,
@@ -118,6 +120,7 @@ export const useStore = create((set, get) => ({
             claude:  { enabled: settings.agents.claude?.enabled ?? true },
             gpt:     { enabled: settings.agents.gpt?.enabled ?? true },
             gemini:  { enabled: settings.agents.gemini?.enabled ?? false },
+            grok:    { enabled: settings.agents.grok?.enabled    ?? false },
           },
           enabled_tools: Object.fromEntries(
             Object.entries(settings.tools || {}).map(([id, v]) => [id, { enabled: v.enabled || false }])
@@ -130,6 +133,7 @@ export const useStore = create((set, get) => ({
           claude_key:     settings.agents.claude?.key || '',
           gpt_key:        settings.agents.gpt?.key || '',
           gemini_key:     settings.agents.gemini?.key || '',
+          grok_key:       settings.agents.grok?.key    || '',
           suno_key:       settings.tools.suno?.key || '',
           elevenlabs_key: settings.tools.elevenlabs?.key || '',
           perplexity_key: settings.tools.perplexity?.key || '',
