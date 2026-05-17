@@ -140,9 +140,14 @@ export default function TheInterface() {
     ? { ...rawEnabledTools, dalle: true }
     : rawEnabledTools
   const busy = !!activeAgentId || toolsWorking
+  const canSend = !busy && (input.trim() || listening)
 
   useEffect(() => {
-    voiceRef.current = new VoiceEngine(settings)
+    if (voiceRef.current) {
+      voiceRef.current.updateSettings(settings)
+    } else {
+      voiceRef.current = new VoiceEngine(settings)
+    }
   }, [settings])
 
   useEffect(() => {
@@ -266,11 +271,23 @@ export default function TheInterface() {
     else setTargets([...targets, id])
   }
 
-  const startVoice = () => {
+  const toggleVoiceListening = () => {
     if (!voiceRef.current) return
+    if (listening) {
+      voiceRef.current.stopListening()
+      setListening(false)
+      return
+    }
     voiceRef.current.startListening(
-      (transcript) => { setInput(transcript); setTimeout(() => sendMessage(transcript), 100) },
-      (state) => setListening(state === "listening")
+      (transcript) => {
+        setListening(false)
+        if (transcript.trim()) {
+          sendMessage(transcript)
+        }
+      },
+      (state) => {
+        setListening(state === "listening")
+      }
     )
   }
 
@@ -410,7 +427,20 @@ export default function TheInterface() {
             placeholder={targets.includes("all")?"Message all agents...":activeAgents.filter(a=>targets.includes(a.id)).map(a=>a.name).join(" + ")+"..."}
             rows={1} style={{ flex:1, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:12, padding:"10px 14px", color:"rgba(255,255,255,0.9)", fontSize:14, resize:"none", outline:"none", lineHeight:1.55, fontFamily:"inherit" }}/>
           {voiceMode && (
-            <button onMouseDown={startVoice} style={{ width:42, height:42, borderRadius:11, border:`1px solid ${listening?"#F87171":"rgba(99,102,241,0.4)"}`, background:listening?"rgba(248,113,113,0.15)":"rgba(99,102,241,0.15)", color:listening?"#F87171":"#a5b4fc", fontSize:16, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>🎙️</button>
+            <button
+              onClick={toggleVoiceListening}
+              style={{
+                width:42, height:42, borderRadius:11,
+                border:`1px solid ${listening?"#F87171":"rgba(99,102,241,0.4)"}`,
+                background:listening?"rgba(248,113,113,0.25)":"rgba(99,102,241,0.15)",
+                color:listening?"#F87171":"#a5b4fc",
+                fontSize:16, cursor:"pointer",
+                display:"flex", alignItems:"center", justifyContent:"center",
+                flexShrink:0,
+                animation:listening?"pulse 1s infinite":"none",
+                boxShadow:listening?"0 0 12px rgba(248,113,113,0.4)":"none",
+              }}
+            >{listening ? "⏹️" : "🎙️"}</button>
           )}
           <button onClick={() => sendMessage()} disabled={!input.trim()||busy} style={{ width:42, height:42, borderRadius:11, border:`1px solid ${input.trim()&&!busy?"rgba(99,102,241,0.5)":"rgba(255,255,255,0.1)"}`, background:input.trim()&&!busy?"rgba(99,102,241,0.2)":"transparent", color:input.trim()&&!busy?"#a5b4fc":"rgba(255,255,255,0.2)", fontSize:17, cursor:input.trim()&&!busy?"pointer":"not-allowed", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>↑</button>
         </div>
@@ -420,6 +450,7 @@ export default function TheInterface() {
       </div>
       <style>{`
         @keyframes shimmer { 0%{transform:translateX(-100%)} 100%{transform:translateX(100%)} }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
       `}</style>
       {showSettings && <Settings onClose={() => setShowSettings(false)} />}
     </div>
