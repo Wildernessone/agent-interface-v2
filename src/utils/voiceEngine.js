@@ -24,16 +24,42 @@ export class VoiceEngine {
     if (!SR) { onStateChange?.("unsupported"); return false }
     if (this.recognition) this.recognition.stop()
     this.recognition = new SR()
-    this.recognition.continuous = false
-    this.recognition.interimResults = false
+    this.recognition.continuous = true       // keep listening
+    this.recognition.interimResults = true   // show partial results
     this.recognition.lang = "en-US"
+    this.recognition.maxAlternatives = 1
+
+    let silenceTimer = null
+    let finalTranscript = ""
+
     this.recognition.onstart = () => onStateChange?.("listening")
-    this.recognition.onend = () => onStateChange?.("idle")
-    this.recognition.onerror = () => onStateChange?.("idle")
+    this.recognition.onend = () => {
+      // Only call idle if we didn't get a transcript
+      if (!finalTranscript) onStateChange?.("idle")
+    }
+    this.recognition.onerror = (e) => {
+      if (e.error !== "no-speech") onStateChange?.("idle")
+    }
     this.recognition.onresult = (e) => {
-      onStateChange?.("processing")
-      const t = e.results[0][0].transcript
-      if (t) onTranscript(t)
+      clearTimeout(silenceTimer)
+      let interim = ""
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        if (e.results[i].isFinal) {
+          finalTranscript += e.results[i][0].transcript + " "
+        } else {
+          interim = e.results[i][0].transcript
+        }
+      }
+      // Auto-send after 1.5 seconds of silence
+      silenceTimer = setTimeout(() => {
+        const text = finalTranscript.trim() || interim.trim()
+        if (text) {
+          onStateChange?.("processing")
+          this.recognition.stop()
+          finalTranscript = ""
+          onTranscript(text)
+        }
+      }, 1500)
     }
     try { this.recognition.start(); return true }
     catch(e) { onStateChange?.("idle"); return false }
