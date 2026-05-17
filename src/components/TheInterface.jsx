@@ -96,10 +96,14 @@ async function streamGemini(key, messages, onChunk, onDone, onError) {
 
 async function streamGrok(key, messages, onChunk, onDone, onError) {
   try {
-    const res = await fetch("https://claude-proxy.jamesreed.workers.dev/grok", {
+    const res = await fetch("https://api.x.ai/v1/chat/completions", {
       method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${key}` },
-      body: JSON.stringify({ messages }),
+      headers: { 
+        "Content-Type": "application/json", 
+        "Authorization": `Bearer ${key}`,
+        "Access-Control-Allow-Origin": "*",
+      },
+      body: JSON.stringify({ model: "grok-4.3", messages, stream: true, max_tokens: 600 }),
     })
     if (!res.ok) { const t = await res.text(); onError?.(res.status, t); onDone(); return }
     const reader = res.body.getReader()
