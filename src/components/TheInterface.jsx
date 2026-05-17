@@ -66,10 +66,10 @@ async function streamGemini(key, messages, onChunk, onDone, onError) {
     const contents = messages
       .filter(m => m.role !== "system")
       .map(m => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }))
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:streamGenerateContent?key=${key}&alt=sse`, {
+    const res = await fetch("https://claude-proxy.jamesreed.workers.dev/gemini", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ contents }),
+      headers: { "Content-Type": "application/json", "x-api-key": key },
+      body: JSON.stringify({ messages }),
     })
     if (!res.ok) { const t = await res.text(); onError?.(res.status, t); onDone(); return }
     const reader = res.body.getReader()
@@ -96,14 +96,10 @@ async function streamGemini(key, messages, onChunk, onDone, onError) {
 
 async function streamGrok(key, messages, onChunk, onDone, onError) {
   try {
-    const res = await fetch("https://api.x.ai/v1/chat/completions", {
+    const res = await fetch("https://claude-proxy.jamesreed.workers.dev/grok", {
       method: "POST",
-      headers: { 
-        "Content-Type": "application/json", 
-        "Authorization": `Bearer ${key}`,
-        "Access-Control-Allow-Origin": "*",
-      },
-      body: JSON.stringify({ model: "grok-4.3", messages, stream: true, max_tokens: 600 }),
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${key}` },
+      body: JSON.stringify({ messages }),
     })
     if (!res.ok) { const t = await res.text(); onError?.(res.status, t); onDone(); return }
     const reader = res.body.getReader()
