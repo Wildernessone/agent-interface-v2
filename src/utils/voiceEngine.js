@@ -139,17 +139,24 @@ export class VoiceEngine {
     }
     // Fall back to any English voice
     if (!voice) voice = voices.find(v => v.lang.startsWith("en") && !v.name.includes("Google")) || voices.find(v => v.lang.startsWith("en")) || voices[0]
-    await new Promise(resolve => {
-      const u = new SpeechSynthesisUtterance(text.slice(0,300))
-      u.voice = voice
-      u.pitch = cfg.pitch
-      u.rate = cfg.rate
-      u.volume = 1.0
-      const timeout = setTimeout(resolve, text.length * 80)
-      u.onend = () => { clearTimeout(timeout); resolve() }
-      u.onerror = resolve
-      this.synth.speak(u)
-    })
+    // Split into sentences to avoid browser TTS cutoff bug
+    const sentences = text.slice(0, 800).match(/[^.!?]+[.!?]+/g) || [text.slice(0, 800)]
+    for (const sentence of sentences) {
+      if (!this.speaking && this.queue.length === 0) break // stopped
+      await new Promise(resolve => {
+        const u = new SpeechSynthesisUtterance(sentence.trim())
+        u.voice = voice
+        u.pitch = cfg.pitch
+        u.rate = cfg.rate
+        u.volume = 1.0
+        const timeout = setTimeout(resolve, sentence.length * 100)
+        u.onend = () => { clearTimeout(timeout); resolve() }
+        u.onerror = () => { clearTimeout(timeout); resolve() }
+        // iOS Safari fix - resume if paused
+        if (this.synth.paused) this.synth.resume()
+        this.synth.speak(u)
+      })
+    }
   }
 
   stopSpeaking() {

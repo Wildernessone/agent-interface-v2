@@ -223,7 +223,7 @@ export default function TheInterface() {
             conversationRef.current = [...conversationRef.current, { role: "assistant", content: fullText }]
             finishTurn()
             if (voiceMode && voiceRef.current && fullText) {
-              voiceRef.current.speak(fullText.slice(0, 300), agent.id, resolve)
+              voiceRef.current.speak(fullText.slice(0, 1000), agent.id, resolve)
             } else {
               resolve()
             }
