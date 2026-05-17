@@ -200,25 +200,18 @@ export default function TheInterface() {
     if (intents.length > 0) {
       setToolsWorking(true)
 
-      // Build image prompt from agent responses
-      // Agents describe the visual concept — use that as the generation prompt
-      const agentResponses = conversationRef.current
+      // Use all agent responses combined as the image prompt
+      // This gives the image model the full creative context the agents developed
+      const agentMessages = conversationRef.current
         .filter(m => m.role === "assistant")
         .map(m => m.content)
-        .join(" ")
 
-      // Clean up agent text — remove meta-commentary, keep visual descriptions
-      const cleanAgentText = agentResponses
-        .replace(/I('ll| will| can't| cannot| don't| would).*?\./gi, "")
-        .replace(/let me|here's|here is|generating|creating|making|I've created/gi, "")
-        .replace(/would you like|feel free|let me know|any adjustments/gi, "")
-        .replace(/\[.*?\]/g, "") // remove [brackets]
-        .replace(/!\[.*?\]\(.*?\)/g, "") // remove markdown images
-        .trim()
-
-      const imagePrompt = cleanAgentText.length > 30
-        ? cleanAgentText.slice(0, 900)
+      // Build prompt: original request + all agent descriptions
+      const agentContext = agentMessages.join(". ")
+      const imagePrompt = agentContext.length > 20
+        ? `${text}. ${agentContext}`.slice(0, 900)
         : text
+      console.log("Image prompt:", imagePrompt.slice(0, 200))
 
       try {
         for (const intent of intents) {
