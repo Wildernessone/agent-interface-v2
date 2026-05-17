@@ -21,9 +21,10 @@ async function streamClaude(key, messages, onChunk, onDone, onError) {
       headers: { "Content-Type": "application/json", "x-api-key": key },
       body: JSON.stringify({ messages }),
     })
-    if (!res.ok) { const t = await res.text(); onError?.(res.status, t); onDone(); return }
+    if (!res.ok) { const t = await res.text(); console.error("Claude proxy error:", res.status, t); onError?.(res.status, t); onDone(); return }
     const data = await res.json()
-    if (data.error) { onError?.(0, data.error.message || "Claude error"); onDone(); return }
+    console.log("Claude response:", JSON.stringify(data).slice(0,200))
+    if (data.error) { console.error("Claude error:", data.error); onError?.(0, data.error?.message || "Claude error"); onDone(); return }
     const text = data.content?.[0]?.text || ""
     const words = text.split(" ")
     let i = 0
