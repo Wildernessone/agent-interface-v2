@@ -123,6 +123,17 @@ async function streamGrok(key, messages, onChunk, onDone, onError) {
 
 export default function TheInterface() {
   const { settings, turns, activeAgentId, voiceMode, addTurn, addToolTurn, appendChunk, finishTurn, addErrorTurn, clearTurns, setVoiceMode } = useStore()
+  
+  const handleVoiceToggle = () => {
+    // Recreate VoiceEngine with latest settings when toggling on
+    if (!voiceMode) {
+      voiceRef.current = new VoiceEngine(settings)
+    } else {
+      voiceRef.current?.stopSpeaking()
+      voiceRef.current?.stopListening()
+    }
+    setVoiceMode(!voiceMode)
+  }
   const [input, setInput] = useState("")
   const [targets, setTargets] = useState(["all"])
   const [responseMode, setResponseMode] = useState("concise")
@@ -329,7 +340,7 @@ export default function TheInterface() {
             ))}
           </div>
           {/* Voice toggle */}
-          <button onClick={() => setVoiceMode(!voiceMode)} style={{ width:32, height:32, borderRadius:8, background:voiceMode?`${accent}22`:"transparent", border:`1px solid ${voiceMode?accent:"rgba(255,255,255,0.1)"}`, color:voiceMode?accent:"rgba(255,255,255,0.4)", cursor:"pointer", fontSize:14 }}>
+          <button onClick={handleVoiceToggle} style={{ width:32, height:32, borderRadius:8, background:voiceMode?`${accent}22`:"transparent", border:`1px solid ${voiceMode?accent:"rgba(255,255,255,0.1)"}`, color:voiceMode?accent:"rgba(255,255,255,0.4)", cursor:"pointer", fontSize:14 }}>
             {voiceMode ? "🔊" : "🔇"}
           </button>
           {/* Settings */}
