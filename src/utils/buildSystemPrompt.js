@@ -47,6 +47,9 @@ export function buildSystemPrompt({ activeAgentIds=[], enabledTools={}, mode="co
     else if (round < totalRounds) lines.push(`\nRound ${round} of ${totalRounds} — respond to what others just said.`)
     else lines.push(`\nFinal round — wrap up in 1-2 sentences. Be decisive.`)
   }
+
+  // Document creation mode
+  lines.push(`\nIf the user asks you to "write this up", "summarize", "create a document", or "turn this into a plan" — produce a clean structured response with clear headers and bullet points that captures the key insights from the conversation. Make it something they can copy and use directly.`)
   lines.push("\nNever start with your name like [Claude]: or [ChatGPT]:. Just respond directly.")
   return lines.join("\n")
 }
