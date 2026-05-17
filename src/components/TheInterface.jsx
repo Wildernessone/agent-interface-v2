@@ -3,6 +3,7 @@ import { useStore } from '../store/useStore'
 import { buildSystemPrompt, detectToolIntents } from '../utils/buildSystemPrompt'
 import { VoiceEngine } from '../utils/voiceEngine'
 import Settings from './Settings'
+import { exportConversation } from '../utils/exportConversation'
 import ToolOutput from './ToolOutput'
 
 const AGENTS = [
@@ -140,6 +141,7 @@ export default function TheInterface() {
   const [toolsWorking, setToolsWorking] = useState(false)
   const [listening, setListening] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [showExport, setShowExport] = useState(false)
   const scrollRef = useRef(null)
   const voiceRef = useRef(null)
   const conversationRef = useRef([])
@@ -340,6 +342,21 @@ export default function TheInterface() {
             ))}
           </div>
           {/* Voice toggle */}
+          {turns.length > 0 && (
+            <div style={{ position:"relative" }}>
+              <button onClick={() => setShowExport(!showExport)} title="Export conversation" style={{ width:32, height:32, borderRadius:8, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.1)", color:"rgba(255,255,255,0.4)", cursor:"pointer", fontSize:13 }}>⬇</button>
+              {showExport && (
+                <div style={{ position:"absolute", top:38, right:0, background:"#0E1117", border:"1px solid rgba(99,102,241,0.3)", borderRadius:10, padding:6, zIndex:100, minWidth:140, boxShadow:"0 8px 32px rgba(0,0,0,0.5)" }}>
+                  {[["txt","📄 Plain Text"],["md","📝 Markdown"],["html","🌐 HTML"]].map(([fmt, label]) => (
+                    <button key={fmt} onClick={() => { exportConversation(turns, fmt); setShowExport(false) }} style={{ display:"block", width:"100%", padding:"7px 12px", background:"transparent", border:"none", color:"rgba(255,255,255,0.7)", fontSize:12, cursor:"pointer", textAlign:"left", fontFamily:"monospace", borderRadius:6 }}
+                      onMouseEnter={e=>e.target.style.background="rgba(99,102,241,0.15)"}
+                      onMouseLeave={e=>e.target.style.background="transparent"}
+                    >{label}</button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           <button onClick={handleVoiceToggle} style={{ width:32, height:32, borderRadius:8, background:voiceMode?`${accent}22`:"transparent", border:`1px solid ${voiceMode?accent:"rgba(255,255,255,0.1)"}`, color:voiceMode?accent:"rgba(255,255,255,0.4)", cursor:"pointer", fontSize:14 }}>
             {voiceMode ? "🔊" : "🔇"}
           </button>
