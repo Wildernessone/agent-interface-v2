@@ -485,7 +485,7 @@ export default function TheInterface() {
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
       `}</style>
       {showSettings && <Settings onClose={() => setShowSettings(false)} />}
-      {showHistory && <HistorySidebar onClose={() => setShowHistory(false)} accent={accent} theme={{}} />}
+      {showHistory && <HistorySidebar onClose={() => setShowHistory(false)} accent={accent} />}
     </div>
   )
 }

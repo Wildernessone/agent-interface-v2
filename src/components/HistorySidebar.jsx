@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useStore } from '../store/useStore'
 
-export default function HistorySidebar({ onClose, accent, theme }) {
+export default function HistorySidebar({ onClose, accent }) {
+  accent = accent || '#6366f1'
   const [conversations, setConversations] = useState([])
   const [loading, setLoading] = useState(true)
   const { loadConversations, loadConversation, deleteConversation, clearTurns } = useStore()
