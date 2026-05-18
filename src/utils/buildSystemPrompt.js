@@ -1,5 +1,5 @@
 
-export function buildSystemPrompt({ activeAgentIds=[], enabledTools={}, mode="concise", round=1, totalRounds=1, agentId="claude" }) {
+export function buildSystemPrompt({ activeAgentIds=[], enabledTools={}, mode="concise", round=1, totalRounds=1, agentId="claude", voiceMode=false }) {
   const AGENT_NAMES = { claude:"Claude (Anthropic)", gpt:"ChatGPT (OpenAI)", gemini:"Gemini (Google)", grok:"Grok (xAI)" }
   const TOOL_CAPS = {
     dalle:       "generate images from text prompts",
@@ -35,7 +35,11 @@ export function buildSystemPrompt({ activeAgentIds=[], enabledTools={}, mode="co
     lines.push(`\nIMPORTANT: When asked for something these tools can do, USE THE TOOL. Never tell the user to go use another app. Never say you cannot generate images, video, or music — you can.`)
   }
   lines.push(`\nRULES:`)
-  lines.push(mode === "concise" ? "- Keep responses to 2-3 sentences max. Be direct." : "- Give clear useful responses in 3-5 sentences.")
+  if (voiceMode) {
+    lines.push("- VOICE MODE: Keep responses to 1-2 short sentences only. You are being spoken aloud. Be extremely concise.")
+  } else {
+    lines.push(mode === "concise" ? "- Keep responses to 2-3 sentences max. Be direct." : "- Give clear useful responses in 3-5 sentences.")
+  }
   if (otherAgents.length > 0) {
     lines.push("- You are in a live conversation with other AIs. Read what they said carefully.")
     lines.push("- Respond DIRECTLY to the other agents — agree, disagree, build on their ideas or challenge them.")

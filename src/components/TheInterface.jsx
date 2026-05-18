@@ -210,6 +210,7 @@ export default function TheInterface() {
             round: round + 1,
             totalRounds,
             agentId: agent.id,
+            voiceMode,
           })
 
           const messages = [
@@ -223,7 +224,7 @@ export default function TheInterface() {
             conversationRef.current = [...conversationRef.current, { role: "assistant", content: fullText }]
             finishTurn()
             if (voiceMode && voiceRef.current && fullText) {
-              voiceRef.current.speak(fullText.slice(0, 1000), agent.id, resolve)
+              voiceRef.current.speak(fullText.slice(0, 400), agent.id, resolve)
             } else {
               resolve()
             }
