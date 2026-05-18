@@ -162,7 +162,49 @@ export const useStore = create((set, get) => ({
   finishTurn: () => set({ activeAgentId: null }),
   addToolTurn: (turn) => set(state => ({ turns: [...state.turns, turn] })), // doesn't set activeAgentId
   addErrorTurn: (agentId, errorType) => set(state => ({ turns: [...state.turns, { id: `err-${agentId}-${Date.now()}`, type: 'error', agent: agentId, errorType }], activeAgentId: null })),
-  clearTurns: () => set({ turns: [], activeAgentId: null }),
+  clearTurns: () => set({ turns: [], activeAgentId: null, conversationId: null }),
+
+  saveConversation: async (turns) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user || !turns.length) return
+      const cId = useStore.getState().conversationId
+      const title = turns.find(t => t.type === "user")?.text?.slice(0, 60) || "Conversation"
+      const preview = turns.find(t => t.type === "agent" && t.text)?.text?.slice(0, 100) || ""
+      if (cId) {
+        await supabase.from("conversations").update({ title, preview, turn_count: turns.length, turns_data: JSON.stringify(turns), updated_at: new Date().toISOString() }).eq("id", cId).eq("user_id", user.id)
+      } else {
+        const { data } = await supabase.from("conversations").insert({ user_id: user.id, title, preview, turn_count: turns.length, turns_data: JSON.stringify(turns), created_at: new Date().toISOString(), updated_at: new Date().toISOString() }).select().single()
+        if (data?.id) useStore.setState({ conversationId: data.id })
+      }
+    } catch(e) { console.error("Save error:", e) }
+  },
+
+  loadConversations: async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return []
+      const { data } = await supabase.from("conversations").select("id,title,preview,turn_count,updated_at").eq("user_id", user.id).order("updated_at", { ascending: false }).limit(50)
+      return data || []
+    } catch(e) { return [] }
+  },
+
+  loadConversation: async (id) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data } = await supabase.from("conversations").select("*").eq("id", id).eq("user_id", user.id).single()
+      if (data?.turns_data) useStore.setState({ turns: JSON.parse(data.turns_data), conversationId: id, activeAgentId: null })
+    } catch(e) { console.error("Load error:", e) }
+  },
+
+  deleteConversation: async (id) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      await supabase.from("conversations").delete().eq("id", id).eq("user_id", user.id)
+    } catch(e) { console.error("Delete error:", e) }
+  },
 
   voiceMode: false,
   listening: false,
