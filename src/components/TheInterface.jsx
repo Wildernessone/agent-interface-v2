@@ -5,6 +5,7 @@ import { VoiceEngine } from '../utils/voiceEngine'
 import Settings from './Settings'
 import { exportConversation } from '../utils/exportConversation'
 import HistorySidebar from './HistorySidebar'
+import PromptLibrary from './PromptLibrary'
 import ToolOutput from './ToolOutput'
 
 const AGENTS = [
@@ -144,6 +145,7 @@ export default function TheInterface() {
   const [showSettings, setShowSettings] = useState(false)
   const [showExport, setShowExport] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
+  const [showPrompts, setShowPrompts] = useState(false)
   const scrollRef = useRef(null)
   const voiceRef = useRef(null)
   const conversationRef = useRef([])
@@ -345,6 +347,7 @@ export default function TheInterface() {
             ))}
           </div>
           {/* Voice toggle */}
+          <button onClick={() => setShowPrompts(true)} title="Prompt library" style={{ width:32, height:32, borderRadius:8, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.1)", color:"rgba(255,255,255,0.4)", cursor:"pointer", fontSize:13 }}>📚</button>
           <button onClick={() => setShowHistory(true)} title="Conversation history" style={{ width:32, height:32, borderRadius:8, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.1)", color:"rgba(255,255,255,0.4)", cursor:"pointer", fontSize:13 }}>☰</button>
           {turns.length > 0 && (
             <div style={{ position:"relative" }}>
@@ -486,6 +489,7 @@ export default function TheInterface() {
       `}</style>
       {showSettings && <Settings onClose={() => setShowSettings(false)} />}
       {showHistory && <HistorySidebar onClose={() => setShowHistory(false)} accent={accent} />}
+      {showPrompts && <PromptLibrary accent={accent} onClose={() => setShowPrompts(false)} onUse={(prompt, mode) => { setInput(prompt); if(mode) setResponseMode(mode); setShowPrompts(false); setTimeout(() => document.querySelector("textarea")?.focus(), 100) }}/>}
     </div>
   )
 }
