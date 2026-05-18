@@ -4,6 +4,7 @@ import { buildSystemPrompt, detectToolIntents } from '../utils/buildSystemPrompt
 import { VoiceEngine } from '../utils/voiceEngine'
 import Settings from './Settings'
 import { exportConversation } from '../utils/exportConversation'
+import HistorySidebar from './HistorySidebar'
 import ToolOutput from './ToolOutput'
 
 const AGENTS = [
@@ -123,7 +124,7 @@ async function streamGrok(key, messages, onChunk, onDone, onError) {
 }
 
 export default function TheInterface() {
-  const { settings, turns, activeAgentId, voiceMode, addTurn, addToolTurn, appendChunk, finishTurn, addErrorTurn, clearTurns, setVoiceMode } = useStore()
+  const { settings, turns, activeAgentId, voiceMode, addTurn, addToolTurn, appendChunk, finishTurn, addErrorTurn, clearTurns, setVoiceMode, saveConversation, conversationId } = useStore()
   
   const handleVoiceToggle = () => {
     // Recreate VoiceEngine with latest settings when toggling on
@@ -142,6 +143,7 @@ export default function TheInterface() {
   const [listening, setListening] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [showExport, setShowExport] = useState(false)
+  const [showHistory, setShowHistory] = useState(false)
   const scrollRef = useRef(null)
   const voiceRef = useRef(null)
   const conversationRef = useRef([])
@@ -343,6 +345,7 @@ export default function TheInterface() {
             ))}
           </div>
           {/* Voice toggle */}
+          <button onClick={() => setShowHistory(true)} title="Conversation history" style={{ width:32, height:32, borderRadius:8, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.1)", color:"rgba(255,255,255,0.4)", cursor:"pointer", fontSize:13 }}>☰</button>
           {turns.length > 0 && (
             <div style={{ position:"relative" }}>
               <button onClick={() => setShowExport(!showExport)} title="Export conversation" style={{ width:32, height:32, borderRadius:8, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.1)", color:"rgba(255,255,255,0.4)", cursor:"pointer", fontSize:13 }}>⬇</button>
@@ -482,6 +485,7 @@ export default function TheInterface() {
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
       `}</style>
       {showSettings && <Settings onClose={() => setShowSettings(false)} />}
+      {showHistory && <HistorySidebar onClose={() => setShowHistory(false)} accent={accent} theme={{}} />}
     </div>
   )
 }
