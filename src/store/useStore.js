@@ -198,6 +198,42 @@ export const useStore = create((set, get) => ({
     } catch(e) { console.error("Load error:", e) }
   },
 
+  // ── Agent Memory ──────────────────────────────────────
+  loadMemory: async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return []
+      const { data } = await supabase.from("agent_memory")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+      return data || []
+    } catch(e) { return [] }
+  },
+
+  saveMemory: async (title, content, source="upload") => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return null
+      const { data } = await supabase.from("agent_memory").insert({
+        user_id: user.id,
+        title,
+        content,
+        source,
+        created_at: new Date().toISOString()
+      }).select().single()
+      return data
+    } catch(e) { console.error("Save memory error:", e); return null }
+  },
+
+  deleteMemory: async (id) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      await supabase.from("agent_memory").delete().eq("id", id).eq("user_id", user.id)
+    } catch(e) { console.error("Delete memory error:", e) }
+  },
+
   deleteConversation: async (id) => {
     try {
       const { data: { user } } = await supabase.auth.getUser()

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import MemoryTab from './MemoryTab'
 import { supabase } from '../utils/supabase'
 import { useStore } from '../store/useStore'
 
@@ -104,7 +105,7 @@ export default function Settings({ onClose }) {
 
         {/* Tabs */}
         <div style={{ display:"flex", borderBottom:`1px solid ${theme.border}`, padding:"0 22px" }}>
-          {["agents","tools","voice","display"].map(t => (
+          {["agents","tools","voice","memory","display"].map(t => (
             <button key={t} onClick={() => setTab(t)} style={{ padding:"10px 14px 11px", border:"none", background:"transparent", cursor:"pointer", fontSize:11, fontFamily:"monospace", textTransform:"capitalize", color:tab===t?theme.text:theme.textMuted, borderBottom:tab===t?`2px solid ${accent}`:"2px solid transparent", transition:"all 0.15s" }}>{t}</button>
           ))}
         </div>
@@ -206,6 +207,9 @@ export default function Settings({ onClose }) {
               )
             })}
           </>}
+
+          {/* MEMORY */}
+          {tab === "memory" && <MemoryTab accent={accent} ss={ss} theme={theme}/>}
 
           {/* DISPLAY */}
           {tab === "display" && <>
