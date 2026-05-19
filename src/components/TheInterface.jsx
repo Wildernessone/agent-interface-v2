@@ -258,35 +258,42 @@ export default function TheInterface() {
       }
     }
 
-    // Run tools AFTER agents have discussed
-    // Use the agents combined responses as the image prompt
+    // OpenClaw orchestration — smarter tool firing
     if (intents.length > 0) {
       setToolsWorking(true)
-
-      // Use all agent responses combined as the image prompt
-      // This gives the image model the full creative context the agents developed
-      const agentMessages = conversationRef.current
-        .filter(m => m.role === "assistant")
-        .map(m => m.content)
-
-      // Build prompt: original request + all agent descriptions
-      const agentContext = agentMessages.join(". ")
-      const imagePrompt = agentContext.length > 20
-        ? `${text}. ${agentContext}`.slice(0, 900)
-        : text
-      console.log("Image prompt:", imagePrompt.slice(0, 200))
-
       try {
+        // Get recent agent responses
+        const agentResponses = conversationRef.current
+          .filter(m => m.role === "assistant")
+          .slice(-selected.length)
+          .map((m, i) => ({ agent: selected[i]?.id || "agent", text: m.content }))
+
+        // Ask OpenClaw to build optimal tool prompt
+        console.log("OpenClaw orchestrating...")
+        const decision = await orchestrate({
+          userMessage: text,
+          agentResponses,
+          enabledTools,
+          enabledAgents: selected.map(a => a.id),
+          memory: agentMemory,
+          settings,
+        })
+        console.log("OpenClaw decision:", JSON.stringify(decision)?.slice(0,300))
+
+        // Use OpenClaw prompt or fall back to agent context
+        const agentContext = conversationRef.current
+          .filter(m => m.role === "assistant")
+          .map(m => m.content).join(" ")
+        const imagePrompt = decision?.tool?.prompt ||
+          (agentContext.length > 20 ? `${text}. ${agentContext}`.slice(0, 900) : text)
+
         for (const intent of intents) {
-          console.log("Running tool:", intent.toolId)
           const output = await runTool(intent.toolId, imagePrompt, settings)
-          console.log("Tool done:", intent.toolId, output?.type)
           addToolTurn({ id: `tool-${intent.toolId}-${Date.now()}`, type: "tool", output })
         }
       } catch(e) {
         console.error("Tool error:", e)
       } finally {
-        console.log("Setting toolsWorking false")
         setToolsWorking(false)
       }
     }
