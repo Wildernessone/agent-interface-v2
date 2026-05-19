@@ -1,5 +1,5 @@
 
-export function buildSystemPrompt({ activeAgentIds=[], enabledTools={}, mode="concise", round=1, totalRounds=1, agentId="claude", voiceMode=false, memoryContext="" }) {
+export function buildSystemPrompt({ activeAgentIds=[], enabledTools={}, mode="concise", round=1, totalRounds=1, agentId="claude", voiceMode=false, memoryContext="", leadAgent=null }) {
   const AGENT_NAMES = { claude:"Claude (Anthropic)", gpt:"ChatGPT (OpenAI)", gemini:"Gemini (Google)", grok:"Grok (xAI)" }
   const TOOL_CAPS = {
     dalle:       "generate images from text prompts",
@@ -48,6 +48,11 @@ export function buildSystemPrompt({ activeAgentIds=[], enabledTools={}, mode="co
     lines.push(mode === "concise" ? "- Keep responses to 2-3 sentences max. Be direct." : "- Give clear useful responses in 3-5 sentences.")
   }
   if (otherAgents.length > 0) {
+    if (leadAgent && leadAgent === agentId) {
+      lines.push("- You are the LEAD AGENT for this conversation. Take charge, synthesize the discussion, and give the definitive recommendation when the group disagrees.")
+    } else if (leadAgent && leadAgent !== agentId) {
+      lines.push(`- ${AGENT_NAMES[leadAgent] || leadAgent} is the lead agent. Support their direction, add your perspective, but defer to them on final decisions.`)
+    }
     lines.push("- You are in a live conversation with other AIs. Read what they said carefully.")
     lines.push("- Respond DIRECTLY to the other agents — agree, disagree, build on their ideas or challenge them.")
     lines.push("- Reference what they said specifically: 'Claude made a good point about X' or 'I disagree with ChatGPT here because...'")

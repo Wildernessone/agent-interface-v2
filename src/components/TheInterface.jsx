@@ -147,6 +147,7 @@ export default function TheInterface() {
   const [showHistory, setShowHistory] = useState(false)
   const [showPrompts, setShowPrompts] = useState(false)
   const [agentMemory, setAgentMemory] = useState([])
+  const [leadAgent, setLeadAgent] = useState(null)
   const scrollRef = useRef(null)
   const voiceRef = useRef(null)
   const conversationRef = useRef([])
@@ -222,6 +223,7 @@ export default function TheInterface() {
             agentId: agent.id,
             voiceMode,
             memoryContext,
+            leadAgent,
           })
 
           const messages = [
@@ -462,6 +464,15 @@ export default function TheInterface() {
             const sel = !targets.includes("all") && targets.includes(ag.id)
             return <button key={ag.id} onClick={() => toggleTarget(ag.id)} style={{ padding:"3px 10px", borderRadius:20, border:`1px solid ${sel?ag.border:"rgba(255,255,255,0.1)"}`, background:sel?ag.bg:"transparent", color:sel?ag.color:"rgba(255,255,255,0.3)", fontSize:11, cursor:"pointer", fontFamily:"monospace" }}>{ag.name}</button>
           })}
+          {activeAgents.length > 1 && (
+            <div style={{ display:"flex", alignItems:"center", gap:5 }}>
+              <span style={{ fontSize:9, color:"rgba(255,255,255,0.2)", fontFamily:"monospace" }}>LEAD</span>
+              <button onClick={() => setLeadAgent(null)} style={{ padding:"3px 8px", borderRadius:20, border:`1px solid ${!leadAgent?"rgba(99,102,241,0.5)":"rgba(255,255,255,0.1)"}`, background:!leadAgent?"rgba(99,102,241,0.15)":"transparent", color:!leadAgent?"#a5b4fc":"rgba(255,255,255,0.3)", fontSize:10, cursor:"pointer", fontFamily:"monospace" }}>Auto</button>
+              {activeAgents.map(ag => (
+                <button key={ag.id} onClick={() => setLeadAgent(leadAgent===ag.id?null:ag.id)} style={{ padding:"3px 8px", borderRadius:20, border:`1px solid ${leadAgent===ag.id?ag.border:"rgba(255,255,255,0.1)"}`, background:leadAgent===ag.id?ag.bg:"transparent", color:leadAgent===ag.id?ag.color:"rgba(255,255,255,0.3)", fontSize:10, cursor:"pointer", fontFamily:"monospace" }}>{ag.name}</button>
+              ))}
+            </div>
+          )}
           {turns.length > 0 && <button onClick={() => { clearTurns(); conversationRef.current = [] }} style={{ marginLeft:"auto", padding:"3px 10px", borderRadius:20, border:"1px solid rgba(255,255,255,0.1)", background:"transparent", color:"rgba(255,255,255,0.3)", fontSize:10, cursor:"pointer", fontFamily:"monospace" }}>Clear</button>}
         </div>
         <div style={{ display:"flex", gap:8, alignItems:"flex-end" }}>
