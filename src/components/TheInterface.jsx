@@ -5,6 +5,7 @@ import { VoiceEngine } from '../utils/voiceEngine'
 import Settings from './Settings'
 import { exportConversation } from '../utils/exportConversation'
 import HistorySidebar from './HistorySidebar'
+import { orchestrate, getProactiveNotices, diagnoseIssue } from '../utils/openClaw'
 import PromptLibrary from './PromptLibrary'
 import ToolOutput from './ToolOutput'
 
@@ -148,6 +149,7 @@ export default function TheInterface() {
   const [showPrompts, setShowPrompts] = useState(false)
   const [agentMemory, setAgentMemory] = useState([])
   const [leadAgent, setLeadAgent] = useState(null)
+  const [setupNotices, setSetupNotices] = useState([])
   const scrollRef = useRef(null)
   const voiceRef = useRef(null)
   const conversationRef = useRef([])
@@ -380,6 +382,18 @@ export default function TheInterface() {
           <button onClick={() => setShowSettings(true)} style={{ width:32, height:32, borderRadius:8, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.1)", color:"rgba(255,255,255,0.4)", cursor:"pointer", fontSize:14 }}>⚙</button>
         </div>
       </div>
+
+      {/* Setup notices */}
+      {setupNotices.length > 0 && (
+        <div style={{ padding:"8px 18px", background:"rgba(248,113,113,0.08)", borderBottom:"1px solid rgba(248,113,113,0.15)" }}>
+          {setupNotices.slice(0,1).map((n, i) => (
+            <div key={i} style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+              <span style={{ fontSize:11, color:"#F87171", fontFamily:"monospace" }}>⚠ {n.message}</span>
+              <button onClick={() => setSetupNotices([])} style={{ background:"none", border:"none", color:"rgba(255,255,255,0.3)", cursor:"pointer", fontSize:12 }}>×</button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Thread */}
       <div ref={scrollRef} style={{ flex:1, overflowY:"auto", padding:"20px 18px", display:"flex", flexDirection:"column", gap:14 }}>
