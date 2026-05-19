@@ -125,7 +125,7 @@ async function streamGrok(key, messages, onChunk, onDone, onError) {
 }
 
 export default function TheInterface() {
-  const { settings, turns, activeAgentId, voiceMode, addTurn, addToolTurn, appendChunk, finishTurn, addErrorTurn, clearTurns, setVoiceMode, saveConversation, conversationId } = useStore()
+  const { settings, turns, activeAgentId, voiceMode, addTurn, addToolTurn, appendChunk, finishTurn, addErrorTurn, clearTurns, setVoiceMode, saveConversation, conversationId, loadMemory } = useStore()
   
   const handleVoiceToggle = () => {
     // Recreate VoiceEngine with latest settings when toggling on
@@ -146,6 +146,7 @@ export default function TheInterface() {
   const [showExport, setShowExport] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
   const [showPrompts, setShowPrompts] = useState(false)
+  const [agentMemory, setAgentMemory] = useState([])
   const scrollRef = useRef(null)
   const voiceRef = useRef(null)
   const conversationRef = useRef([])
@@ -207,6 +208,11 @@ export default function TheInterface() {
           const id = `${agent.id}-${Date.now()}`
           addTurn({ id, type: "agent", agent: agent.id, text: "", directed: !targets.includes("all") })
 
+          // Build memory context string
+          const memoryContext = agentMemory.length > 0
+            ? agentMemory.slice(0, 8).map(m => `[${m.title}]: ${m.content.slice(0, 300)}`).join("\n")
+            : ""
+
           const systemPrompt = buildSystemPrompt({
             activeAgentIds: selected.map(a => a.id),
             enabledTools,
@@ -215,6 +221,7 @@ export default function TheInterface() {
             totalRounds,
             agentId: agent.id,
             voiceMode,
+            memoryContext,
           })
 
           const messages = [

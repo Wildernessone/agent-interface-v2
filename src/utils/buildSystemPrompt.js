@@ -1,5 +1,5 @@
 
-export function buildSystemPrompt({ activeAgentIds=[], enabledTools={}, mode="concise", round=1, totalRounds=1, agentId="claude", voiceMode=false }) {
+export function buildSystemPrompt({ activeAgentIds=[], enabledTools={}, mode="concise", round=1, totalRounds=1, agentId="claude", voiceMode=false, memoryContext="" }) {
   const AGENT_NAMES = { claude:"Claude (Anthropic)", gpt:"ChatGPT (OpenAI)", gemini:"Gemini (Google)", grok:"Grok (xAI)" }
   const TOOL_CAPS = {
     dalle:       "generate images from text prompts",
@@ -27,6 +27,13 @@ export function buildSystemPrompt({ activeAgentIds=[], enabledTools={}, mode="co
   const otherAgents = activeAgentIds.filter(id => id !== agentId).map(id => AGENT_NAMES[id] || id)
   const lines = []
   lines.push(`You are ${AGENT_NAMES[agentId] || agentId} in a live multi-agent AI roundtable.`)
+
+  // Inject user memory context
+  if (memoryContext) {
+    lines.push(`\nWHAT YOU KNOW ABOUT THIS USER AND THEIR BUSINESS:`)
+    lines.push(memoryContext)
+    lines.push(`\nUse this context naturally in your responses. Don't announce that you have it — just use it.`)
+  }
   if (otherAgents.length > 0) lines.push(`Also here: ${otherAgents.join(", ")}.`)
   const tools = Object.entries(enabledTools).filter(([,v])=>v).map(([id])=>TOOL_CAPS[id]).filter(Boolean)
   if (tools.length > 0) {
