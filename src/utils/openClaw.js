@@ -146,53 +146,35 @@ export async function orchestrate({
     .join("\n") || "none"
 
   const prompt = `
-CURRENT SITUATION:
-User said: "${userMessage}"
+You are a synthesis engine. Your only job is to read what the AI agents said and build the best possible tool prompt from their combined input.
 
-Agent responses so far:
+USER REQUEST: "${userMessage}"
+
+WHAT THE AGENTS SAID:
 ${agentSummary || "No agent responses yet"}
 
-Available tools: ${toolList}
-Active project: ${activeProject?.name || "none"}
-Available agents: ${enabledAgents.join(", ")}
+AVAILABLE TOOLS: ${toolList}
 
-User memory context:
-${memorySummary}
+YOUR ONLY JOB:
+Look at what ALL the agents described. Combine their best ideas into one rich, detailed tool prompt.
+Do NOT add your own creative ideas. Only synthesize what the agents already said.
+If no tool should fire, set should_fire to false.
 
-AGENT STRENGTHS:
-- claude: reasoning, writing, strategy, ethics, long-form analysis
-- gpt: code, technical problems, structured output, image generation
-- gemini: research, multimodal analysis, real-time data, Google ecosystem
-- grok: current events, contrarian views, pushback, edgy takes
-
-TOOL CAPABILITIES:
-- dalle/stability: generates images from text prompts
-- perplexity/tavily/brave: searches web for current information
-- runway/kling/pika: generates video from text or image
-- suno/udio: generates music and songs
-- elevenlabs: text to speech synthesis
-
-YOUR DECISIONS:
-1. Which agents should respond? (only include agents that add value)
-2. Should a tool fire? Which one? What's the optimal prompt?
-3. Where should outputs go? (chat/project/email)
-4. What memory context is most relevant?
-5. Any setup issues to flag?
+Tool types:
+- dalle/stability = image generation
+- perplexity/tavily/brave = web search  
+- runway/kling/pika = video generation
+- suno/udio = music generation
 
 OUTPUT THIS EXACT JSON:
 {
-  "agents_to_respond": ["claude", "gpt"],
-  "skip_agents": ["gemini", "grok"],
-  "skip_reason": "Technical question, claude and gpt are sufficient",
   "tool": {
-    "should_fire": false,
-    "tool_id": null,
-    "prompt": null,
+    "should_fire": true,
+    "tool_id": "dalle",
+    "prompt": "synthesized prompt from ALL agent descriptions combined",
     "destination": "chat"
   },
-  "memory_context": "relevant memory snippets to inject",
-  "setup_notice": null,
-  "reasoning": "one line explanation"
+  "reasoning": "one line"
 }
 `
 
