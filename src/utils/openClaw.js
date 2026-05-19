@@ -43,10 +43,9 @@ You ALWAYS output valid JSON and nothing else. No explanation. No preamble. Just
             { role: "system", content: systemPrompt },
             { role: "user", content: prompt }
           ],
-          stream: false,
         }),
       })
-      // GPT streams — collect all chunks
+      // Collect full SSE stream
       const reader = res.body.getReader()
       const dec = new TextDecoder()
       let buf = "", full = ""
@@ -57,10 +56,16 @@ You ALWAYS output valid JSON and nothing else. No explanation. No preamble. Just
         const lines = buf.split("\n"); buf = lines.pop()
         for (const l of lines) {
           if (!l.startsWith("data: ") || l.includes("[DONE]")) continue
-          try { const d = JSON.parse(l.slice(6)); const c = d.choices?.[0]?.delta?.content; if (c) full += c } catch {}
+          try { 
+            const d = JSON.parse(l.slice(6))
+            const c = d.choices?.[0]?.delta?.content
+            if (c) full += c 
+          } catch {}
         }
       }
-      return JSON.parse(full.replace(/```json|```/g, "").trim())
+      if (!full.trim()) throw new Error("Empty response from GPT")
+      const cleaned = full.replace(/```json|```/g, "").trim()
+      return JSON.parse(cleaned)
     }
 
     if (modelConfig.provider === "claude") {
