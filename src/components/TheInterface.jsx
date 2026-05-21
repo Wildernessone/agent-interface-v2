@@ -1,11 +1,11 @@
 import { useState, useRef, useEffect } from 'react'
 import { useStore } from '../store/useStore'
-import { buildSystemPrompt, detectToolIntents } from '../utils/buildSystemPrompt'
+import { buildSystemPrompt } from '../utils/buildSystemPrompt'
 import { VoiceEngine } from '../utils/voiceEngine'
 import Settings from './Settings'
 import { exportConversation } from '../utils/exportConversation'
 import HistorySidebar from './HistorySidebar'
-import { orchestrate, getProactiveNotices, diagnoseIssue } from '../utils/openClaw'
+import { orchestrate, getProactiveNotices, diagnoseIssue, processCorrection } from '../utils/openClaw'
 import PromptLibrary from './PromptLibrary'
 import ToolOutput from './ToolOutput'
 
@@ -126,7 +126,7 @@ async function streamGrok(key, messages, onChunk, onDone, onError) {
 }
 
 export default function TheInterface() {
-  const { settings, turns, activeAgentId, voiceMode, addTurn, addToolTurn, appendChunk, finishTurn, addErrorTurn, clearTurns, setVoiceMode, saveConversation, conversationId, loadMemory } = useStore()
+  const { settings, turns, activeAgentId, voiceMode, addTurn, addToolTurn, appendChunk, finishTurn, addErrorTurn, clearTurns, setVoiceMode, saveConversation, conversationId, loadMemory, saveMemory } = useStore()
   
   const handleVoiceToggle = () => {
     // Recreate VoiceEngine with latest settings when toggling on
@@ -148,7 +148,6 @@ export default function TheInterface() {
   const [showHistory, setShowHistory] = useState(false)
   const [showPrompts, setShowPrompts] = useState(false)
   const [agentMemory, setAgentMemory] = useState([])
-  const [leadAgent, setLeadAgent] = useState(null)
   const [setupNotices, setSetupNotices] = useState([])
   const scrollRef = useRef(null)
   const voiceRef = useRef(null)
@@ -175,13 +174,6 @@ export default function TheInterface() {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
   }, [turns])
 
-  const detectRounds = (text) => {
-    const t = text.toLowerCase()
-    if (t.includes("debate") || t.includes("argue") || t.includes("disagree") || t.includes("challenge each other")) return 3
-    if (t.includes("expand") || t.includes("go deeper") || t.includes("elaborate") || t.includes("dig into")) return 2
-    return 1
-  }
-
   const sendMessage = async (overrideText) => {
     const text = (overrideText || input).trim()
     if (!text || busy) return
@@ -191,12 +183,29 @@ export default function TheInterface() {
     addTurn({ id: userTurnId, type: "user", text })
     conversationRef.current = [...conversationRef.current, { role: "user", content: text }]
 
-    const intents = detectToolIntents(text, enabledTools)
     const selected = targets.includes("all") ? activeAgents : activeAgents.filter(a => targets.includes(a.id))
-    const totalRounds = detectRounds(text)
 
-    // Track the last agent response for tool prompt refinement
-    let lastAgentResponse = ""
+    // OpenClaw makes all decisions
+    const clawDecision = await orchestrate({
+      userMessage: text,
+      conversationHistory: conversationRef.current,
+      agentResponses: [],
+      enabledAgents: selected.map(a => a.id),
+      enabledTools,
+      memory: agentMemory,
+      settings,
+      voiceMode,
+    })
+
+    const respondingAgents = clawDecision?.agents_to_respond?.length
+      ? selected.filter(a => clawDecision.agents_to_respond.includes(a.id))
+      : selected
+    const totalRounds = clawDecision?.rounds || 1
+    const activeResponseMode = clawDecision?.response_mode || responseMode
+
+    if (clawDecision?.correction?.detected && clawDecision?.correction?.save_to_memory) {
+      processCorrection(clawDecision, settings, saveMemory)
+    }
 
     for (let round = 0; round < totalRounds; round++) {
       if (round > 0) {
@@ -206,7 +215,7 @@ export default function TheInterface() {
         conversationRef.current = [...conversationRef.current, { role: "user", content: roundMsg }]
       }
 
-      for (const agent of selected) {
+      for (const agent of respondingAgents) {
         await new Promise((resolve) => {
           const id = `${agent.id}-${Date.now()}`
           addTurn({ id, type: "agent", agent: agent.id, text: "", directed: !targets.includes("all") })
@@ -219,13 +228,12 @@ export default function TheInterface() {
           const systemPrompt = buildSystemPrompt({
             activeAgentIds: selected.map(a => a.id),
             enabledTools,
-            mode: responseMode,
+            mode: activeResponseMode,
             round: round + 1,
             totalRounds,
             agentId: agent.id,
             voiceMode,
             memoryContext,
-            leadAgent,
           })
 
           const messages = [
@@ -356,14 +364,6 @@ export default function TheInterface() {
           </div>
         </div>
         <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-          {/* Mode toggle */}
-          <div style={{ display:"flex", background:"rgba(255,255,255,0.05)", borderRadius:8, padding:2, gap:1 }}>
-            {[["concise","⚡"],["balanced","◎"]].map(([m,icon]) => (
-              <button key={m} onClick={() => setResponseMode(m)} style={{ padding:"4px 10px", borderRadius:6, border:"none", background:responseMode===m?`${accent}25`:"transparent", color:responseMode===m?accent:"rgba(255,255,255,0.3)", cursor:"pointer", fontSize:11, fontFamily:"monospace" }}>
-                {icon} {m.charAt(0).toUpperCase()+m.slice(1)}
-              </button>
-            ))}
-          </div>
           {/* Voice toggle */}
           <button onClick={() => setShowPrompts(true)} title="Prompt library" style={{ width:32, height:32, borderRadius:8, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.1)", color:"rgba(255,255,255,0.4)", cursor:"pointer", fontSize:13 }}>📚</button>
           <button onClick={() => setShowHistory(true)} title="Conversation history" style={{ width:32, height:32, borderRadius:8, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.1)", color:"rgba(255,255,255,0.4)", cursor:"pointer", fontSize:13 }}>☰</button>
@@ -485,15 +485,6 @@ export default function TheInterface() {
             const sel = !targets.includes("all") && targets.includes(ag.id)
             return <button key={ag.id} onClick={() => toggleTarget(ag.id)} style={{ padding:"3px 10px", borderRadius:20, border:`1px solid ${sel?ag.border:"rgba(255,255,255,0.1)"}`, background:sel?ag.bg:"transparent", color:sel?ag.color:"rgba(255,255,255,0.3)", fontSize:11, cursor:"pointer", fontFamily:"monospace" }}>{ag.name}</button>
           })}
-          {activeAgents.length > 1 && (
-            <div style={{ display:"flex", alignItems:"center", gap:5 }}>
-              <span style={{ fontSize:9, color:"rgba(255,255,255,0.2)", fontFamily:"monospace" }}>LEAD</span>
-              <button onClick={() => setLeadAgent(null)} style={{ padding:"3px 8px", borderRadius:20, border:`1px solid ${!leadAgent?"rgba(99,102,241,0.5)":"rgba(255,255,255,0.1)"}`, background:!leadAgent?"rgba(99,102,241,0.15)":"transparent", color:!leadAgent?"#a5b4fc":"rgba(255,255,255,0.3)", fontSize:10, cursor:"pointer", fontFamily:"monospace" }}>Auto</button>
-              {activeAgents.map(ag => (
-                <button key={ag.id} onClick={() => setLeadAgent(leadAgent===ag.id?null:ag.id)} style={{ padding:"3px 8px", borderRadius:20, border:`1px solid ${leadAgent===ag.id?ag.border:"rgba(255,255,255,0.1)"}`, background:leadAgent===ag.id?ag.bg:"transparent", color:leadAgent===ag.id?ag.color:"rgba(255,255,255,0.3)", fontSize:10, cursor:"pointer", fontFamily:"monospace" }}>{ag.name}</button>
-              ))}
-            </div>
-          )}
           {turns.length > 0 && <button onClick={() => { clearTurns(); conversationRef.current = [] }} style={{ marginLeft:"auto", padding:"3px 10px", borderRadius:20, border:"1px solid rgba(255,255,255,0.1)", background:"transparent", color:"rgba(255,255,255,0.3)", fontSize:10, cursor:"pointer", fontFamily:"monospace" }}>Clear</button>}
         </div>
         <div style={{ display:"flex", gap:8, alignItems:"flex-end" }}>

@@ -1,79 +1,45 @@
 /**
- * AGENT INTERFACE — OpenClaw
- * ===========================
- * The orchestration intelligence built into Agent Interface.
- * Runs invisibly on whatever tokens the user already has.
- * Two roles:
- *   1. Orchestrator — routes agents, tools, outputs
- *   2. Setup Assistant — guides users, troubleshoots issues
+ * AGENT INTERFACE — OpenClaw v2
+ * ================================
+ * The compiler at the heart of Agent Interface.
+ * Reads roundtable discussions and decides:
+ * - Which agents should respond
+ * - How many rounds
+ * - What tools to fire and with what prompt
+ * - Where outputs go (chat/project/storage)
+ * - What the user is correcting
+ * - What to learn and remember
  *
- * Drop into: src/utils/openClaw.js
+ * Runs on whatever tokens the user already has.
+ * Claude preferred — returns clean JSON.
  */
 
 const PROXY = "https://claude-proxy.jamesreed.workers.dev"
 
 // ── Model selection ───────────────────────────────────────
-// Uses whatever tokens the user already has
-// Priority: GPT-4o-mini → Haiku → Gemini Flash → Grok
-
 export function selectOrchestrationModel(settings) {
-  if (settings?.agents?.gpt?.key) return { provider: "gpt", model: "gpt-4o-mini", key: settings.agents.gpt.key }
-  if (settings?.agents?.claude?.key) return { provider: "claude", model: "claude-haiku-4-5-20251001", key: settings.agents.claude.key }
-  if (settings?.agents?.gemini?.key) return { provider: "gemini", model: "gemini-2.0-flash", key: settings.agents.gemini.key }
-  if (settings?.agents?.grok?.key) return { provider: "grok", model: "grok-4", key: settings.agents.grok.key }
+  if (settings?.agents?.claude?.key) return { provider: "claude", key: settings.agents.claude.key }
+  if (settings?.agents?.gpt?.key) return { provider: "gpt", key: settings.agents.gpt.key }
+  if (settings?.agents?.gemini?.key) return { provider: "gemini", key: settings.agents.gemini.key }
   return null
 }
 
-// ── Core orchestration call ───────────────────────────────
-
-async function callOrchestrator(prompt, modelConfig) {
+// ── Core OpenClaw call ────────────────────────────────────
+async function callOpenClaw(prompt, modelConfig) {
   if (!modelConfig) return null
 
-  const systemPrompt = `You are OpenClaw — the orchestration intelligence built into Agent Interface.
-Your job is to make the roundtable work perfectly. You are fast, precise, and invisible.
-You ALWAYS output valid JSON and nothing else. No explanation. No preamble. Just JSON.`
+  const system = `You are OpenClaw — the compiler intelligence inside Agent Interface.
+You read roundtable discussions and decide what happens next.
+You output ONLY valid JSON. No explanation. No markdown. Just JSON.
+Be decisive. Be fast. Be accurate.`
 
   try {
-    if (modelConfig.provider === "gpt") {
-      const res = await fetch(`${PROXY}/gpt`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${modelConfig.key}` },
-        body: JSON.stringify({
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: prompt }
-          ],
-        }),
-      })
-      // Collect full SSE stream
-      const reader = res.body.getReader()
-      const dec = new TextDecoder()
-      let buf = "", full = ""
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buf += dec.decode(value, { stream: true })
-        const lines = buf.split("\n"); buf = lines.pop()
-        for (const l of lines) {
-          if (!l.startsWith("data: ") || l.includes("[DONE]")) continue
-          try { 
-            const d = JSON.parse(l.slice(6))
-            const c = d.choices?.[0]?.delta?.content
-            if (c) full += c 
-          } catch {}
-        }
-      }
-      if (!full.trim()) throw new Error("Empty response from GPT")
-      const cleaned = full.replace(/```json|```/g, "").trim()
-      return JSON.parse(cleaned)
-    }
-
     if (modelConfig.provider === "claude") {
       const res = await fetch(`${PROXY}/claude`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-api-key": modelConfig.key },
         body: JSON.stringify({
-          messages: [{ role: "user", content: `${systemPrompt}\n\n${prompt}` }],
+          messages: [{ role: "user", content: `${system}\n\n${prompt}` }]
         }),
       })
       const data = await res.json()
@@ -85,11 +51,7 @@ You ALWAYS output valid JSON and nothing else. No explanation. No preamble. Just
       const res = await fetch(`${PROXY}/gemini`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-api-key": modelConfig.key },
-        body: JSON.stringify({
-          messages: [
-            { role: "user", content: `${systemPrompt}\n\n${prompt}` }
-          ],
-        }),
+        body: JSON.stringify({ messages: [{ role: "user", content: `${system}\n\n${prompt}` }] }),
       })
       const reader = res.body.getReader()
       const dec = new TextDecoder()
@@ -107,264 +69,208 @@ You ALWAYS output valid JSON and nothing else. No explanation. No preamble. Just
       return JSON.parse(full.replace(/```json|```/g, "").trim())
     }
   } catch(e) {
-    console.error("OpenClaw orchestration error:", e)
+    console.error("OpenClaw error:", e.message)
     return null
   }
 }
 
-// ── ROLE 1: Orchestrator ──────────────────────────────────
-
-/**
- * orchestrate(options) → OrchestrateDecision
- *
- * Called after agents respond, before tools fire.
- * Returns a routing decision for the current message.
- */
+// ── MAIN ORCHESTRATE ──────────────────────────────────────
 export async function orchestrate({
   userMessage,
-  agentResponses = [],  // [{ agent: "claude", text: "..." }]
-  enabledTools = {},
+  conversationHistory = [],
+  agentResponses = [],
   enabledAgents = [],
+  enabledTools = {},
   memory = [],
   activeProject = null,
   settings,
+  voiceMode = false,
 }) {
   const modelConfig = selectOrchestrationModel(settings)
-  if (!modelConfig) return defaultDecision(userMessage, enabledAgents, enabledTools)
 
   const agentSummary = agentResponses
-    .map(r => `${r.agent.toUpperCase()}: ${r.text?.slice(0, 300)}`)
+    .map(r => `${r.agent.toUpperCase()}: ${r.text?.slice(0, 400)}`)
     .join("\n\n")
 
   const toolList = Object.entries(enabledTools)
-    .filter(([, v]) => v)
-    .map(([id]) => id)
-    .join(", ") || "none"
+    .filter(([,v]) => v).map(([id]) => id).join(", ") || "none"
 
   const memorySummary = memory.slice(0, 5)
-    .map(m => `- ${m.title}: ${m.content?.slice(0, 100)}`)
+    .map(m => `[${m.title}]: ${m.content?.slice(0, 150)}`)
     .join("\n") || "none"
 
+  // Detect if this is a correction
+  const correctionPhrases = ["that's not what i meant", "no i wanted", "wrong", "not right", "try again", "that's not", "i said", "i meant", "actually"]
+  const isCorrection = correctionPhrases.some(p => userMessage.toLowerCase().includes(p))
+
   const prompt = `
-You are a synthesis engine. Your only job is to read what the AI agents said and build the best possible tool prompt from their combined input.
+USER MESSAGE: "${userMessage}"
+IS CORRECTION: ${isCorrection}
+VOICE MODE: ${voiceMode}
 
-USER REQUEST: "${userMessage}"
+WHAT AGENTS SAID:
+${agentSummary || "No agent responses yet — this is the first message"}
 
-WHAT THE AGENTS SAID:
-${agentSummary || "No agent responses yet"}
-
+AVAILABLE AGENTS: ${enabledAgents.join(", ")}
 AVAILABLE TOOLS: ${toolList}
+ACTIVE PROJECT: ${activeProject?.name || "none"}
 
-YOUR ONLY JOB:
-Look at what ALL the agents described. Combine their best ideas into one rich, detailed tool prompt.
-Do NOT add your own creative ideas. Only synthesize what the agents already said.
-If no tool should fire, set should_fire to false.
+USER MEMORY CONTEXT:
+${memorySummary}
 
-Tool types:
-- dalle/stability = image generation
-- perplexity/tavily/brave = web search  
-- runway/kling/pika = video generation
-- suno/udio = music generation
+AGENT CAPABILITIES:
+- claude: reasoning, writing, strategy, analysis, ethics
+- gpt: code, technical, structured output, image generation
+- gemini: research, multimodal, real-time data, Google data
+- grok: current events, contrarian views, direct opinions
 
-OUTPUT THIS EXACT JSON:
+TOOL CAPABILITIES:
+- dalle/stability: generates images from text
+- perplexity/tavily/brave: searches web for current info
+- runway/kling/pika: generates video
+- suno/udio/elevenlabs_music: generates music
+- elevenlabs: text to speech
+
+YOUR JOB:
+1. Decide which agents should respond (based on topic and capabilities)
+2. Decide how many rounds (1=simple, 2=needs expansion, 3=needs debate)
+3. Decide if a tool should fire (ONLY if explicitly requested or clearly implied)
+4. Build the best tool prompt by synthesizing ALL agent input
+5. Decide where output goes
+6. If this is a correction, note what to learn
+7. In voice mode keep everything SHORT
+
+TOOL FIRING RULES:
+- Only fire if user EXPLICITLY asked for image/video/music/search
+- "paint a picture of" = metaphor, do NOT fire image tool
+- "make me an image of" = fire image tool
+- "what does X look like" = do NOT fire, just describe
+- "search for X" or "find out about X" = fire search tool
+
+OUTPUT THIS EXACT JSON (no other text):
 {
+  "agents_to_respond": ["claude"],
+  "skip_agents": ["gpt", "gemini", "grok"],
+  "skip_reason": "why skipped",
+  "rounds": 1,
+  "response_mode": "concise",
   "tool": {
-    "should_fire": true,
-    "tool_id": "dalle",
-    "prompt": "synthesized prompt from ALL agent descriptions combined",
+    "should_fire": false,
+    "tool_id": null,
+    "prompt": null,
     "destination": "chat"
   },
+  "correction": {
+    "detected": false,
+    "what_was_wrong": null,
+    "what_user_wants": null,
+    "save_to_memory": false,
+    "memory_entry": null
+  },
+  "voice_response_chars": 300,
   "reasoning": "one line"
 }
 `
 
-  const decision = await callOrchestrator(prompt, modelConfig)
-  if (!decision) return defaultDecision(userMessage, enabledAgents, enabledTools)
+  if (!modelConfig) {
+    return defaultDecision(enabledAgents, voiceMode)
+  }
+
+  const decision = await callOpenClaw(prompt, modelConfig)
+  if (!decision) return defaultDecision(enabledAgents, voiceMode)
+
+  // Ensure agents_to_respond only includes enabled agents
+  if (decision.agents_to_respond) {
+    decision.agents_to_respond = decision.agents_to_respond.filter(a => enabledAgents.includes(a))
+    if (decision.agents_to_respond.length === 0) decision.agents_to_respond = enabledAgents
+  }
+
   return decision
 }
 
-// ── Default decision (when OpenClaw unavailable) ──────────
-
-function defaultDecision(userMessage, enabledAgents, enabledTools) {
+// ── Default when OpenClaw unavailable ─────────────────────
+function defaultDecision(enabledAgents, voiceMode) {
   return {
     agents_to_respond: enabledAgents,
     skip_agents: [],
+    rounds: 1,
+    response_mode: voiceMode ? "concise" : "balanced",
     tool: { should_fire: false, tool_id: null, prompt: null, destination: "chat" },
-    memory_context: "",
-    setup_notice: null,
-    reasoning: "No orchestration model available — using defaults",
+    correction: { detected: false },
+    voice_response_chars: voiceMode ? 200 : 500,
+    reasoning: "Default — OpenClaw unavailable",
   }
 }
 
-// ── ROLE 2: Setup Assistant ───────────────────────────────
+// ── Learn from correction ─────────────────────────────────
+export async function processCorrection(decision, settings, saveMemory) {
+  if (!decision?.correction?.detected) return
+  if (!decision.correction.save_to_memory) return
+  if (!decision.correction.memory_entry) return
 
-// Known setup issues and their fixes
-export const SETUP_GUIDES = {
-  anthropic: {
-    name: "Claude (Anthropic)",
-    url: "https://console.anthropic.com/api-keys",
-    steps: ["Go to console.anthropic.com", "Click API Keys in the left sidebar", "Click Create Key", "Copy and paste it here"],
-    keyFormat: "sk-ant-api03-",
-  },
-  openai: {
-    name: "ChatGPT (OpenAI)",
-    url: "https://platform.openai.com/api-keys",
-    steps: ["Go to platform.openai.com/api-keys", "Click Create new secret key", "Copy and paste it here"],
-    keyFormat: "sk-proj-",
-  },
-  openai_images: {
-    name: "OpenAI Image Generation",
-    url: "https://platform.openai.com/settings/organization/general",
-    steps: ["Go to platform.openai.com/settings/organization/general", "Click Verify Organization", "Complete verification (takes ~30 min)", "Create a new API key after verification"],
-    keyFormat: null,
-  },
-  google: {
-    name: "Gemini (Google)",
-    url: "https://aistudio.google.com/app/apikey",
-    steps: ["Go to aistudio.google.com/app/apikey", "Click Create API Key", "Copy and paste it here"],
-    keyFormat: "AIza",
-  },
-  google_billing: {
-    name: "Gemini Billing",
-    url: "https://aistudio.google.com/app/plan",
-    steps: ["Go to aistudio.google.com/app/plan", "Click Upgrade to pay-as-you-go", "Add payment method", "Gemini Flash costs ~$0.10 per million tokens"],
-    keyFormat: null,
-  },
-  xai: {
-    name: "Grok (xAI)",
-    url: "https://console.x.ai",
-    steps: ["Go to console.x.ai", "Create an API key", "Add credits to your account", "Copy and paste the key here"],
-    keyFormat: "xai-",
-  },
-  elevenlabs: {
-    name: "ElevenLabs Voice",
-    url: "https://elevenlabs.io/app/settings/api-keys",
-    steps: ["Go to elevenlabs.io", "Click your profile → API Keys", "Create a key", "Copy and paste it here"],
-    keyFormat: null,
-  },
-  stability: {
-    name: "Stability AI",
-    url: "https://platform.stability.ai/account/keys",
-    steps: ["Go to platform.stability.ai", "Click API Keys", "Create a key", "Copy and paste it here"],
-    keyFormat: "sk-",
-  },
-  perplexity: {
-    name: "Perplexity Search",
-    url: "https://www.perplexity.ai/settings/api",
-    steps: ["Go to perplexity.ai/settings/api", "Generate an API key", "Copy and paste it here"],
-    keyFormat: "pplx-",
-  },
+  try {
+    await saveMemory(
+      `Learned: ${decision.correction.what_was_wrong?.slice(0, 50) || "preference"}`,
+      decision.correction.memory_entry,
+      "learned"
+    )
+    console.log("OpenClaw learned:", decision.correction.memory_entry)
+  } catch(e) {
+    console.error("Failed to save learning:", e)
+  }
 }
 
-// ── Diagnose issues ───────────────────────────────────────
+// ── Setup guides ──────────────────────────────────────────
+export const SETUP_GUIDES = {
+  anthropic:    { name:"Claude",          url:"https://console.anthropic.com/api-keys",         keyPrefix:"sk-ant-" },
+  openai:       { name:"ChatGPT",         url:"https://platform.openai.com/api-keys",            keyPrefix:"sk-proj-" },
+  google:       { name:"Gemini",          url:"https://aistudio.google.com/app/apikey",          keyPrefix:"AIza" },
+  xai:          { name:"Grok",            url:"https://console.x.ai",                            keyPrefix:"xai-" },
+  elevenlabs:   { name:"ElevenLabs",      url:"https://elevenlabs.io/app/settings/api-keys",     keyPrefix:null },
+  stability:    { name:"Stability AI",    url:"https://platform.stability.ai/account/keys",      keyPrefix:"sk-" },
+  perplexity:   { name:"Perplexity",      url:"https://www.perplexity.ai/settings/api",          keyPrefix:"pplx-" },
+}
 
-export function diagnoseIssue(agentId, errorStatus, errorMessage) {
-  const diagnoses = {
+// ── Diagnose errors ───────────────────────────────────────
+export function diagnoseError(agentId, status) {
+  const messages = {
     401: {
-      claude: { issue: "Claude key is invalid or expired", fix: "anthropic", message: "Your Anthropic key isn't working. Create a fresh one →" },
-      gpt: { issue: "OpenAI key is invalid or expired", fix: "openai", message: "Your OpenAI key isn't working. Create a fresh one →" },
-      gemini: { issue: "Gemini key is invalid", fix: "google", message: "Your Google AI key isn't working. Get a new one →" },
-      grok: { issue: "Grok key is invalid", fix: "xai", message: "Your xAI key isn't working. Check console.x.ai →" },
+      claude:  { msg: "Your Anthropic key isn't working — looks like it expired or was revoked.", fix: "anthropic" },
+      gpt:     { msg: "Your OpenAI key isn't working — create a fresh one.", fix: "openai" },
+      gemini:  { msg: "Your Google AI key isn't working.", fix: "google" },
+      grok:    { msg: "Your xAI key isn't working — may have been revoked.", fix: "xai" },
     },
     429: {
-      claude: { issue: "Claude rate limited", fix: null, message: "Claude is rate limited. Wait a minute and try again." },
-      gpt: { issue: "OpenAI rate limited", fix: null, message: "ChatGPT is rate limited. Wait a moment and try again." },
-      gemini: { issue: "Gemini free tier exhausted", fix: "google_billing", message: "Gemini's free tier is used up. Enable billing to continue →" },
-      grok: { issue: "Grok rate limited", fix: null, message: "Grok is rate limited. Wait a moment." },
+      claude:  { msg: "Claude is rate limited — wait a moment and try again.", fix: null },
+      gpt:     { msg: "ChatGPT hit its rate limit — try again in a minute.", fix: null },
+      gemini:  { msg: "Gemini's free tier is exhausted. Enable billing to continue.", fix: "google_billing", url: "https://aistudio.google.com/app/plan" },
+      grok:    { msg: "Grok is rate limited — wait a moment.", fix: null },
     },
     402: {
-      grok: { issue: "Grok has no credits", fix: "xai", message: "Your xAI account needs credits. Add them at console.x.ai →" },
-    },
-    403: {
-      gpt: { issue: "OpenAI image generation not verified", fix: "openai_images", message: "Image generation needs org verification. Takes ~30 min →" },
+      grok:    { msg: "Your xAI account has no credits. Add credits to use Grok.", fix: "xai" },
     },
   }
-
-  return diagnoses[errorStatus]?.[agentId] || {
-    issue: `${agentId} returned error ${errorStatus}`,
-    fix: null,
-    message: `Something went wrong with ${agentId}. Try again or check your API key in Settings.`,
-  }
+  return messages[status]?.[agentId] || { msg: `${agentId} returned an error. Check your API key in Settings.`, fix: null }
 }
 
 // ── Proactive notices ─────────────────────────────────────
-// Checks settings and returns notices to show the user
-
 export function getProactiveNotices(settings) {
   const notices = []
+  const agents = settings?.agents || {}
+  const tools = settings?.tools || {}
 
-  // Tool enabled but no key
-  if (settings?.tools?.dalle?.enabled && !settings?.agents?.gpt?.key) {
-    notices.push({ type: "missing_key", message: "DALL-E is enabled but needs an OpenAI key", fix: "openai", priority: "high" })
+  const connected = Object.values(agents).filter(a => a.key && a.enabled).length
+  if (connected === 0) {
+    notices.push({ priority:"critical", message:"No AI agents connected. Add at least one API key to get started.", fix:"anthropic" })
   }
-  if (settings?.tools?.perplexity?.enabled && !settings?.tools?.perplexity?.key) {
-    notices.push({ type: "missing_key", message: "Perplexity search is enabled but needs an API key", fix: "perplexity", priority: "medium" })
+  if (tools.dalle?.enabled && !agents.gpt?.key) {
+    notices.push({ priority:"high", message:"DALL-E is enabled but needs an OpenAI key in Agents → ChatGPT.", fix:"openai" })
   }
-  if (settings?.tools?.elevenlabs?.enabled && !settings?.tools?.elevenlabs?.key) {
-    notices.push({ type: "missing_key", message: "ElevenLabs is enabled but needs an API key", fix: "elevenlabs", priority: "medium" })
+  if (tools.elevenlabs?.enabled && !tools.elevenlabs?.key) {
+    notices.push({ priority:"medium", message:"ElevenLabs is enabled but needs an API key in Tools → Voice.", fix:"elevenlabs" })
   }
-  if (settings?.tools?.stability?.enabled && !settings?.tools?.stability?.key) {
-    notices.push({ type: "missing_key", message: "Stable Diffusion is enabled but needs an API key", fix: "stability", priority: "medium" })
+  if (tools.perplexity?.enabled && !tools.perplexity?.key) {
+    notices.push({ priority:"medium", message:"Perplexity search is enabled but needs an API key in Tools → Search.", fix:"perplexity" })
   }
-
-  // Voice on but no ElevenLabs
-  if (settings?.voiceModeEnabled && !settings?.tools?.elevenlabs?.key) {
-    notices.push({ type: "info", message: "Voice mode is on using browser voices. Add ElevenLabs for premium agent voices.", fix: "elevenlabs", priority: "low" })
-  }
-
-  // No agents connected
-  const connectedAgents = Object.values(settings?.agents || {}).filter(a => a.key && a.enabled)
-  if (connectedAgents.length === 0) {
-    notices.push({ type: "critical", message: "No AI agents connected. Add at least one API key to get started.", fix: "anthropic", priority: "critical" })
-  }
-
-  return notices.sort((a, b) => {
-    const p = { critical: 0, high: 1, medium: 2, low: 3 }
-    return p[a.priority] - p[b.priority]
-  })
+  return notices.sort((a,b) => ({critical:0,high:1,medium:2,low:3})[a.priority] - ({critical:0,high:1,medium:2,low:3})[b.priority])
 }
-
-// ── Onboarding flow ───────────────────────────────────────
-
-export const ONBOARDING_STEPS = [
-  {
-    id: "welcome",
-    message: "Welcome to Agent Interface. Let's get your AI team connected. Which AI services do you already have accounts with?",
-    options: [
-      { label: "Claude (Anthropic)", value: "claude" },
-      { label: "ChatGPT (OpenAI)", value: "gpt" },
-      { label: "Gemini (Google)", value: "gemini" },
-      { label: "Grok (xAI)", value: "grok" },
-      { label: "None yet — help me pick", value: "none" },
-    ],
-    type: "multi_select",
-  },
-  {
-    id: "none_recommendation",
-    condition: (answers) => answers.welcome?.includes("none"),
-    message: "No problem. Claude is the best starting point — it's the most capable for reasoning and writing. Get a free API key at console.anthropic.com. Come back and paste it here when you're ready.",
-    type: "info",
-    link: "https://console.anthropic.com/api-keys",
-  },
-  {
-    id: "first_key",
-    message: "Great. Paste your first API key here and I'll verify it's working.",
-    type: "key_input",
-  },
-  {
-    id: "tools_intro",
-    message: "Your agent is connected ✓ Do you want to enable any tools? These let your agents generate images, search the web, or create music.",
-    options: [
-      { label: "Image generation", value: "images" },
-      { label: "Web search", value: "search" },
-      { label: "Voice mode", value: "voice" },
-      { label: "Skip for now", value: "skip" },
-    ],
-    type: "multi_select",
-  },
-  {
-    id: "complete",
-    message: "You're set up and ready to go. Start by asking your agents anything — or try one of the prompt templates in the library.",
-    type: "complete",
-  },
-]
