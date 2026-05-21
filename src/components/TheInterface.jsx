@@ -284,27 +284,6 @@ export default function TheInterface() {
         setToolsWorking(false)
       }
     }
-  }
-
-  const toggleTarget = (id) => {
-    if (id === "all") { setTargets(["all"]); return }
-    if (targets.includes("all")) { setTargets([id]); return }
-    const sel = targets.includes(id)
-    if (sel) { const next = targets.filter(t => t !== id); setTargets(next.length ? next : ["all"]) }
-    else setTargets([...targets, id])
-  }
-
-  const toggleVoiceListening = () => {
-    if (!voiceRef.current) return
-    if (listening) {
-      voiceRef.current.stopListening()
-      setListening(false)
-      return
-    }
-    voiceRef.current.startListening(
-      (transcript) => {
-        setListening(false)
-        if (transcript.trim()) {
           sendMessage(transcript)
         }
       },
