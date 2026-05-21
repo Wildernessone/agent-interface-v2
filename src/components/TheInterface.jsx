@@ -266,39 +266,18 @@ export default function TheInterface() {
       }
     }
 
-    // OpenClaw orchestration — smarter tool firing
-    if (intents.length > 0) {
+    // OpenClaw tool firing — uses clawDecision from above
+    if (clawDecision?.tool?.should_fire && clawDecision?.tool?.tool_id) {
       setToolsWorking(true)
       try {
-        // Get recent agent responses
-        const agentResponses = conversationRef.current
-          .filter(m => m.role === "assistant")
-          .slice(-selected.length)
-          .map((m, i) => ({ agent: selected[i]?.id || "agent", text: m.content }))
-
-        // Ask OpenClaw to build optimal tool prompt
-        console.log("OpenClaw orchestrating...")
-        const decision = await orchestrate({
-          userMessage: text,
-          agentResponses,
-          enabledTools,
-          enabledAgents: selected.map(a => a.id),
-          memory: agentMemory,
-          settings,
-        })
-        console.log("OpenClaw decision:", JSON.stringify(decision)?.slice(0,300))
-
-        // Use OpenClaw prompt or fall back to agent context
+        // Build prompt from OpenClaw decision or agent context
         const agentContext = conversationRef.current
           .filter(m => m.role === "assistant")
           .map(m => m.content).join(" ")
-        const imagePrompt = decision?.tool?.prompt ||
+        const imagePrompt = clawDecision.tool.prompt ||
           (agentContext.length > 20 ? `${text}. ${agentContext}`.slice(0, 900) : text)
-
-        for (const intent of intents) {
-          const output = await runTool(intent.toolId, imagePrompt, settings)
-          addToolTurn({ id: `tool-${intent.toolId}-${Date.now()}`, type: "tool", output })
-        }
+        const output = await runTool(clawDecision.tool.tool_id, imagePrompt, settings)
+        addToolTurn({ id: `tool-${clawDecision.tool.tool_id}-${Date.now()}`, type: "tool", output })
       } catch(e) {
         console.error("Tool error:", e)
       } finally {
