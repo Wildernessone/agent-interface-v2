@@ -134,7 +134,6 @@ export const useStore = create((set, get) => ({
           gpt_key:        settings.agents.gpt?.key || '',
           gemini_key:     settings.agents.gemini?.key || '',
           grok_key:       settings.agents.grok?.key    || '',
-          suno_key:       settings.tools.suno?.key || '',
           elevenlabs_key: settings.tools.elevenlabs?.key || '',
           perplexity_key: settings.tools.perplexity?.key || '',
           stability_key:  settings.tools.stability?.key || '',
