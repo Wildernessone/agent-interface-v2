@@ -512,6 +512,7 @@ export default function TheInterface() {
     </div>
   )
 }
+}
 
 async function runTool(toolId, prompt, settings) {
   const gptKey = settings?.agents?.gpt?.key || ''
