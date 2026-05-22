@@ -284,14 +284,23 @@ export default function TheInterface() {
         setToolsWorking(false)
       }
     }
-          sendMessage(transcript)
-        }
+
+  const toggleVoiceListening = () => {
+    if (!voiceRef.current) return
+    if (listening) {
+      voiceRef.current.stopListening()
+      setListening(false)
+      return
+    }
+    voiceRef.current.startListening(
+      (transcript) => {
+        setListening(false)
+        if (transcript.trim()) sendMessage(transcript)
       },
-      (state) => {
-        setListening(state === "listening")
-      }
+      (state) => setListening(state === "listening")
     )
   }
+
 
   const accent = settings.accent || "#6366f1"
 
