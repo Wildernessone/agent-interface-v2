@@ -5,7 +5,7 @@ import { VoiceEngine } from '../utils/voiceEngine'
 import Settings from './Settings'
 import { exportConversation } from '../utils/exportConversation'
 import HistorySidebar from './HistorySidebar'
-import { orchestrate, getProactiveNotices, diagnoseIssue, processCorrection } from '../utils/openClaw'
+import { orchestrate, getProactiveNotices, processCorrection } from '../utils/openClaw'
 import PromptLibrary from './PromptLibrary'
 import ToolOutput from './ToolOutput'
 
