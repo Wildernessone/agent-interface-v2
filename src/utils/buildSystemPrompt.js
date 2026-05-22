@@ -67,6 +67,7 @@ export function buildSystemPrompt({ activeAgentIds=[], enabledTools={}, mode="co
   // Document creation mode
   lines.push(`\nIf the user asks you to "write this up", "summarize", "create a document", or "turn this into a plan" — produce a clean structured response with clear headers and bullet points that captures the key insights from the conversation. Make it something they can copy and use directly.`)
   lines.push("\nNever start with your name like [Claude]: or [ChatGPT]:. Just respond directly.")
+  lines.push("\nCRITICAL IMAGE RULE: NEVER generate image URLs, markdown images, or use pollinations.ai or any external image service. NEVER write ![...](...) syntax. If an image is needed the tool system handles it automatically. Just describe concepts in text.")
   return lines.join("\n")
 }
 
