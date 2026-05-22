@@ -410,7 +410,29 @@ export default function TheInterface() {
               <div key={turn.id} style={{ display:"flex", gap:10 }}>
                 <div style={{ width:32, height:32, borderRadius:"50%", background:agent?.bg, border:`1px solid ${agent?.border}`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, color:agent?.color, flexShrink:0 }}>{agent?.avatar}</div>
                 <div style={{ background:"rgba(248,113,113,0.08)", border:"1px solid rgba(248,113,113,0.2)", borderRadius:"4px 12px 12px 12px", padding:"10px 14px" }}>
-                  <div style={{ fontSize:12, color:"#F87171", fontFamily:"monospace" }}>Something went wrong with {agent?.name}. <button onClick={() => sendMessage(turns.filter(t=>t.type==="user").slice(-1)[0]?.text||"")} style={{ background:"none", border:"none", color:"#6366f1", cursor:"pointer", fontSize:12, fontFamily:"monospace" }}>Retry</button></div>
+                  <div>
+                    <div style={{ fontSize:11, fontWeight:700, color:"#F87171", fontFamily:"monospace", marginBottom:4 }}>
+                      {agent?.name} isn't responding
+                    </div>
+                    <div style={{ fontSize:11, color:"rgba(255,255,255,0.55)", marginBottom:10, lineHeight:1.5 }}>
+                      {turn.errorType === "rate_limited" && `${agent?.name} hit its rate limit. Wait a moment and retry.`}
+                      {turn.errorType === "out_of_credits" && `Your ${agent?.name} account is out of credits. Add credits to continue.`}
+                      {turn.errorType === "invalid_key" && `Your ${agent?.name} API key isn't working — it may have expired.`}
+                      {turn.errorType === "unknown" && `${agent?.name} returned an unexpected error. Check your API key in Settings.`}
+                    </div>
+                    <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+                      <button onClick={() => sendMessage(turns.filter(t=>t.type==="user").slice(-1)[0]?.text||"")} style={{ padding:"5px 12px", borderRadius:8, background:"rgba(99,102,241,0.15)", border:"1px solid rgba(99,102,241,0.35)", color:"#a5b4fc", fontSize:11, cursor:"pointer", fontFamily:"monospace" }}>↩ Retry</button>
+                      {turn.errorType === "out_of_credits" && (
+                        <a href={agent?.id==="claude"?"https://console.anthropic.com":agent?.id==="gpt"?"https://platform.openai.com/account/billing":agent?.id==="gemini"?"https://aistudio.google.com/app/plan":"https://console.x.ai"} target="_blank" rel="noreferrer" style={{ padding:"5px 12px", borderRadius:8, background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.15)", color:"rgba(255,255,255,0.6)", fontSize:11, cursor:"pointer", fontFamily:"monospace", textDecoration:"none" }}>Add Credits →</a>
+                      )}
+                      {turn.errorType === "invalid_key" && (
+                        <button onClick={() => setShowSettings(true)} style={{ padding:"5px 12px", borderRadius:8, background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.15)", color:"rgba(255,255,255,0.6)", fontSize:11, cursor:"pointer", fontFamily:"monospace" }}>Fix Key in Settings →</button>
+                      )}
+                      {turn.errorType === "rate_limited" && (
+                        <span style={{ fontSize:10, color:"rgba(255,255,255,0.3)", fontFamily:"monospace", alignSelf:"center" }}>Usually clears in 60 seconds</span>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
             )
