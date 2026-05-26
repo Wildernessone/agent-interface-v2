@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useStore } from '../store/useStore'
 
-export default function HistorySidebar({ onClose, accent }) {
-  accent = accent || '#6366f1'
+export default function HistorySidebar({ onClose }) {
   const [conversations, setConversations] = useState([])
   const [loading, setLoading] = useState(true)
   const { loadConversations, loadConversation, deleteConversation, clearTurns } = useStore()
@@ -34,64 +33,56 @@ export default function HistorySidebar({ onClose, accent }) {
     const d = new Date(dateStr)
     const now = new Date()
     const diff = now - d
-    if (diff < 60000) return "just now"
-    if (diff < 3600000) return `${Math.floor(diff/60000)}m ago`
-    if (diff < 86400000) return `${Math.floor(diff/3600000)}h ago`
-    if (diff < 604800000) return `${Math.floor(diff/86400000)}d ago`
+    if (diff < 60_000) return "just now"
+    if (diff < 3_600_000) return `${Math.floor(diff/60_000)}m ago`
+    if (diff < 86_400_000) return `${Math.floor(diff/3_600_000)}h ago`
+    if (diff < 604_800_000) return `${Math.floor(diff/86_400_000)}d ago`
     return d.toLocaleDateString()
   }
 
   return (
-    <div style={{ position:"fixed", inset:0, zIndex:150, display:"flex", animation:"fadeIn 0.2s ease" }}>
-      <div onClick={onClose} style={{ flex:1, background:"rgba(0,0,0,0.5)", backdropFilter:"blur(4px)" }}/>
-      <div style={{ width:300, background:"#0E1117", borderLeft:"1px solid rgba(99,102,241,0.2)", display:"flex", flexDirection:"column", boxShadow:"-20px 0 60px rgba(0,0,0,0.4)" }}>
-        
-        {/* Header */}
-        <div style={{ padding:"18px 18px 14px", borderBottom:"1px solid rgba(99,102,241,0.15)", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+    <div className="sidebar-backdrop" onClick={e => e.target === e.currentTarget && onClose()}>
+      <aside className="sidebar">
+        <header className="sidebar-header">
           <div>
-            <div style={{ fontSize:15, fontWeight:700, color:"rgba(255,255,255,0.9)" }}>History</div>
-            <div style={{ fontSize:10, color:"rgba(255,255,255,0.35)", fontFamily:"monospace", marginTop:2 }}>{conversations.length} conversations</div>
+            <h2>History</h2>
+            <div className="sidebar-sub">{conversations.length} conversation{conversations.length === 1 ? "" : "s"}</div>
           </div>
-          <button onClick={onClose} style={{ width:28, height:28, borderRadius:"50%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.1)", color:"rgba(255,255,255,0.4)", cursor:"pointer", fontSize:15, display:"flex", alignItems:"center", justifyContent:"center" }}>×</button>
-        </div>
-
-        {/* New conversation */}
-        <div style={{ padding:"12px 14px", borderBottom:"1px solid rgba(99,102,241,0.1)" }}>
-          <button onClick={handleNew} style={{ width:"100%", padding:"9px 0", borderRadius:10, background:`rgba(99,102,241,0.15)`, border:`1px solid rgba(99,102,241,0.35)`, color:"#a5b4fc", fontSize:12, cursor:"pointer", fontFamily:"monospace" }}>
-            + New conversation
+          <button className="ai-iconbtn" onClick={onClose} aria-label="Close">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 3L11 11M11 3L3 11" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>
           </button>
+        </header>
+
+        <div className="sidebar-action">
+          <button className="ai-btn ai-btn--primary sidebar-new" onClick={handleNew}>+ New conversation</button>
         </div>
 
-        {/* List */}
-        <div style={{ flex:1, overflowY:"auto" }}>
-          {loading && (
-            <div style={{ padding:24, textAlign:"center", fontSize:12, color:"rgba(255,255,255,0.3)", fontFamily:"monospace" }}>Loading...</div>
-          )}
+        <div className="sidebar-body">
+          {loading && <div className="sidebar-status">Loading…</div>}
+
           {!loading && conversations.length === 0 && (
-            <div style={{ padding:32, textAlign:"center" }}>
-              <div style={{ fontSize:28, opacity:0.15, marginBottom:8 }}>◈</div>
-              <div style={{ fontSize:12, color:"rgba(255,255,255,0.3)", fontFamily:"monospace" }}>No saved conversations yet</div>
-              <div style={{ fontSize:10, color:"rgba(255,255,255,0.2)", fontFamily:"monospace", marginTop:4 }}>Conversations save automatically</div>
+            <div className="sidebar-empty">
+              <div className="sidebar-empty-title">No saved conversations</div>
+              <div className="sidebar-empty-sub">Conversations save automatically as you chat.</div>
             </div>
           )}
+
           {conversations.map(c => (
-            <div key={c.id} onClick={() => handleLoad(c.id)}
-              style={{ padding:"12px 16px", borderBottom:"1px solid rgba(255,255,255,0.05)", cursor:"pointer", position:"relative", transition:"background 0.15s" }}
-              onMouseEnter={e => e.currentTarget.style.background = "rgba(99,102,241,0.08)"}
-              onMouseLeave={e => e.currentTarget.style.background = "transparent"}
-            >
-              <div style={{ fontSize:13, color:"rgba(255,255,255,0.8)", marginBottom:3, paddingRight:24, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{c.title}</div>
-              {c.preview && <div style={{ fontSize:11, color:"rgba(255,255,255,0.3)", marginBottom:4, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", lineHeight:1.4 }}>{c.preview}</div>}
-              <div style={{ fontSize:10, color:"rgba(255,255,255,0.2)", fontFamily:"monospace" }}>{fmt(c.updated_at)} · {c.turn_count} turns</div>
-              <button onClick={(e) => handleDelete(e, c.id)}
-                style={{ position:"absolute", right:10, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", color:"rgba(255,255,255,0.2)", cursor:"pointer", fontSize:14, padding:4, opacity:0 }}
-                onMouseEnter={e => e.target.style.opacity = 1}
-                onMouseLeave={e => e.target.style.opacity = 0}
-              >🗑</button>
-            </div>
+            <button key={c.id} className="sidebar-item" onClick={() => handleLoad(c.id)}>
+              <div className="sidebar-item-title">{c.title}</div>
+              {c.preview && <div className="sidebar-item-preview">{c.preview}</div>}
+              <div className="sidebar-item-meta">{fmt(c.updated_at)} · {c.turn_count} turns</div>
+              <button
+                className="sidebar-item-delete"
+                onClick={(e) => handleDelete(e, c.id)}
+                aria-label="Delete"
+              >
+                <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M2 3.5H11M5 6V10M8 6V10M3.5 3.5V11C3.5 11.5523 3.94772 12 4.5 12H8.5C9.05228 12 9.5 11.5523 9.5 11V3.5M5 3.5V2C5 1.44772 5.44772 1 6 1H7C7.55228 1 8 1.44772 8 2V3.5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              </button>
+            </button>
           ))}
         </div>
-      </div>
+      </aside>
     </div>
   )
 }
