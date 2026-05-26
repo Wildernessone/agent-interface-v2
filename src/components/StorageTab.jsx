@@ -3,14 +3,13 @@ import { supabase } from '../utils/supabase'
 
 const PROVIDERS = [
   { id:"google_drive", name:"Google Drive", icon:"📁", desc:"Connect your Google Drive to save all project outputs automatically", color:"#4285F4" },
-  { id:"dropbox", name:"Dropbox", icon:"📦", desc:"Coming soon", color:"#0061FF", soon:true },
-  { id:"onedrive", name:"OneDrive", icon:"☁️", desc:"Coming soon", color:"#0078D4", soon:true },
 ]
 
 export default function StorageTab({ accent, theme, ss }) {
   const [connections, setConnections] = useState([])
   const [loading, setLoading] = useState(true)
   const [connecting, setConnecting] = useState(null)
+  const [error, setError] = useState(null)
 
   const th = theme || {
     text: "rgba(255,255,255,0.88)",
@@ -25,28 +24,26 @@ export default function StorageTab({ accent, theme, ss }) {
   }, [])
 
   const loadConnections = async () => {
-    try {
-      const { data } = await supabase.from("storage_connections").select("*")
-      setConnections(data || [])
-    } catch(e) { console.error(e) }
+    setError(null)
+    const { data, error: err } = await supabase.from("storage_connections").select("*")
+    if (err) setError("Couldn't load storage connections. Try refreshing.")
+    setConnections(data || [])
     setLoading(false)
   }
 
   const handleConnect = async (provider) => {
-    if (provider.soon) return
+    setError(null)
     setConnecting(provider.id)
-    try {
-      const { data, error } = await supabase.auth.signInWithOAuth({
-        provider: "google",
-        options: {
-          redirectTo: window.location.origin,
-          scopes: "https://www.googleapis.com/auth/drive.file",
-          queryParams: { access_type: "offline", prompt: "consent" }
-        }
-      })
-      if (error) throw error
-    } catch(e) {
-      console.error("Connect error:", e)
+    const { error: err } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: window.location.origin,
+        scopes: "https://www.googleapis.com/auth/drive.file",
+        queryParams: { access_type: "offline", prompt: "consent" }
+      }
+    })
+    if (err) {
+      setError(err.message || "Couldn't start Google sign-in. Check that Google OAuth is enabled in Supabase.")
       setConnecting(null)
     }
   }
@@ -63,6 +60,12 @@ export default function StorageTab({ accent, theme, ss }) {
       <div style={{ fontSize:11, color:th.textMuted, fontFamily:"monospace", marginBottom:16, lineHeight:1.6 }}>
         Connect your cloud storage. All project outputs — images, documents, audio, video — save directly to your storage. You own everything.
       </div>
+
+      {error && (
+        <div style={{ background:"rgba(248,113,113,0.08)", border:"1px solid rgba(248,113,113,0.2)", borderRadius:10, padding:"10px 12px", marginBottom:12 }}>
+          <div style={{ fontSize:11, color:"#F87171", fontFamily:"monospace" }}>{error}</div>
+        </div>
+      )}
 
       {/* Provider cards */}
       {PROVIDERS.map(provider => {

@@ -3,26 +3,8 @@ export function buildSystemPrompt({ activeAgentIds=[], enabledTools={}, mode="co
   const AGENT_NAMES = { claude:"Claude (Anthropic)", gpt:"ChatGPT (OpenAI)", gemini:"Gemini (Google)", grok:"Grok (xAI)" }
   const TOOL_CAPS = {
     dalle:       "generate images from text prompts",
-    midjourney:  "generate cinematic AI images",
-    stability:   "generate images with Stable Diffusion",
-    flux:        "generate ultra-fast AI images",
-    ideogram:    "generate images especially with text in them",
-    runway:      "generate and edit AI video",
-    kling:       "generate realistic video with motion",
-    veo:         "generate cinematic video",
-    pika:        "generate creative short video",
-    seedance:    "generate high-quality video",
-    suno:        "generate full songs with vocals",
-    udio:        "generate high-quality AI music",
-    elevenlabs_music: "generate realistic AI music",
-    mubert:      "generate ambient background music",
-    soundraw:    "generate customizable music tracks",
-    elevenlabs:  "synthesize realistic AI voices",
-    playht:      "clone and synthesize voices",
-    whisper:     "transcribe speech to text",
     perplexity:  "search the web for real-time information",
-    tavily:      "search the web with AI-optimized results",
-    brave:       "search the web privately",
+    elevenlabs:  "synthesize realistic AI voices",
   }
   const otherAgents = activeAgentIds.filter(id => id !== agentId).map(id => AGENT_NAMES[id] || id)
   const lines = []
@@ -73,20 +55,7 @@ export function buildSystemPrompt({ activeAgentIds=[], enabledTools={}, mode="co
 
 const TRIGGER_MAP = {
   dalle:      ["image","picture","photo","draw","design","logo","illustrat","render"],
-  midjourney: ["image","picture","photo","draw","design","logo","illustrat","render"],
-  stability:  ["image","picture","photo","draw","design","logo","illustrat","render"],
-  flux:       ["image","picture","photo","draw","design","logo","illustrat","render"],
-  ideogram:   ["image","picture","photo","draw","design","logo","illustrat","render"],
-  runway:     ["video","animate","animation","clip","film","movie","reel"],
-  kling:      ["video","animate","animation","clip","film","movie","reel"],
-  veo:        ["video","animate","animation","clip","film","movie","reel"],
-  pika:       ["video","animate","animation","clip","film","movie","reel"],
-  seedance:   ["video","animate","animation","clip","film","movie","reel"],
-  suno:       ["song","music","jingle","melody","track","beat","compose"],
-  udio:       ["song","music","jingle","melody","track","beat","compose"],
   perplexity: ["search","latest","current","news","today","recent","find out","look up"],
-  tavily:     ["search","latest","current","news","today","recent","find out","look up"],
-  brave:      ["search","latest","current","news","today","recent","find out","look up"],
 }
 
 export function detectToolIntents(prompt, enabledTools) {
@@ -97,10 +66,7 @@ export function detectToolIntents(prompt, enabledTools) {
     if (!enabled) return
     const triggers = TRIGGER_MAP[toolId]
     if (!triggers) return
-    const category = ["dalle","midjourney","stability","flux","ideogram"].includes(toolId) ? "image"
-      : ["runway","kling","veo","pika","seedance"].includes(toolId) ? "video"
-      : ["suno","udio","mubert","soundraw","elevenlabs_music"].includes(toolId) ? "music"
-      : ["perplexity","tavily","brave"].includes(toolId) ? "search" : toolId
+    const category = toolId === "dalle" ? "image" : toolId === "perplexity" ? "search" : toolId
     if (fired.has(category)) return
     if (triggers.some(t => p.includes(t))) {
       intents.push({ toolId, prompt, category })

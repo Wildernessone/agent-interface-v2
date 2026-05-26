@@ -14,7 +14,7 @@
  * Claude preferred — returns clean JSON.
  */
 
-const PROXY = "https://claude-proxy.jamesreed.workers.dev"
+const PROXY = import.meta.env.VITE_PROXY_URL || "https://claude-proxy.jamesreed.workers.dev"
 
 // ── Model selection ───────────────────────────────────────
 export function selectOrchestrationModel(settings) {
@@ -69,7 +69,6 @@ Be decisive. Be fast. Be accurate.`
       return JSON.parse(full.replace(/```json|```/g, "").trim())
     }
   } catch(e) {
-    console.error("OpenClaw error:", e.message)
     return null
   }
 }
@@ -125,10 +124,8 @@ AGENT CAPABILITIES:
 - grok: current events, contrarian views, direct opinions
 
 TOOL CAPABILITIES:
-- dalle/stability: generates images from text
-- perplexity/tavily/brave: searches web for current info
-- runway/kling/pika: generates video
-- suno/udio/elevenlabs_music: generates music
+- dalle: generates images from text
+- perplexity: searches web for current info
 - elevenlabs: text to speech
 
 YOUR JOB:
@@ -214,10 +211,7 @@ export async function processCorrection(decision, settings, saveMemory) {
       decision.correction.memory_entry,
       "learned"
     )
-    console.log("OpenClaw learned:", decision.correction.memory_entry)
-  } catch(e) {
-    console.error("Failed to save learning:", e)
-  }
+  } catch {}
 }
 
 // ── Setup guides ──────────────────────────────────────────

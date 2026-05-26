@@ -13,21 +13,8 @@ const AGENTS = [
 
 const TOOLS = [
   { id:"dalle",      name:"DALL-E",        category:"Images", placeholder:"sk-proj-...",  desc:"Generate images (uses OpenAI key)" },
-  { id:"stability",  name:"Stable Diffusion", category:"Images", placeholder:"sk-...",   desc:"Open source image generation" },
-  { id:"ideogram",   name:"Ideogram",      category:"Images", placeholder:"ideo-...",     desc:"Best for text in images" },
-  { id:"flux",       name:"FLUX",          category:"Images", placeholder:"bf-...",       desc:"Ultra-fast image generation" },
-  { id:"runway",     name:"Runway Gen-4",  category:"Video",  placeholder:"rw-...",       desc:"AI video generation" },
-  { id:"kling",      name:"Kling",         category:"Video",  placeholder:"kling-...",    desc:"Realistic video with motion" },
-  { id:"veo",        name:"Veo",           category:"Video",  placeholder:"AIza...",      desc:"Google cinematic video" },
-  { id:"pika",       name:"Pika",          category:"Video",  placeholder:"pika-...",     desc:"Fast creative video" },
-  { id:"suno",       name:"Suno",          category:"Music",  placeholder:"suno-...",     desc:"Full songs with vocals" },
-  { id:"udio",       name:"Udio",          category:"Music",  placeholder:"udio-...",     desc:"High quality AI music" },
-  { id:"elevenlabs_music", name:"ElevenLabs Music", category:"Music", placeholder:"el-...", desc:"Realistic AI music" },
-  { id:"elevenlabs", name:"ElevenLabs",    category:"Voice",  placeholder:"el-...",       desc:"Premium AI voice synthesis" },
-  { id:"playht",     name:"Play.ht",       category:"Voice",  placeholder:"play-...",     desc:"Voice cloning" },
   { id:"perplexity", name:"Perplexity",    category:"Search", placeholder:"pplx-...",     desc:"Real-time web search" },
-  { id:"tavily",     name:"Tavily",        category:"Search", placeholder:"tvly-...",     desc:"AI-optimized search" },
-  { id:"brave",      name:"Brave Search",  category:"Search", placeholder:"BSA-...",      desc:"Privacy-first search" },
+  { id:"elevenlabs", name:"ElevenLabs",    category:"Voice",  placeholder:"el-...",       desc:"Premium AI voice synthesis" },
 ]
 
 // Popular ElevenLabs voices with distinct personalities

@@ -16,20 +16,29 @@ const AGENTS = [
   { id:"grok",    name:"Grok",    color:"#E879F9", bg:"rgba(232,121,249,0.1)", border:"rgba(232,121,249,0.25)", avatar:"GR" },
 ]
 
-const CLAUDE_PROXY = import.meta.env.VITE_CLAUDE_PROXY || "https://claude-proxy.jamesreed.workers.dev"
+const PROXY = import.meta.env.VITE_PROXY_URL || "https://claude-proxy.jamesreed.workers.dev"
+
+function classifyError(status, text) {
+  if (status === 401 || status === 403) return "invalid_key"
+  if (status === 429) return "rate_limited"
+  if (status === 402) return "out_of_credits"
+  if (status >= 500) return "service_down"
+  if (status === 0) return "network"
+  return "unknown"
+}
 
 async function streamClaude(key, messages, onChunk, onDone, onError) {
   try {
-    const res = await fetch("https://claude-proxy.jamesreed.workers.dev/claude", {
+    const res = await fetch(`${PROXY}/claude`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-api-key": key },
       body: JSON.stringify({ messages }),
     })
-    if (!res.ok) { const t = await res.text(); console.error("Claude proxy error:", res.status, t); onError?.(res.status, t); onDone(); return }
+    if (!res.ok) { const t = await res.text(); onError?.(res.status, t); onDone(); return }
     const data = await res.json()
-    console.log("Claude response:", JSON.stringify(data).slice(0,200))
-    if (data.error) { console.error("Claude error:", data.error); onError?.(0, data.error?.message || "Claude error"); onDone(); return }
+    if (data.error) { onError?.(0, data.error?.message || "Claude error"); onDone(); return }
     const text = data.content?.[0]?.text || ""
+    if (!text) { onError?.(0, "Empty response from Claude"); onDone(); return }
     const words = text.split(" ")
     let i = 0
     const iv = setInterval(() => {
@@ -42,7 +51,7 @@ async function streamClaude(key, messages, onChunk, onDone, onError) {
 
 async function streamOpenAI(key, messages, onChunk, onDone, onError) {
   try {
-    const res = await fetch("https://claude-proxy.jamesreed.workers.dev/gpt", {
+    const res = await fetch(`${PROXY}/gpt`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${key}` },
       body: JSON.stringify({ messages }),
@@ -71,10 +80,10 @@ async function streamGemini(key, messages, onChunk, onDone, onError) {
     const contents = messages
       .filter(m => m.role !== "system")
       .map(m => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }))
-    const res = await fetch("https://claude-proxy.jamesreed.workers.dev/gemini", {
+    const res = await fetch(`${PROXY}/gemini`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-api-key": key },
-      body: JSON.stringify({ messages }),
+      body: JSON.stringify({ contents }),
     })
     if (!res.ok) { const t = await res.text(); onError?.(res.status, t); onDone(); return }
     const reader = res.body.getReader()
@@ -101,7 +110,7 @@ async function streamGemini(key, messages, onChunk, onDone, onError) {
 
 async function streamGrok(key, messages, onChunk, onDone, onError) {
   try {
-    const res = await fetch("https://claude-proxy.jamesreed.workers.dev/grok", {
+    const res = await fetch(`${PROXY}/grok`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${key}` },
       body: JSON.stringify({ messages }),
@@ -126,7 +135,7 @@ async function streamGrok(key, messages, onChunk, onDone, onError) {
 }
 
 export default function TheInterface() {
-  const { settings, turns, activeAgentId, voiceMode, addTurn, addToolTurn, appendChunk, finishTurn, addErrorTurn, clearTurns, setVoiceMode, saveConversation, conversationId, loadMemory, saveMemory } = useStore()
+  const { settings, turns, activeAgentId, voiceMode, addTurn, addToolTurn, appendChunk, finishTurn, addErrorTurn, addToolErrorTurn, clearTurns, setVoiceMode, saveConversation, conversationId, loadMemory, saveMemory } = useStore()
   
   const handleVoiceToggle = () => {
     // Recreate VoiceEngine with latest settings when toggling on
@@ -185,17 +194,22 @@ export default function TheInterface() {
 
     const selected = targets.includes("all") ? activeAgents : activeAgents.filter(a => targets.includes(a.id))
 
-    // OpenClaw makes all decisions
-    const clawDecision = await orchestrate({
-      userMessage: text,
-      conversationHistory: conversationRef.current,
-      agentResponses: [],
-      enabledAgents: selected.map(a => a.id),
-      enabledTools,
-      memory: agentMemory,
-      settings,
-      voiceMode,
-    })
+    let clawDecision = null
+    try {
+      clawDecision = await orchestrate({
+        userMessage: text,
+        conversationHistory: conversationRef.current,
+        agentResponses: [],
+        enabledAgents: selected.map(a => a.id),
+        enabledTools,
+        memory: agentMemory,
+        settings,
+        voiceMode,
+      })
+    } catch(e) {
+      addErrorTurn("orchestrator", "orchestrator_down")
+      return
+    }
 
     const respondingAgents = clawDecision?.agents_to_respond?.length
       ? selected.filter(a => clawDecision.agents_to_respond.includes(a.id))
@@ -253,7 +267,7 @@ export default function TheInterface() {
             }
           }
           const onError = (status, msg) => {
-            addErrorTurn(agent.id, status === 429 ? "rate_limited" : status === 402 ? "out_of_credits" : "unknown")
+            addErrorTurn(agent.id, classifyError(status, msg))
             resolve()
           }
 
@@ -270,20 +284,29 @@ export default function TheInterface() {
     if (clawDecision?.tool?.should_fire && clawDecision?.tool?.tool_id) {
       setToolsWorking(true)
       try {
-        // Build prompt from OpenClaw decision or agent context
         const agentContext = conversationRef.current
           .filter(m => m.role === "assistant")
           .map(m => m.content).join(" ")
-        const imagePrompt = clawDecision.tool.prompt ||
+        const toolPrompt = clawDecision.tool.prompt ||
           (agentContext.length > 20 ? `${text}. ${agentContext}`.slice(0, 900) : text)
-        const output = await runTool(clawDecision.tool.tool_id, imagePrompt, settings)
+        const output = await runTool(clawDecision.tool.tool_id, toolPrompt, settings)
         addToolTurn({ id: `tool-${clawDecision.tool.tool_id}-${Date.now()}`, type: "tool", output })
       } catch(e) {
-        console.error("Tool error:", e)
+        addToolErrorTurn(clawDecision.tool.tool_id, e.errorType || "unknown", e.message)
       } finally {
         setToolsWorking(false)
       }
     }
+  }
+
+  const toggleTarget = (id) => {
+    if (id === "all") { setTargets(["all"]); return }
+    setTargets(prev => {
+      const without = prev.filter(t => t !== "all" && t !== id)
+      if (prev.includes(id)) return without.length ? without : ["all"]
+      return [...without, id]
+    })
+  }
 
   const toggleVoiceListening = () => {
     if (!voiceRef.current) return
@@ -415,24 +438,31 @@ export default function TheInterface() {
           )
           if (turn.type === "error") {
             const agent = AGENTS.find(a => a.id === turn.agent)
+            const isOrchestrator = turn.agent === "orchestrator"
+            const label = isOrchestrator ? "Orchestrator" : agent?.name
+            const message = (
+              turn.errorType === "rate_limited" ? `${label} hit its rate limit. Wait a moment and retry.` :
+              turn.errorType === "out_of_credits" ? `Your ${label} account is out of credits.` :
+              turn.errorType === "invalid_key" ? `Your ${label} API key isn't working — it may have expired or been revoked.` :
+              turn.errorType === "service_down" ? `${label} is having a service issue. Try again in a moment.` :
+              turn.errorType === "network" ? `Couldn't reach ${label}. Check your connection and retry.` :
+              turn.errorType === "orchestrator_down" ? `The orchestrator couldn't process this message. Retry, or check that at least one agent has a valid key.` :
+              `${label} returned an unexpected error. Retry, or check your API key in Settings.`
+            )
+            const billingUrl = agent?.id==="claude"?"https://console.anthropic.com":agent?.id==="gpt"?"https://platform.openai.com/account/billing":agent?.id==="gemini"?"https://aistudio.google.com/app/plan":"https://console.x.ai"
             return (
               <div key={turn.id} style={{ display:"flex", gap:10 }}>
-                <div style={{ width:32, height:32, borderRadius:"50%", background:agent?.bg, border:`1px solid ${agent?.border}`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, color:agent?.color, flexShrink:0 }}>{agent?.avatar}</div>
+                <div style={{ width:32, height:32, borderRadius:"50%", background:agent?.bg || "rgba(248,113,113,0.1)", border:`1px solid ${agent?.border || "rgba(248,113,113,0.25)"}`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, color:agent?.color || "#F87171", flexShrink:0 }}>{agent?.avatar || "!"}</div>
                 <div style={{ background:"rgba(248,113,113,0.08)", border:"1px solid rgba(248,113,113,0.2)", borderRadius:"4px 12px 12px 12px", padding:"10px 14px" }}>
                   <div>
                     <div style={{ fontSize:11, fontWeight:700, color:"#F87171", fontFamily:"monospace", marginBottom:4 }}>
-                      {agent?.name} isn't responding
+                      {label} isn't responding
                     </div>
-                    <div style={{ fontSize:11, color:"rgba(255,255,255,0.55)", marginBottom:10, lineHeight:1.5 }}>
-                      {turn.errorType === "rate_limited" && `${agent?.name} hit its rate limit. Wait a moment and retry.`}
-                      {turn.errorType === "out_of_credits" && `Your ${agent?.name} account is out of credits. Add credits to continue.`}
-                      {turn.errorType === "invalid_key" && `Your ${agent?.name} API key isn't working — it may have expired.`}
-                      {turn.errorType === "unknown" && `${agent?.name} returned an unexpected error. Check your API key in Settings.`}
-                    </div>
+                    <div style={{ fontSize:11, color:"rgba(255,255,255,0.55)", marginBottom:10, lineHeight:1.5 }}>{message}</div>
                     <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
                       <button onClick={() => sendMessage(turns.filter(t=>t.type==="user").slice(-1)[0]?.text||"")} style={{ padding:"5px 12px", borderRadius:8, background:"rgba(99,102,241,0.15)", border:"1px solid rgba(99,102,241,0.35)", color:"#a5b4fc", fontSize:11, cursor:"pointer", fontFamily:"monospace" }}>↩ Retry</button>
-                      {turn.errorType === "out_of_credits" && (
-                        <a href={agent?.id==="claude"?"https://console.anthropic.com":agent?.id==="gpt"?"https://platform.openai.com/account/billing":agent?.id==="gemini"?"https://aistudio.google.com/app/plan":"https://console.x.ai"} target="_blank" rel="noreferrer" style={{ padding:"5px 12px", borderRadius:8, background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.15)", color:"rgba(255,255,255,0.6)", fontSize:11, cursor:"pointer", fontFamily:"monospace", textDecoration:"none" }}>Add Credits →</a>
+                      {turn.errorType === "out_of_credits" && agent && (
+                        <a href={billingUrl} target="_blank" rel="noreferrer" style={{ padding:"5px 12px", borderRadius:8, background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.15)", color:"rgba(255,255,255,0.6)", fontSize:11, cursor:"pointer", fontFamily:"monospace", textDecoration:"none" }}>Add Credits →</a>
                       )}
                       {turn.errorType === "invalid_key" && (
                         <button onClick={() => setShowSettings(true)} style={{ padding:"5px 12px", borderRadius:8, background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.15)", color:"rgba(255,255,255,0.6)", fontSize:11, cursor:"pointer", fontFamily:"monospace" }}>Fix Key in Settings →</button>
@@ -443,6 +473,17 @@ export default function TheInterface() {
                     </div>
                   </div>
                 </div>
+              </div>
+            )
+          }
+          if (turn.type === "tool_error") {
+            return (
+              <div key={turn.id} style={{ padding:"12px 14px", background:"rgba(248,113,113,0.08)", border:"1px solid rgba(248,113,113,0.2)", borderRadius:12 }}>
+                <div style={{ fontSize:10, color:"#F87171", fontFamily:"monospace", marginBottom:4, letterSpacing:"0.07em" }}>⚠ {turn.tool?.toUpperCase()} FAILED</div>
+                <div style={{ fontSize:12, color:"rgba(255,255,255,0.7)", lineHeight:1.5, marginBottom:8 }}>{turn.message}</div>
+                {turn.errorType === "missing_key" && (
+                  <button onClick={() => setShowSettings(true)} style={{ padding:"5px 12px", borderRadius:8, background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.15)", color:"rgba(255,255,255,0.6)", fontSize:11, cursor:"pointer", fontFamily:"monospace" }}>Open Settings →</button>
+                )}
               </div>
             )
           }
@@ -512,57 +553,56 @@ export default function TheInterface() {
     </div>
   )
 }
+
+function toolError(toolId, errorType, message) {
+  const e = new Error(message || `${toolId} failed`)
+  e.errorType = errorType
+  e.toolId = toolId
+  return e
 }
 
 async function runTool(toolId, prompt, settings) {
   const gptKey = settings?.agents?.gpt?.key || ''
-  const claudeKey = settings?.agents?.claude?.key || ''
-
-  console.log('runTool called:', toolId, 'gptKey length:', gptKey.length, 'first 8:', gptKey.slice(0,8))
 
   if (toolId === "dalle") {
-    if (!gptKey) return { type:"image", url:"https://images.unsplash.com/photo-1524024973431-2ad916746881?w=800&q=80", prompt, tool:"dalle", mock:true }
-    try {
-      // Route through Cloudflare proxy to avoid CORS
-      const stabilityKey = settings?.tools?.stability?.key || ""
-      const headers = { "Content-Type":"application/json" }
-      if (gptKey) headers["Authorization"] = `Bearer ${gptKey}`
-      if (stabilityKey) headers["x-stability-key"] = stabilityKey
-      const res = await fetch("https://claude-proxy.jamesreed.workers.dev/dalle", {
-        method:"POST",
-        headers,
-        body: JSON.stringify({ prompt: prompt.slice(0,900) }),
-      })
-      const rawText = await res.text()
-      console.log("DALL-E raw:", rawText.slice(0,500))
-      let data
-      try { data = JSON.parse(rawText) } catch(e) { console.error("Parse error:", e); return { type:"image", url:"https://images.unsplash.com/photo-1524024973431-2ad916746881?w=800&q=80", prompt, tool:"dalle", mock:true } }
-      if (data.error || data.details) { console.error("Image failed:", JSON.stringify(data)); return { type:"image", url:"https://images.unsplash.com/photo-1524024973431-2ad916746881?w=800&q=80", prompt, tool:"dalle", mock:true } }
-      const b64 = data.data?.[0]?.b64_json
-      const imgUrl = data.data?.[0]?.url
-      console.log("model used:", data.model_used, "b64:", !!b64, "url:", !!imgUrl)
-      if (b64) return { type:"image", url:`data:image/png;base64,${b64}`, prompt, tool:"dalle" }
-      if (imgUrl) return { type:"image", url:imgUrl, prompt, tool:"dalle" }
-      return { type:"image", url:"https://images.unsplash.com/photo-1524024973431-2ad916746881?w=800&q=80", prompt, tool:"dalle", mock:true }
-    } catch(e) {
-      console.error("DALL-E fetch error:", e)
-      return { type:"image", url:"https://images.unsplash.com/photo-1524024973431-2ad916746881?w=800&q=80", prompt, tool:"dalle", mock:true }
+    if (!gptKey) throw toolError("dalle", "missing_key", "DALL-E needs an OpenAI key — add it in Settings → Agents → ChatGPT.")
+    const headers = { "Content-Type": "application/json", "Authorization": `Bearer ${gptKey}` }
+    const res = await fetch(`${PROXY}/dalle`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ prompt: prompt.slice(0, 900) }),
+    })
+    if (!res.ok) {
+      const t = await res.text().catch(() => "")
+      throw toolError("dalle", classifyError(res.status, t), t || `DALL-E returned ${res.status}`)
     }
+    let data
+    try { data = await res.json() } catch { throw toolError("dalle", "bad_response", "DALL-E returned a malformed response.") }
+    if (data.error) throw toolError("dalle", classifyError(0, data.error), data.error?.message || "DALL-E error")
+    const b64 = data.data?.[0]?.b64_json
+    const imgUrl = data.data?.[0]?.url
+    if (b64) return { type: "image", url: `data:image/png;base64,${b64}`, prompt, tool: "dalle" }
+    if (imgUrl) return { type: "image", url: imgUrl, prompt, tool: "dalle" }
+    throw toolError("dalle", "bad_response", "DALL-E returned no image.")
   }
 
   if (toolId === "perplexity") {
     const key = settings?.tools?.perplexity?.key || ''
-    if (!key) return { type:"search", text:`Search results for: "${prompt}" — add Perplexity key in Settings → Tools`, citations:[], tool:"perplexity", mock:true }
-    try {
-      const res = await fetch("https://api.perplexity.ai/chat/completions", {
-        method:"POST",
-        headers:{"Content-Type":"application/json","Authorization":`Bearer ${key}`},
-        body: JSON.stringify({ model:"llama-3.1-sonar-small-128k-online", messages:[{role:"user",content:prompt}] }),
-      })
-      const data = await res.json()
-      return { type:"search", text:data.choices?.[0]?.message?.content, citations:data.citations||[], tool:"perplexity" }
-    } catch(e) { return { type:"search", text:"Search failed", citations:[], tool:"perplexity", mock:true } }
+    if (!key) throw toolError("perplexity", "missing_key", "Perplexity needs an API key — add it in Settings → Tools → Search.")
+    const res = await fetch("https://api.perplexity.ai/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${key}` },
+      body: JSON.stringify({ model: "llama-3.1-sonar-small-128k-online", messages: [{ role: "user", content: prompt }] }),
+    })
+    if (!res.ok) {
+      const t = await res.text().catch(() => "")
+      throw toolError("perplexity", classifyError(res.status, t), t || `Perplexity returned ${res.status}`)
+    }
+    const data = await res.json()
+    const text = data.choices?.[0]?.message?.content
+    if (!text) throw toolError("perplexity", "bad_response", "Perplexity returned no content.")
+    return { type: "search", text, citations: data.citations || [], tool: "perplexity" }
   }
 
-  return { type:"text", text:`Tool: ${toolId}`, mock:true, tool:toolId }
+  throw toolError(toolId, "not_implemented", `The ${toolId} tool isn't available yet.`)
 }

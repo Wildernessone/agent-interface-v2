@@ -6,7 +6,6 @@ const DEFAULT_SETTINGS = {
   accent: '#6366f1',
   fontSize: 'Medium',
   plan: 'free',
-  trialDaysLeft: 15,
   agents: {
     claude:  { enabled: true,  key: '' },
     gpt:     { enabled: true,  key: '' },
@@ -15,21 +14,8 @@ const DEFAULT_SETTINGS = {
   },
   tools: {
     dalle:      { enabled: false, key: '' },
-    stability:  { enabled: false, key: '' },
-    ideogram:   { enabled: false, key: '' },
-    flux:       { enabled: false, key: '' },
-    runway:     { enabled: false, key: '' },
-    kling:      { enabled: false, key: '' },
-    veo:        { enabled: false, key: '' },
-    pika:       { enabled: false, key: '' },
-    suno:       { enabled: false, key: '' },
-    udio:       { enabled: false, key: '' },
-    elevenlabs_music: { enabled: false, key: '' },
-    elevenlabs: { enabled: false, key: '' },
-    playht:     { enabled: false, key: '' },
     perplexity: { enabled: false, key: '' },
-    tavily:     { enabled: false, key: '' },
-    brave:      { enabled: false, key: '' },
+    elevenlabs: { enabled: false, key: '' },
   },
   voiceModeEnabled: false,
   agentVoices: {},
@@ -70,7 +56,6 @@ export const useStore = create((set, get) => ({
             accent: s?.accent || state.settings.accent,
             fontSize: s?.font_size || state.settings.fontSize,
             plan: s?.plan || state.settings.plan,
-            trialDaysLeft: s?.trial_days_left ?? state.settings.trialDaysLeft,
             agents: {
               claude:  { enabled: s?.enabled_agents?.claude?.enabled ?? true,  key: k?.claude_key  || '' },
               gpt:     { enabled: s?.enabled_agents?.gpt?.enabled     ?? true,  key: k?.gpt_key     || '' },
@@ -80,16 +65,12 @@ export const useStore = create((set, get) => ({
             tools: {
               ...state.settings.tools,
               ...(s?.enabled_tools || {}),
-              suno:       { ...(s?.enabled_tools?.suno       || state.settings.tools.suno),       key: k?.suno_key        || '' },
               elevenlabs: { ...(s?.enabled_tools?.elevenlabs || state.settings.tools.elevenlabs), key: k?.elevenlabs_key  || '' },
               perplexity: { ...(s?.enabled_tools?.perplexity || state.settings.tools.perplexity), key: k?.perplexity_key  || '' },
               stability:  { ...(s?.enabled_tools?.stability  || state.settings.tools.stability),  key: k?.stability_key   || '' },
               tavily:     { ...(s?.enabled_tools?.tavily     || state.settings.tools.tavily),     key: k?.tavily_key      || '' },
               brave:      { ...(s?.enabled_tools?.brave      || state.settings.tools.brave),      key: k?.brave_key       || '' },
-              playht:     { ...(s?.enabled_tools?.playht     || state.settings.tools.playht),     key: k?.playht_key      || '' },
-              udio:       { ...(s?.enabled_tools?.udio       || state.settings.tools.udio),       key: k?.udio_key        || '' },
               dalle:      { ...(s?.enabled_tools?.dalle      || state.settings.tools.dalle),      key: '' },
-              runway:     { ...(s?.enabled_tools?.runway     || state.settings.tools.runway),     key: k?.runway_key      || '' },
             },
           },
           settingsLoaded: true,
@@ -139,8 +120,6 @@ export const useStore = create((set, get) => ({
           stability_key:  settings.tools.stability?.key || '',
           tavily_key:     settings.tools.tavily?.key || '',
           brave_key:      settings.tools.brave?.key || '',
-          playht_key:     settings.tools.playht?.key || '',
-          udio_key:       settings.tools.udio?.key || '',
           updated_at: new Date().toISOString(),
         }, { onConflict: 'user_id' }),
       ])
@@ -161,6 +140,7 @@ export const useStore = create((set, get) => ({
   finishTurn: () => set({ activeAgentId: null }),
   addToolTurn: (turn) => set(state => ({ turns: [...state.turns, turn] })), // doesn't set activeAgentId
   addErrorTurn: (agentId, errorType) => set(state => ({ turns: [...state.turns, { id: `err-${agentId}-${Date.now()}`, type: 'error', agent: agentId, errorType }], activeAgentId: null })),
+  addToolErrorTurn: (tool, errorType, message) => set(state => ({ turns: [...state.turns, { id: `tool-err-${tool}-${Date.now()}`, type: 'tool_error', tool, errorType, message }] })),
   clearTurns: () => set({ turns: [], activeAgentId: null, conversationId: null }),
 
   saveConversation: async (turns) => {
