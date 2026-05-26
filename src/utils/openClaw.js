@@ -1,17 +1,13 @@
 /**
- * AGENT INTERFACE — OpenClaw v2
+ * AGENT INTERFACE — OpenClaw v3
  * ================================
  * The compiler at the heart of Agent Interface.
- * Reads roundtable discussions and decides:
- * - Which agents should respond
- * - How many rounds
- * - What tools to fire and with what prompt
- * - Where outputs go (chat/project/storage)
- * - What the user is correcting
- * - What to learn and remember
+ * Reads the roundtable, decides who talks, what tools fire, and what to build.
  *
- * Runs on whatever tokens the user already has.
- * Claude preferred — returns clean JSON.
+ * Design notes for v3:
+ *  - JSON extraction is now robust to LLMs adding prose before/after the JSON.
+ *  - Prompt is restructured: hard rules first, examples second.
+ *  - We surface OpenClaw's reasoning back to the UI so the user can see what it decided.
  */
 
 import { supabase } from './supabase'
@@ -23,7 +19,7 @@ async function authHeader() {
   return session?.access_token ? { 'x-supabase-auth': `Bearer ${session.access_token}` } : {}
 }
 
-// ── Model selection ───────────────────────────────────────
+// ── Model selection (Claude preferred, GPT next, Gemini fallback) ─────
 export function selectOrchestrationModel(settings) {
   if (settings?.agents?.claude?.key) return { provider: "claude", key: settings.agents.claude.key }
   if (settings?.agents?.gpt?.key) return { provider: "gpt", key: settings.agents.gpt.key }
@@ -31,78 +27,203 @@ export function selectOrchestrationModel(settings) {
   return null
 }
 
-// ── Core OpenClaw call ────────────────────────────────────
-async function callOpenClaw(prompt, modelConfig) {
-  if (!modelConfig) return null
+// ── Robust JSON extraction ────────────────────────────────────────────
+// Finds the first balanced { ... } in the text. Strips markdown fences.
+function extractJson(text) {
+  if (!text) return null
+  const cleaned = text.replace(/```json\s*/gi, "").replace(/```/g, "").trim()
+  // Find first '{' and walk forward tracking depth to find the matching '}'
+  const start = cleaned.indexOf("{")
+  if (start === -1) return null
+  let depth = 0
+  let inString = false
+  let escape = false
+  for (let i = start; i < cleaned.length; i++) {
+    const c = cleaned[i]
+    if (inString) {
+      if (escape) { escape = false; continue }
+      if (c === "\\") { escape = true; continue }
+      if (c === '"') inString = false
+      continue
+    }
+    if (c === '"') { inString = true; continue }
+    if (c === "{") depth++
+    else if (c === "}") {
+      depth--
+      if (depth === 0) {
+        try { return JSON.parse(cleaned.slice(start, i + 1)) }
+        catch { return null }
+      }
+    }
+  }
+  return null
+}
 
-  const system = `You are OpenClaw — the compiler intelligence inside Agent Interface.
-You read roundtable discussions and decide what happens next.
-You output ONLY valid JSON. No explanation. No markdown. Just JSON.
-Be decisive. Be fast. Be accurate.`
+// ── Call the orchestrator model ───────────────────────────────────────
+async function callOpenClaw(prompt, modelConfig) {
+  if (!modelConfig) return { decision: null, raw: null, error: "no_model" }
+
+  const system =
+    "You are OpenClaw — the compiler inside Agent Interface. " +
+    "Your only job is to return ONE JSON object that follows the schema exactly. " +
+    "Begin your response with `{` and end with `}`. No prose. No markdown. No code fences."
 
   try {
+    let raw = ""
+
     if (modelConfig.provider === "claude") {
       const res = await fetch(`${PROXY}/claude`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-api-key": modelConfig.key, ...(await authHeader()) },
         body: JSON.stringify({
-          messages: [{ role: "user", content: `${system}\n\n${prompt}` }]
+          messages: [{ role: "user", content: `${system}\n\n${prompt}` }],
         }),
       })
       const data = await res.json()
-      const text = data.content?.[0]?.text || ""
-      return JSON.parse(text.replace(/```json|```/g, "").trim())
+      if (!res.ok || data.error) return { decision: null, raw: data, error: `claude_${res.status}` }
+      raw = data.content?.[0]?.text || ""
     }
 
-    if (modelConfig.provider === "gemini") {
-      const res = await fetch(`${PROXY}/gemini`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-api-key": modelConfig.key, ...(await authHeader()) },
-        body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: `${system}\n\n${prompt}` }] }] }),
-      })
-      const reader = res.body.getReader()
-      const dec = new TextDecoder()
-      let buf = "", full = ""
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buf += dec.decode(value, { stream: true })
-        const lines = buf.split("\n"); buf = lines.pop()
-        for (const l of lines) {
-          if (!l.startsWith("data: ")) continue
-          try { const d = JSON.parse(l.slice(6)); const t = d.candidates?.[0]?.content?.parts?.[0]?.text; if (t) full += t } catch {}
-        }
-      }
-      return JSON.parse(full.replace(/```json|```/g, "").trim())
-    }
-
-    if (modelConfig.provider === "gpt") {
+    else if (modelConfig.provider === "gpt") {
       const res = await fetch(`${PROXY}/gpt`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${modelConfig.key}`, ...(await authHeader()) },
         body: JSON.stringify({ messages: [{ role: "user", content: `${system}\n\n${prompt}` }] }),
       })
-      const reader = res.body.getReader()
-      const dec = new TextDecoder()
-      let buf = "", full = ""
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buf += dec.decode(value, { stream: true })
-        const lines = buf.split("\n"); buf = lines.pop()
-        for (const l of lines) {
-          if (!l.startsWith("data: ") || l.includes("[DONE]")) continue
-          try { const d = JSON.parse(l.slice(6)); const c = d.choices?.[0]?.delta?.content; if (c) full += c } catch {}
-        }
-      }
-      return JSON.parse(full.replace(/```json|```/g, "").trim())
+      raw = await streamToText(res, "gpt")
     }
-  } catch(e) {
-    return null
+
+    else if (modelConfig.provider === "gemini") {
+      const res = await fetch(`${PROXY}/gemini`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-api-key": modelConfig.key, ...(await authHeader()) },
+        body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: `${system}\n\n${prompt}` }] }] }),
+      })
+      raw = await streamToText(res, "gemini")
+    }
+
+    const decision = extractJson(raw)
+    return { decision, raw, error: decision ? null : "parse_failed" }
+  } catch (e) {
+    return { decision: null, raw: null, error: e.message }
   }
 }
 
-// ── MAIN ORCHESTRATE ──────────────────────────────────────
+async function streamToText(res, kind) {
+  const reader = res.body.getReader()
+  const dec = new TextDecoder()
+  let buf = "", full = ""
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buf += dec.decode(value, { stream: true })
+    const lines = buf.split("\n"); buf = lines.pop()
+    for (const l of lines) {
+      if (!l.startsWith("data: ")) continue
+      if (l.includes("[DONE]")) continue
+      try {
+        const d = JSON.parse(l.slice(6))
+        if (kind === "gemini") {
+          const t = d.candidates?.[0]?.content?.parts?.[0]?.text
+          if (t) full += t
+        } else {
+          const c = d.choices?.[0]?.delta?.content
+          if (c) full += c
+        }
+      } catch {}
+    }
+  }
+  return full
+}
+
+// ── Build the orchestrator prompt ─────────────────────────────────────
+function buildOrchestratorPrompt({
+  userMessage,
+  agentSummary,
+  toolList,
+  memorySummary,
+  enabledAgents,
+  activeProject,
+  isCorrection,
+  isBuildSignal,
+  hasPriorDiscussion,
+  voiceMode,
+}) {
+  return `
+INPUT
+=====
+USER MESSAGE: "${userMessage}"
+PRIOR AGENT DISCUSSION: ${hasPriorDiscussion ? "yes" : "none"}
+EXPLICIT BUILD APPROVAL DETECTED: ${isBuildSignal ? "yes" : "no"}
+IS CORRECTION: ${isCorrection}
+VOICE MODE: ${voiceMode}
+
+AGENTS AVAILABLE: ${enabledAgents.join(", ") || "none"}
+TOOLS AVAILABLE: ${toolList || "none"}
+ACTIVE PROJECT: ${activeProject?.name || "none"}
+
+USER MEMORY:
+${memorySummary || "none"}
+
+WHAT AGENTS SAID JUST NOW:
+${agentSummary || "(nothing yet — first message in this thread)"}
+
+DECISION TREE (apply in order — first match wins)
+================================================
+1. If TOOLS AVAILABLE includes a search tool AND the user asked a search question
+   (e.g. "search for X", "what's the latest on Y", "find me Z right now"):
+     → mode = "build"
+     → plan = [{tool: <search tool>, prompt: <topic to search>}]
+     → agents_to_respond = []
+
+2. If EXPLICIT BUILD APPROVAL DETECTED is yes AND PRIOR AGENT DISCUSSION is yes:
+     → mode = "build"
+     → plan = a real list of {tool, prompt, label} steps, synthesized from
+       the agent discussion. Use only tools that appear in TOOLS AVAILABLE.
+     → agents_to_respond = []
+     → Examples of what to put in plan:
+       • image request → [{tool:"dalle", prompt:"<final detailed image prompt>", label:"Image"}]
+         (prefer dalle, fall back to stability or ideogram if dalle unavailable)
+       • 30-second ad → [
+            {tool:"elevenlabs", prompt:"<final voiceover script>", label:"Voiceover"},
+            {tool:"suno",       prompt:"<music vibe description>", label:"Music"},
+            {tool:"runway",     prompt:"<shot-by-shot description>", label:"Video"}
+         ]
+
+3. Otherwise:
+     → mode = "discuss"
+     → plan = []
+     → agents_to_respond = the subset of AGENTS AVAILABLE whose strengths fit:
+         - claude: nuanced reasoning, writing, strategy, ethics
+         - gpt: code, structured output, technical
+         - gemini: research, real-time data, multimodal
+         - grok: current events, contrarian takes, direct opinions
+     → rounds = 1 for simple Q&A, 2 for back-and-forth, 3 for full debate
+     → Voice mode: keep replies short (response_mode = "concise")
+
+OUTPUT (return EXACTLY this JSON shape — no preface, no fence, no trailing text):
+{
+  "mode": "discuss" | "build",
+  "agents_to_respond": ["claude", "gpt"],
+  "rounds": 1,
+  "response_mode": "concise" | "balanced" | "detailed",
+  "plan": [
+    { "tool": "<tool_id>", "prompt": "<tool prompt>", "label": "<short label>" }
+  ],
+  "correction": {
+    "detected": false,
+    "what_was_wrong": null,
+    "what_user_wants": null,
+    "save_to_memory": false,
+    "memory_entry": null
+  },
+  "voice_response_chars": 300,
+  "reasoning": "one sentence: why this mode and these agents/tools"
+}
+`.trim()
+}
+
+// ── MAIN ORCHESTRATE ──────────────────────────────────────────────────
 export async function orchestrate({
   userMessage,
   conversationHistory = [],
@@ -117,139 +238,85 @@ export async function orchestrate({
   const modelConfig = selectOrchestrationModel(settings)
 
   const agentSummary = agentResponses
-    .map(r => `${r.agent.toUpperCase()}: ${r.text?.slice(0, 400)}`)
+    .map(r => `${r.agent?.toUpperCase()}: ${(r.text || "").slice(0, 400)}`)
     .join("\n\n")
 
   const toolList = Object.entries(enabledTools)
-    .filter(([,v]) => v).map(([id]) => id).join(", ") || "none"
+    .filter(([, v]) => v)
+    .map(([id]) => id)
+    .join(", ")
 
   const memorySummary = memory.slice(0, 5)
-    .map(m => `[${m.title}]: ${m.content?.slice(0, 150)}`)
-    .join("\n") || "none"
+    .map(m => `[${m.title}]: ${(m.content || "").slice(0, 150)}`)
+    .join("\n")
 
-  // Detect if this is a correction
   const correctionPhrases = ["that's not what i meant", "no i wanted", "wrong", "not right", "try again", "that's not", "i said", "i meant", "actually"]
   const isCorrection = correctionPhrases.some(p => userMessage.toLowerCase().includes(p))
 
-  // Detect build-mode signal — user is APPROVING / triggering execution
-  // (kept narrow so 'make me an image of X' does NOT trigger; that's a discuss request)
   const buildSignals = [
     "build it", "build this", "let's build", "go build",
     "ship it", "let's ship", "go for it", "let's go",
     "do it now", "yes do it", "yes build", "yes make it",
     "perfect, build", "great, build", "ok build", "let's make this",
-    "go ahead and build", "fire the tools",
+    "go ahead and build", "fire the tools", "make it", "do it",
   ]
-  const isBuildSignal = buildSignals.some(p => userMessage.toLowerCase().includes(p))
+  const lower = userMessage.toLowerCase()
+  const isBuildSignal = buildSignals.some(p => lower.includes(p))
+  const hasPriorDiscussion = agentResponses.length > 0
 
-  const prompt = `
-USER MESSAGE: "${userMessage}"
-IS CORRECTION: ${isCorrection}
-IS BUILD SIGNAL: ${isBuildSignal}
-VOICE MODE: ${voiceMode}
-
-WHAT AGENTS SAID:
-${agentSummary || "No agent responses yet — this is the first message"}
-
-AVAILABLE AGENTS: ${enabledAgents.join(", ")}
-AVAILABLE TOOLS: ${toolList}
-ACTIVE PROJECT: ${activeProject?.name || "none"}
-
-USER MEMORY CONTEXT:
-${memorySummary}
-
-AGENT CAPABILITIES (use strengths, skip weaknesses):
-- claude: nuanced reasoning, careful writing, strategy, ethics, ambiguity, long-form thinking
-- gpt: code, technical structure, structured output, image prompting
-- gemini: research, real-time data, Google ecosystem, multimodal
-- grok: current events, contrarian takes, direct opinions, internet culture
-
-TOOL CAPABILITIES:
-- dalle, stability, ideogram: generate images from text
-- runway: generate video from text/image (async, takes 30-90s)
-- suno: generate full songs with vocals (async, takes 30-90s)
-- elevenlabs: text-to-speech narration / voiceover
-- perplexity, tavily: search the web for current info
-
-YOUR JOB:
-1. Pick the agents whose STRENGTHS fit the topic. Skip the weak ones. Don't fire all four unless the topic genuinely needs all perspectives.
-2. Decide how many rounds (1=simple Q&A, 2=needs back-and-forth, 3=full debate)
-3. Decide if this is DISCUSSION mode (agents talk, no tools) or BUILD mode (agents already discussed, user is approving — fire tools).
-4. If BUILD mode: produce a PLAN — an ordered list of tools to fire, with the right prompt for each. Multi-step is encouraged (e.g. ad = script → voice → music → video).
-5. Use prior agent input to write better tool prompts. Synthesize what they agreed on.
-6. If correction, note what to learn.
-7. Voice mode = keep replies extremely short.
-
-MODE RULES (when to talk vs. when to fire tools):
-
-DEFAULT: mode="discuss" with plan=[]. Let the agents talk first.
-
-Creative requests ("make me an image of X", "draw a logo", "write me a song about Y", "design a poster", "build me a 30s ad")
-  → mode="discuss", plan=[]
-  → Agents propose: composition, mood, style, script, music vibe, etc.
-  → Wait for the user to approve before firing tools.
-
-Search / lookup requests ("search for X", "find latest news about Y", "what is Z right now")
-  → mode="build" with a single search tool in plan=[]
-  → No discussion needed; user wants facts now.
-
-Explicit build approval (IS BUILD SIGNAL is true) AND there has been prior discussion
-  → mode="build" with a full plan based on what was discussed.
-  → Synthesize the discussion into great tool prompts.
-
-If IS BUILD SIGNAL is true but there's NO prior discussion
-  → Still mode="discuss" so agents propose first. The user can then approve.
-
-Metaphor guard: "paint a picture of life", "draw conclusions" — do NOT fire tools.
-
-For a 30s ad after approval: plan = [
-  {tool:"elevenlabs", prompt:"the voiceover script in plain text"},
-  {tool:"suno",       prompt:"background music style description"},
-  {tool:"runway",     prompt:"shot-by-shot video description"}
-]
-
-Only include tools that appear in AVAILABLE TOOLS.
-
-OUTPUT EXACT JSON (no other text):
-{
-  "mode": "discuss",
-  "agents_to_respond": ["claude"],
-  "skip_agents": ["gpt", "gemini", "grok"],
-  "skip_reason": "why skipped",
-  "rounds": 1,
-  "response_mode": "concise",
-  "plan": [],
-  "correction": {
-    "detected": false,
-    "what_was_wrong": null,
-    "what_user_wants": null,
-    "save_to_memory": false,
-    "memory_entry": null
-  },
-  "voice_response_chars": 300,
-  "reasoning": "one line"
-}
-
-Each plan entry is { "tool": "<tool_id>", "prompt": "<the prompt for that tool>", "label": "<short label like 'Voiceover' or 'Background music'>" }.
-`
+  const prompt = buildOrchestratorPrompt({
+    userMessage,
+    agentSummary,
+    toolList,
+    memorySummary,
+    enabledAgents,
+    activeProject,
+    isCorrection,
+    isBuildSignal,
+    hasPriorDiscussion,
+    voiceMode,
+  })
 
   if (!modelConfig) {
-    return defaultDecision(enabledAgents, voiceMode)
+    return { ...defaultDecision(enabledAgents, voiceMode), reasoning: "No orchestrator model configured — defaulted to discuss." }
   }
 
-  const decision = await callOpenClaw(prompt, modelConfig)
-  if (!decision) return defaultDecision(enabledAgents, voiceMode)
+  const { decision, raw, error } = await callOpenClaw(prompt, modelConfig)
 
-  // Ensure agents_to_respond only includes enabled agents
-  if (decision.agents_to_respond) {
+  // Log raw output for debugging (visible in browser console)
+  if (raw) console.log("[OpenClaw]", raw.slice(0, 600))
+  if (error) console.warn("[OpenClaw error]", error)
+
+  if (!decision) {
+    return { ...defaultDecision(enabledAgents, voiceMode), reasoning: `OpenClaw fallback — ${error || "no decision"}.` }
+  }
+
+  // Filter agents_to_respond to enabled agents
+  if (Array.isArray(decision.agents_to_respond)) {
     decision.agents_to_respond = decision.agents_to_respond.filter(a => enabledAgents.includes(a))
-    if (decision.agents_to_respond.length === 0) decision.agents_to_respond = enabledAgents
+    if (decision.mode !== "build" && decision.agents_to_respond.length === 0) {
+      decision.agents_to_respond = enabledAgents
+    }
+  }
+
+  // Filter plan to enabled tools only
+  if (Array.isArray(decision.plan)) {
+    decision.plan = decision.plan.filter(step => step?.tool && enabledTools?.[step.tool])
+  } else {
+    decision.plan = []
+  }
+
+  // Sanity: if mode is "build" but plan is empty after filtering, fall back to discuss
+  if (decision.mode === "build" && decision.plan.length === 0) {
+    decision.mode = "discuss"
+    decision.agents_to_respond = decision.agents_to_respond?.length ? decision.agents_to_respond : enabledAgents
+    decision.reasoning = (decision.reasoning || "") + " (no usable tool in plan — switched to discuss)"
   }
 
   return decision
 }
 
-// ── Default when OpenClaw unavailable ─────────────────────
+// ── Fallback decision ─────────────────────────────────────────────────
 function defaultDecision(enabledAgents, voiceMode) {
   return {
     mode: "discuss",
@@ -260,11 +327,11 @@ function defaultDecision(enabledAgents, voiceMode) {
     plan: [],
     correction: { detected: false },
     voice_response_chars: voiceMode ? 200 : 500,
-    reasoning: "Default — OpenClaw unavailable",
+    reasoning: "Default fallback",
   }
 }
 
-// ── Learn from correction ─────────────────────────────────
+// ── Learn from correction ─────────────────────────────────────────────
 export async function processCorrection(decision, settings, saveMemory) {
   if (!decision?.correction?.detected) return
   if (!decision.correction.save_to_memory) return
@@ -279,7 +346,7 @@ export async function processCorrection(decision, settings, saveMemory) {
   } catch {}
 }
 
-// ── Setup guides ──────────────────────────────────────────
+// ── Setup guides ──────────────────────────────────────────────────────
 export const SETUP_GUIDES = {
   anthropic:    { name:"Claude",          url:"https://console.anthropic.com/api-keys",         keyPrefix:"sk-ant-" },
   openai:       { name:"ChatGPT",         url:"https://platform.openai.com/api-keys",            keyPrefix:"sk-proj-" },
@@ -290,7 +357,7 @@ export const SETUP_GUIDES = {
   perplexity:   { name:"Perplexity",      url:"https://www.perplexity.ai/settings/api",          keyPrefix:"pplx-" },
 }
 
-// ── Diagnose errors ───────────────────────────────────────
+// ── Diagnose errors ───────────────────────────────────────────────────
 export function diagnoseError(agentId, status) {
   const messages = {
     401: {
@@ -312,7 +379,7 @@ export function diagnoseError(agentId, status) {
   return messages[status]?.[agentId] || { msg: `${agentId} returned an error. Check your API key in Settings.`, fix: null }
 }
 
-// ── Proactive notices ─────────────────────────────────────
+// ── Proactive notices ─────────────────────────────────────────────────
 export function getProactiveNotices(settings) {
   const notices = []
   const agents = settings?.agents || {}

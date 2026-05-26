@@ -234,6 +234,17 @@ export default function TheInterface() {
       return
     }
 
+    // Surface OpenClaw's decision in the thread so the user sees what it's doing
+    if (clawDecision?.reasoning || clawDecision?.mode) {
+      addTurn({
+        id: `claw-${Date.now()}`,
+        type: "claw",
+        mode: clawDecision.mode || "discuss",
+        reasoning: clawDecision.reasoning || "",
+        plan: clawDecision.plan || [],
+      })
+    }
+
     const isBuildMode = clawDecision?.mode === "build"
     const respondingAgents = isBuildMode
       ? []
@@ -459,6 +470,17 @@ export default function TheInterface() {
           if (turn.type === "user") return (
             <div key={turn.id} className="ai-turn ai-turn--user">
               <div className="ai-user-bubble">{turn.text}</div>
+            </div>
+          )
+          if (turn.type === "claw") return (
+            <div key={turn.id} className="ai-claw">
+              <span className={`ai-claw-tag ai-claw-tag--${turn.mode}`}>OpenClaw · {turn.mode}</span>
+              <span className="ai-claw-text">{turn.reasoning}</span>
+              {turn.plan?.length > 0 && (
+                <span className="ai-claw-plan">
+                  → firing {turn.plan.map(s => s.label || s.tool).join(", ")}
+                </span>
+              )}
             </div>
           )
           if (turn.type === "tool") return (
