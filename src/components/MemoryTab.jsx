@@ -3,15 +3,15 @@ import { useStore } from '../store/useStore'
 import { supabase } from '../utils/supabase'
 
 const MEMORY_TYPES = [
-  { id:"about",    icon:"👤", label:"About Me",        hint:"Who you are, what you do, your role" },
-  { id:"business", icon:"🏢", label:"Business",         hint:"Company overview, target customer, industry" },
-  { id:"brand",    icon:"🎨", label:"Brand & Style",    hint:"Voice, colors, design preferences, tone" },
-  { id:"prefs",    icon:"⚙️", label:"Preferences",      hint:"How you like things done, formats you prefer" },
-  { id:"context",  icon:"📚", label:"Background",       hint:"Past AI exports, trained context, history" },
-  { id:"links",    icon:"🔗", label:"Resources",        hint:"Websites, docs, references agents should know" },
+  { id:"about",    label:"About Me",     hint:"Who you are, what you do, your role" },
+  { id:"business", label:"Business",     hint:"Company overview, target customer, industry" },
+  { id:"brand",    label:"Brand & Style", hint:"Voice, colors, design preferences, tone" },
+  { id:"prefs",    label:"Preferences",  hint:"How you like things done, formats you prefer" },
+  { id:"context",  label:"Background",   hint:"Past AI exports, trained context, history" },
+  { id:"links",    label:"Resources",    hint:"Websites, docs, references agents should know" },
 ]
 
-export default function MemoryTab({ accent, theme }) {
+export default function MemoryTab() {
   const [memories, setMemories] = useState([])
   const [loading, setLoading] = useState(true)
   const [adding, setAdding] = useState(false)
@@ -21,14 +21,6 @@ export default function MemoryTab({ accent, theme }) {
   const [saving, setSaving] = useState(false)
   const fileRef = useRef()
   const { loadMemory, saveMemory, deleteMemory } = useStore()
-
-  const th = theme || {
-    text: "rgba(255,255,255,0.88)",
-    textMuted: "rgba(255,255,255,0.42)",
-    textFaint: "rgba(255,255,255,0.18)",
-    border: "rgba(99,102,241,0.15)",
-    surface: "rgba(255,255,255,0.04)",
-  }
 
   useEffect(() => {
     loadMemory().then(data => {
@@ -98,89 +90,87 @@ export default function MemoryTab({ accent, theme }) {
     setTitle(""); setContent("")
   }
 
-  const inp = { width:"100%", boxSizing:"border-box", background:"rgba(255,255,255,0.05)", border:`1px solid ${accent}33`, borderRadius:8, padding:"8px 12px", fontSize:12, color:th.text, fontFamily:"monospace", outline:"none" }
-
   return (
     <div>
-      <div style={{ fontSize:11, color:th.textMuted, fontFamily:"monospace", marginBottom:14, lineHeight:1.6 }}>
+      <p className="settings-intro">
         Everything here gets injected into every agent conversation. They know your business from day one.
-      </div>
+      </p>
 
-      {/* Quick type buttons */}
       {!adding && (
-        <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginBottom:12 }}>
+        <div className="memory-quick">
           {MEMORY_TYPES.map(t => (
-            <button key={t.id} onClick={() => { setTitle(t.label); setAdding(true) }} style={{ padding:"5px 10px", borderRadius:20, border:`1px solid rgba(255,255,255,0.1)`, background:"rgba(255,255,255,0.04)", color:th.textMuted, fontSize:11, cursor:"pointer", fontFamily:"monospace" }}>
-              {t.icon} {t.label}
+            <button key={t.id} className="memory-chip" onClick={() => { setTitle(t.label); setAdding(true) }} title={t.hint}>
+              {t.label}
             </button>
           ))}
         </div>
       )}
 
-      {/* Action buttons */}
       {!adding && (
-        <div style={{ display:"flex", gap:8, marginBottom:14 }}>
-          <button onClick={() => setAdding(true)} style={{ flex:1, padding:"9px 0", borderRadius:10, background:`${accent}15`, border:`1px solid ${accent}44`, color:accent, fontSize:12, cursor:"pointer", fontFamily:"monospace" }}>
-            ✏️ Write a note
-          </button>
-          <button onClick={() => fileRef.current?.click()} style={{ flex:1, padding:"9px 0", borderRadius:10, background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.1)", color:th.textMuted, fontSize:12, cursor:"pointer", fontFamily:"monospace" }}>
-            📄 Upload file
-          </button>
+        <div className="memory-actions">
+          <button className="ai-btn ai-btn--primary" onClick={() => setAdding(true)}>Write a note</button>
+          <button className="ai-btn" onClick={() => fileRef.current?.click()}>Upload file</button>
           <input ref={fileRef} type="file" accept=".txt,.md,.json,.csv" onChange={handleFileUpload} style={{ display:"none" }}/>
         </div>
       )}
 
-      {/* Edit/Add form */}
       {adding && (
-        <div style={{ background:"rgba(255,255,255,0.03)", border:`1px solid ${accent}33`, borderRadius:12, padding:14, marginBottom:14 }}>
-          <div style={{ fontSize:11, color:accent, fontFamily:"monospace", marginBottom:8 }}>
-            {editing ? "✏️ Editing memory" : "✏️ New memory"}
+        <section className="settings-card memory-form">
+          <label className="settings-label">{editing ? "Editing memory" : "New memory"}</label>
+          <input
+            className="settings-input"
+            value={title}
+            onChange={e => setTitle(e.target.value)}
+            placeholder="Title (e.g. About Me, Brand Voice…)"
+          />
+          <textarea
+            className="settings-input memory-textarea"
+            value={content}
+            onChange={e => setContent(e.target.value)}
+            placeholder="What should agents always know?"
+            rows={6}
+          />
+          <div className="memory-form-actions">
+            <button className="ai-btn" onClick={cancelEdit}>Cancel</button>
+            <button
+              className="ai-btn ai-btn--primary"
+              onClick={handleSave}
+              disabled={!title.trim() || !content.trim() || saving}
+            >{saving ? "Saving…" : editing ? "Save changes" : "Save to memory"}</button>
           </div>
-          <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Title (e.g. About Me, Brand Voice...)" style={{...inp, marginBottom:8}}/>
-          <textarea className="memory-textarea" value={content} onChange={e => setContent(e.target.value)}
-            placeholder="Write what you want agents to always know..." rows={6}
-            style={{...inp, resize:"vertical", lineHeight:1.6, marginBottom:10}}/>
-          <div style={{ display:"flex", gap:8 }}>
-            <button onClick={cancelEdit} style={{ flex:1, padding:"8px 0", borderRadius:8, border:"1px solid rgba(255,255,255,0.1)", background:"transparent", color:th.textMuted, fontSize:12, cursor:"pointer" }}>Cancel</button>
-            <button onClick={handleSave} disabled={!title.trim()||!content.trim()||saving} style={{ flex:2, padding:"8px 0", borderRadius:8, border:`1px solid ${accent}44`, background:`${accent}18`, color:accent, fontSize:12, cursor:"pointer", fontFamily:"monospace" }}>
-              {saving ? "Saving..." : editing ? "Save Changes →" : "Save to Memory →"}
-            </button>
-          </div>
-        </div>
+        </section>
       )}
 
-      {saving && !adding && <div style={{ textAlign:"center", padding:10, fontSize:11, color:accent, fontFamily:"monospace" }}>Saving...</div>}
+      {saving && !adding && <div className="memory-status">Saving…</div>}
 
-      {/* Memory list */}
-      {loading && <div style={{ textAlign:"center", padding:20, fontSize:12, color:th.textFaint, fontFamily:"monospace" }}>Loading...</div>}
+      {loading && <div className="memory-status">Loading…</div>}
 
       {!loading && memories.length === 0 && (
-        <div style={{ textAlign:"center", padding:32 }}>
-          <div style={{ fontSize:32, opacity:0.15, marginBottom:8 }}>🧠</div>
-          <div style={{ fontSize:12, color:th.textFaint, fontFamily:"monospace" }}>No memory yet</div>
-          <div style={{ fontSize:10, color:th.textFaint, fontFamily:"monospace", marginTop:4 }}>Add notes or upload files — agents will know this in every conversation</div>
+        <div className="memory-empty">
+          <div className="memory-empty-title">No memory yet</div>
+          <div className="memory-empty-sub">Add notes or upload files — agents will know this in every conversation.</div>
         </div>
       )}
 
       {memories.map(m => (
-        <div key={m.id} style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.08)", borderRadius:12, padding:"12px 14px", marginBottom:8 }}>
-          <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", marginBottom:4 }}>
-            <div style={{ fontSize:12, fontWeight:600, color:th.text }}>{m.title}</div>
-            <div style={{ display:"flex", gap:6, flexShrink:0 }}>
-              <button onClick={() => handleAppend(m)} title="Add more" style={{ background:"none", border:"none", color:th.textFaint, cursor:"pointer", fontSize:12, padding:"0 3px" }}>+</button>
-              <button onClick={() => handleEdit(m)} title="Edit" style={{ background:"none", border:"none", color:th.textFaint, cursor:"pointer", fontSize:12, padding:"0 3px" }}>✏️</button>
-              <button onClick={() => handleDelete(m.id)} title="Delete" style={{ background:"none", border:"none", color:th.textFaint, cursor:"pointer", fontSize:12, padding:"0 3px" }}>🗑</button>
+        <section key={m.id} className="memory-item">
+          <div className="memory-item-head">
+            <div className="memory-item-title">{m.title}</div>
+            <div className="memory-item-actions">
+              <button className="memory-item-btn" onClick={() => handleAppend(m)} title="Append">+</button>
+              <button className="memory-item-btn" onClick={() => handleEdit(m)} title="Edit">edit</button>
+              <button className="memory-item-btn" onClick={() => handleDelete(m.id)} title="Delete">delete</button>
             </div>
           </div>
-          <div style={{ fontSize:11, color:th.textMuted, lineHeight:1.5, overflow:"hidden", display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical" }}>{m.content}</div>
-          <div style={{ fontSize:9, color:th.textFaint, fontFamily:"monospace", marginTop:6 }}>
-            {m.source === "learned" ? "🤖 learned" : m.source === "upload" ? "📄 uploaded" : "✏️ written"} · {new Date(m.created_at).toLocaleDateString()}
+          <div className="memory-item-body">{m.content}</div>
+          <div className="memory-item-meta">
+            {m.source === "learned" ? "learned" : m.source === "upload" ? "uploaded" : "written"} · {new Date(m.created_at).toLocaleDateString()}
           </div>
-        </div>
+        </section>
       ))}
 
       {memories.length > 0 && (
-        <div style={{ fontSize:10, color:th.textFaint, fontFamily:"monospace", textAlign:"center", marginTop:8 }}>
+        <div className="memory-footer">
           {memories.length} item{memories.length!==1?"s":""} in memory · injected into every conversation
         </div>
       )}
