@@ -32,23 +32,22 @@ export function logError(scope, error, context = {}) {
   if (import.meta.env.DEV) console.error(`[${scope}]`, error, context)
 }
 
-const FREE_DAILY_MESSAGES = 20
+// Paywall / tier limits are disabled until pricing ships.
+// When ready, re-enable by setting FREE_DAILY_MESSAGES to a positive number
+// and gating on tier === 'free'.
+const FREE_DAILY_MESSAGES = Infinity
 
 export async function checkTierLimits() {
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { allowed: true, tier: 'free', remaining: FREE_DAILY_MESSAGES }
-
-  const [{ data: settings }, { data: usage }] = await Promise.all([
-    supabase.from('user_settings').select('subscription_tier').eq('user_id', user.id).maybeSingle(),
-    supabase.from('user_usage_today').select('messages_today').eq('user_id', user.id).maybeSingle(),
-  ])
-
-  const tier = settings?.subscription_tier || 'free'
-  if (tier === 'pro') return { allowed: true, tier, remaining: Infinity }
-
-  const used = usage?.messages_today || 0
-  const remaining = Math.max(0, FREE_DAILY_MESSAGES - used)
-  return { allowed: remaining > 0, tier, remaining, dailyLimit: FREE_DAILY_MESSAGES }
+  // Paywall disabled — always allow. Tier info still surfaced for UI hints.
+  try {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { allowed: true, tier: 'free', remaining: Infinity }
+    const { data: settings } = await supabase.from('user_settings')
+      .select('subscription_tier').eq('user_id', user.id).maybeSingle()
+    return { allowed: true, tier: settings?.subscription_tier || 'free', remaining: Infinity }
+  } catch {
+    return { allowed: true, tier: 'free', remaining: Infinity }
+  }
 }
 
 export async function logUsage({ kind, provider, model, tokensIn = 0, tokensOut = 0, costCents = 0, success = true, errorType = null }) {
