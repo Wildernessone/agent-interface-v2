@@ -154,7 +154,7 @@ const ROUTES = {
     const apiKey = req.headers.get('x-api-key')
     if (!apiKey) return new Response(JSON.stringify({ error: 'missing_provider_key' }), { status: 400 })
     const body = await req.json()
-    const model = body.model || 'gemini-2.0-flash'
+    const model = body.model || 'gemini-2.5-flash'
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`
     return fetch(url, {
       method: 'POST',
@@ -171,7 +171,7 @@ const ROUTES = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: auth },
       body: JSON.stringify({
-        model: body.model || 'grok-2',
+        model: body.model || 'grok-3',
         messages: body.messages,
         stream: true,
       }),

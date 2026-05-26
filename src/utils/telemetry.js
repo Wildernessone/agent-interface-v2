@@ -39,8 +39,8 @@ export async function checkTierLimits() {
   if (!user) return { allowed: true, tier: 'free', remaining: FREE_DAILY_MESSAGES }
 
   const [{ data: settings }, { data: usage }] = await Promise.all([
-    supabase.from('user_settings').select('subscription_tier').eq('user_id', user.id).single(),
-    supabase.from('user_usage_today').select('messages_today').eq('user_id', user.id).single(),
+    supabase.from('user_settings').select('subscription_tier').eq('user_id', user.id).maybeSingle(),
+    supabase.from('user_usage_today').select('messages_today').eq('user_id', user.id).maybeSingle(),
   ])
 
   const tier = settings?.subscription_tier || 'free'
