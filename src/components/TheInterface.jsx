@@ -176,11 +176,9 @@ export default function TheInterface() {
   const conversationRef = useRef([])
 
   const activeAgents = AGENTS.filter(a => settings.agents[a.id]?.enabled && settings.agents[a.id]?.key)
-  // Auto-enable DALL-E when GPT key is present
-  const rawEnabledTools = Object.fromEntries(Object.entries(settings.tools || {}).filter(([,v]) => v.enabled))
-  const enabledTools = settings.agents?.gpt?.key
-    ? { ...rawEnabledTools, dalle: true }
-    : rawEnabledTools
+  // Respect the user's toggles. DALL-E doesn't need its own key — it uses
+  // the existing OpenAI key — but the user still decides whether it's on.
+  const enabledTools = Object.fromEntries(Object.entries(settings.tools || {}).filter(([,v]) => v.enabled))
   const busy = !!activeAgentId || toolsWorking
   const canSend = !busy && (input.trim() || listening)
 
