@@ -159,12 +159,13 @@ export const useStore = create((set, get) => ({
       const { data: { user } } = await supabase.auth.getUser()
       if (!user || !turns.length) return
       const cId = useStore.getState().conversationId
+      const projectId = useStore.getState().activeProject?.id || null
       const title = turns.find(t => t.type === "user")?.text?.slice(0, 60) || "Conversation"
       const preview = turns.find(t => t.type === "agent" && t.text)?.text?.slice(0, 100) || ""
       if (cId) {
-        await supabase.from("conversations").update({ title, preview, turn_count: turns.length, turns_data: JSON.stringify(turns), updated_at: new Date().toISOString() }).eq("id", cId).eq("user_id", user.id)
+        await supabase.from("conversations").update({ title, preview, turn_count: turns.length, turns_data: JSON.stringify(turns), project_id: projectId, updated_at: new Date().toISOString() }).eq("id", cId).eq("user_id", user.id)
       } else {
-        const { data } = await supabase.from("conversations").insert({ user_id: user.id, title, preview, turn_count: turns.length, turns_data: JSON.stringify(turns), created_at: new Date().toISOString(), updated_at: new Date().toISOString() }).select().single()
+        const { data } = await supabase.from("conversations").insert({ user_id: user.id, project_id: projectId, title, preview, turn_count: turns.length, turns_data: JSON.stringify(turns), created_at: new Date().toISOString(), updated_at: new Date().toISOString() }).select().single()
         if (data?.id) useStore.setState({ conversationId: data.id })
       }
     } catch(e) { logError("saveConversation", e) }
@@ -238,4 +239,72 @@ export const useStore = create((set, get) => ({
   setVoiceMode: (val) => set({ voiceMode: val }),
   setListening: (val) => set({ listening: val }),
   setVoiceStatus: (val) => set({ voiceStatus: val }),
+
+  // ── Projects ─────────────────────────────────────────────
+  activeProject: null,
+  projects: [],
+  setActiveProject: (project) => set({ activeProject: project }),
+
+  loadProjects: async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return []
+      const { data } = await supabase.from('projects')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('status', 'active')
+        .order('updated_at', { ascending: false })
+      set({ projects: data || [] })
+      return data || []
+    } catch (e) {
+      logError("loadProjects", e)
+      return []
+    }
+  },
+
+  createProject: async (name, description = '') => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return null
+      const { data, error } = await supabase.from('projects')
+        .insert({ user_id: user.id, name, description, status: 'active' })
+        .select().single()
+      if (error) { logError("createProject", error); return null }
+      set(state => ({ projects: [data, ...state.projects], activeProject: data }))
+      return data
+    } catch (e) {
+      logError("createProject", e)
+      return null
+    }
+  },
+
+  updateProject: async (id, patch) => {
+    try {
+      const { data, error } = await supabase.from('projects')
+        .update({ ...patch, updated_at: new Date().toISOString() })
+        .eq('id', id)
+        .select().single()
+      if (error) { logError("updateProject", error); return null }
+      set(state => ({
+        projects: state.projects.map(p => p.id === id ? data : p),
+        activeProject: state.activeProject?.id === id ? data : state.activeProject,
+      }))
+      return data
+    } catch (e) {
+      logError("updateProject", e)
+      return null
+    }
+  },
+
+  deleteProject: async (id) => {
+    try {
+      await supabase.from('projects').delete().eq('id', id)
+      set(state => ({
+        projects: state.projects.filter(p => p.id !== id),
+        activeProject: state.activeProject?.id === id ? null : state.activeProject,
+      }))
+    } catch (e) {
+      logError("deleteProject", e)
+    }
+  },
 }))

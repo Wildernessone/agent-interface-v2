@@ -160,7 +160,7 @@ VOICE MODE: ${voiceMode}
 
 AGENTS AVAILABLE: ${enabledAgents.join(", ") || "none"}
 TOOLS AVAILABLE: ${toolList || "none"}
-ACTIVE PROJECT: ${activeProject?.name || "none"}
+ACTIVE PROJECT: ${activeProject?.name || "none"}${activeProject?.description ? ` — ${activeProject.description}` : ""}
 
 USER MEMORY:
 ${memorySummary || "none"}

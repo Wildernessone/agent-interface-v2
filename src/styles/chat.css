@@ -293,6 +293,123 @@
   to { visibility: hidden; }
 }
 
+/* ────────── Project picker (header) ────────── */
+
+.proj-picker {
+  position: relative;
+  margin-left: var(--space-3);
+}
+
+.proj-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: transparent;
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-md);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  max-width: 220px;
+  transition: border-color var(--duration-fast) var(--easing-default),
+              color var(--duration-fast) var(--easing-default);
+}
+.proj-trigger:hover {
+  color: var(--color-text-primary);
+  border-color: var(--color-text-secondary);
+}
+.proj-trigger.is-active {
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+.proj-trigger-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.proj-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+}
+
+.proj-menu {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  left: 0;
+  z-index: 100;
+  min-width: 280px;
+  max-height: 400px;
+  overflow-y: auto;
+  padding: var(--space-2);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.proj-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  text-align: left;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--easing-default);
+}
+.proj-item:hover { background: var(--color-bg-tertiary); }
+.proj-item.is-active {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+.proj-item-name {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+.proj-item-sub {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.proj-create-trigger {
+  margin-top: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: transparent;
+  border: 1px dashed var(--color-border-primary);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  text-align: left;
+}
+.proj-create-trigger:hover { color: var(--color-accent); border-color: var(--color-accent); }
+
+.proj-create {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+}
+.proj-create-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+.proj-create-actions .ai-btn { flex: 1; justify-content: center; }
+
 /* ────────── OpenClaw decision badge ────────── */
 
 .ai-claw {

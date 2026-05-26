@@ -12,6 +12,7 @@ import { supabase } from '../utils/supabase'
 import PromptLibrary from './PromptLibrary'
 import ToolOutput from './ToolOutput'
 import OnboardingPanel from './OnboardingPanel'
+import ProjectPicker from './ProjectPicker'
 
 const AGENTS = [
   { id:"claude",  name:"Claude",  color:"var(--color-agent-claude)", avatar:"C" },
@@ -144,7 +145,7 @@ async function streamGrok(key, messages, onChunk, onDone, onError) {
 }
 
 export default function TheInterface() {
-  const { settings, turns, activeAgentId, voiceMode, addTurn, addToolTurn, updateToolTurn, appendChunk, finishTurn, addErrorTurn, addToolErrorTurn, clearTurns, setVoiceMode, saveConversation, conversationId, loadMemory, saveMemory } = useStore()
+  const { settings, turns, activeAgentId, voiceMode, addTurn, addToolTurn, updateToolTurn, appendChunk, finishTurn, addErrorTurn, addToolErrorTurn, clearTurns, setVoiceMode, saveConversation, conversationId, loadMemory, saveMemory, activeProject, projects, loadProjects, createProject, setActiveProject } = useStore()
   
   const handleVoiceToggle = () => {
     // Recreate VoiceEngine with latest settings when toggling on
@@ -225,6 +226,7 @@ export default function TheInterface() {
         enabledAgents: selected.map(a => a.id),
         enabledTools,
         memory: agentMemory,
+        activeProject,
         settings,
         voiceMode,
       })
@@ -341,7 +343,7 @@ export default function TheInterface() {
           logUsage({ kind: "tool_call", provider: step.tool, success: true })
 
           // Fire-and-forget save to Drive
-          saveToDrive(output).then(drive => {
+          saveToDrive(output, activeProject).then(drive => {
             if (drive?.webViewLink) updateToolTurn(turnId, { driveUrl: drive.webViewLink })
           })
         } catch(e) {
@@ -391,6 +393,7 @@ export default function TheInterface() {
         <div className="ai-brand">
           <Logo/>
           <h1>Agent Interface</h1>
+          <ProjectPicker/>
         </div>
         <nav className="ai-toolbar">
           <IconButton title="Prompt library" onClick={() => setShowPrompts(true)}>

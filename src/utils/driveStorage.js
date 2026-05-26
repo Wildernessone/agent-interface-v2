@@ -42,27 +42,48 @@ async function getDriveToken() {
   return data
 }
 
-async function ensureRootFolder(token) {
-  // Look for an existing "Agent Interface" folder
+async function findOrCreateFolder(token, name, parentId = null) {
+  const parentClause = parentId ? ` and '${parentId}' in parents` : ""
+  const q = `name='${name.replace(/'/g, "\\'")}' and mimeType='application/vnd.google-apps.folder' and trashed=false${parentClause}`
   const search = await fetch(
-    "https://www.googleapis.com/drive/v3/files?q=" +
-      encodeURIComponent("name='Agent Interface' and mimeType='application/vnd.google-apps.folder' and trashed=false") +
-      "&fields=files(id,name)",
+    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name)`,
     { headers: { Authorization: `Bearer ${token}` } }
   )
   if (!search.ok) throw new Error(`drive_search_failed_${search.status}`)
   const data = await search.json()
   if (data.files?.[0]?.id) return data.files[0].id
 
-  // Create it
+  const body = { name, mimeType: "application/vnd.google-apps.folder" }
+  if (parentId) body.parents = [parentId]
   const create = await fetch("https://www.googleapis.com/drive/v3/files", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ name: "Agent Interface", mimeType: "application/vnd.google-apps.folder" }),
+    body: JSON.stringify(body),
   })
   if (!create.ok) throw new Error(`drive_create_folder_failed_${create.status}`)
   const folder = await create.json()
   return folder.id
+}
+
+async function ensureRootFolder(token) {
+  return findOrCreateFolder(token, "Agent Interface")
+}
+
+async function ensureProjectFolder(token, rootId, project) {
+  // Cached path: if project already has storage_folder_id, use it
+  if (project?.storage_folder_id) return project.storage_folder_id
+  if (!project?.name) return rootId
+
+  const folderId = await findOrCreateFolder(token, project.name, rootId)
+
+  // Cache the folder id back to the project row
+  try {
+    await supabase.from('projects')
+      .update({ storage_folder_id: folderId, storage_provider: 'google_drive' })
+      .eq('id', project.id)
+  } catch {}
+
+  return folderId
 }
 
 async function uploadFile(token, parentId, filename, mimeType, body) {
@@ -106,12 +127,15 @@ async function uploadFile(token, parentId, filename, mimeType, body) {
 }
 
 /**
- * Save any tool output to the user's Google Drive in their Agent Interface folder.
- * Returns { id, webViewLink } on success, or null if Drive isn't connected / fails silently.
+ * Save any tool output to the user's Google Drive.
+ * If a project is provided, saves into "Agent Interface > <Project Name>/".
+ * Otherwise saves into the flat "Agent Interface" folder.
+ * Also writes a row in project_files when a project is provided.
  *
  * @param {{ url?: string, type: string, tool: string, prompt?: string }} output
+ * @param {Object} [project] — optional active project row
  */
-export async function saveToDrive(output) {
+export async function saveToDrive(output, project = null) {
   try {
     const conn = await getDriveToken()
     if (!conn?.access_token) return null
@@ -123,7 +147,6 @@ export async function saveToDrive(output) {
     if (output.type === 'audio') { mimeType = 'audio/mpeg'; ext = 'mp3' }
     if (output.type === 'video') { mimeType = 'video/mp4'; ext = 'mp4' }
 
-    // Fetch the bytes
     let body
     if (output.url?.startsWith('data:')) {
       body = output.url
@@ -135,10 +158,34 @@ export async function saveToDrive(output) {
       return null
     }
 
-    const folderId = await ensureRootFolder(token)
+    const rootId = await ensureRootFolder(token)
+    const folderId = project ? await ensureProjectFolder(token, rootId, project) : rootId
+
     const safePrompt = (output.prompt || output.tool || 'output').replace(/[^a-z0-9-_ ]/gi, '').slice(0, 60).trim() || 'output'
     const filename = `${Date.now()}-${output.tool}-${safePrompt}.${ext}`
     const file = await uploadFile(token, folderId, filename, mimeType, body)
+
+    // Track the file row in project_files if a project context exists
+    if (project?.id) {
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user) {
+          await supabase.from('project_files').insert({
+            project_id: project.id,
+            user_id: user.id,
+            name: filename,
+            file_type: output.type,
+            storage_url: file.webViewLink,
+            storage_file_id: file.id,
+            generated_by: output.tool,
+            prompt_used: output.prompt?.slice(0, 1000) || null,
+          })
+        }
+      } catch (e) {
+        logError('project_files.insert', e)
+      }
+    }
+
     return { id: file.id, webViewLink: file.webViewLink }
   } catch (e) {
     logError('saveToDrive', e, { tool: output?.tool, type: output?.type })
