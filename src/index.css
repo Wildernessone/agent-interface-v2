@@ -2,6 +2,7 @@
 @import './styles/chat.css';
 @import './styles/settings.css';
 @import './styles/sidebar.css';
+@import './styles/onboarding.css';
 
 * {
   box-sizing: border-box;

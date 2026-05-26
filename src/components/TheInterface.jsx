@@ -11,6 +11,7 @@ import { saveToDrive } from '../utils/driveStorage'
 import { supabase } from '../utils/supabase'
 import PromptLibrary from './PromptLibrary'
 import ToolOutput from './ToolOutput'
+import OnboardingPanel from './OnboardingPanel'
 
 const AGENTS = [
   { id:"claude",  name:"Claude",  color:"var(--color-agent-claude)", avatar:"C" },
@@ -166,6 +167,7 @@ export default function TheInterface() {
   const [showPrompts, setShowPrompts] = useState(false)
   const [agentMemory, setAgentMemory] = useState([])
   const [setupNotices, setSetupNotices] = useState([])
+  const [skippedOnboarding, setSkippedOnboarding] = useState(false)
   const scrollRef = useRef(null)
   const voiceRef = useRef(null)
   const conversationRef = useRef([])
@@ -420,11 +422,20 @@ export default function TheInterface() {
 
       {/* ───────── Thread ───────── */}
       <main ref={scrollRef} className="ai-thread">
-        {turns.length === 0 && (
+        {turns.length === 0 && activeAgents.length === 0 && !skippedOnboarding && (
+          <OnboardingPanel onSkip={() => setSkippedOnboarding(true)} />
+        )}
+
+        {turns.length === 0 && (activeAgents.length > 0 || skippedOnboarding) && (
           <div className="ai-empty">
             <div className="ai-empty-logo"><Logo size={48}/></div>
             <h2>One interface. All your AI.</h2>
             <p>{activeAgents.length} agent{activeAgents.length!==1?"s":""} ready · OpenClaw orchestrating</p>
+            {activeAgents.length === 0 && (
+              <button className="ai-btn" onClick={() => setSkippedOnboarding(false)} style={{ marginTop: "var(--space-4)" }}>
+                Connect an agent to start
+              </button>
+            )}
             <div className="ai-suggestions">
               {[
                 "Help me brainstorm features",
