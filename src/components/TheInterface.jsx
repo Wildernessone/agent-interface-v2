@@ -13,10 +13,10 @@ import PromptLibrary from './PromptLibrary'
 import ToolOutput from './ToolOutput'
 
 const AGENTS = [
-  { id:"claude",  name:"Claude",  color:"#E8A87C", bg:"rgba(232,168,124,0.1)", border:"rgba(232,168,124,0.25)", avatar:"C" },
-  { id:"gpt",     name:"ChatGPT", color:"#74C69D", bg:"rgba(116,198,157,0.1)", border:"rgba(116,198,157,0.25)", avatar:"G" },
-  { id:"gemini",  name:"Gemini",  color:"#7EB8F7", bg:"rgba(126,184,247,0.1)", border:"rgba(126,184,247,0.25)", avatar:"X" },
-  { id:"grok",    name:"Grok",    color:"#E879F9", bg:"rgba(232,121,249,0.1)", border:"rgba(232,121,249,0.25)", avatar:"GR" },
+  { id:"claude",  name:"Claude",  color:"var(--color-agent-claude)", avatar:"C" },
+  { id:"gpt",     name:"ChatGPT", color:"var(--color-agent-gpt)",    avatar:"G" },
+  { id:"gemini",  name:"Gemini",  color:"var(--color-agent-gemini)", avatar:"X" },
+  { id:"grok",    name:"Grok",    color:"var(--color-agent-grok)",   avatar:"GR" },
 ]
 
 const PROXY = import.meta.env.VITE_PROXY_URL || "https://claude-proxy.jamesreed.workers.dev"
@@ -362,100 +362,77 @@ export default function TheInterface() {
   }
 
 
-  const accent = settings.accent || "#6366f1"
+  // Rams: single accent. Theme accent overrides for users who customized.
+  const accent = settings.accent || "var(--color-accent)"
 
   return (
-    <div style={{ display:"flex", flexDirection:"column", height:"100vh", background:"#080A0F", overflow:"hidden" }}>
-      {/* Header */}
-      <div style={{ padding:"12px 18px", borderBottom:"1px solid rgba(99,102,241,0.15)", display:"flex", alignItems:"center", justifyContent:"space-between", background:"rgba(8,10,15,0.95)", backdropFilter:"blur(16px)" }}>
-        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-          <svg width="32" height="32" viewBox="0 0 36 36" fill="none">
-            <rect width="36" height="36" rx="9" fill="#1C1F28"/>
-            <rect width="36" height="36" rx="9" fill={accent} fillOpacity="0.12"/>
-            {[0,72,144,216,288].map((deg,i) => {
-              const r1=9.5,r2=12,rad=(deg-90)*Math.PI/180
-              const x1=18+r1*Math.cos(rad),y1=18+r1*Math.sin(rad)
-              const x2=18+r2*Math.cos(rad),y2=18+r2*Math.sin(rad)
-              return <g key={i}>
-                <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="white" strokeWidth="0.9" opacity="0.35"/>
-                <circle cx={x2} cy={y2} r="2.2" fill={["#E8A87C","#74C69D","#7EB8F7","#C084FC","#FBBF24"][i]} opacity="0.95"/>
-              </g>
-            })}
-            <circle cx="18" cy="18" r="10.5" stroke="white" strokeWidth="0.8" fill="none" opacity="0.25" strokeDasharray="2 2"/>
-            <circle cx="18" cy="18" r="3.2" fill="white" opacity="0.98"/>
-            <circle cx="18" cy="18" r="1.2" fill={accent}/>
-          </svg>
-          <div>
-            <div style={{ fontSize:15, fontWeight:700, color:"rgba(255,255,255,0.92)" }}>Agent Interface</div>
-            <div style={{ fontSize:9, color:"rgba(255,255,255,0.35)", fontFamily:"monospace" }}>One interface. All your AI.</div>
-          </div>
+    <div className="ai-app">
+      {/* ───────── Header ───────── */}
+      <header className="ai-header">
+        <div className="ai-brand">
+          <Logo/>
+          <h1>Agent Interface</h1>
         </div>
-        <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-          {/* Voice toggle */}
-          <button onClick={() => setShowPrompts(true)} title="Prompt library" style={{ width:32, height:32, borderRadius:8, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.1)", color:"rgba(255,255,255,0.4)", cursor:"pointer", fontSize:13 }}>📚</button>
-          <button onClick={() => setShowHistory(true)} title="Conversation history" style={{ width:32, height:32, borderRadius:8, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.1)", color:"rgba(255,255,255,0.4)", cursor:"pointer", fontSize:13 }}>☰</button>
+        <nav className="ai-toolbar">
+          <IconButton title="Prompt library" onClick={() => setShowPrompts(true)}>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 2.5C3 2.22386 3.22386 2 3.5 2H12.5C12.7761 2 13 2.22386 13 2.5V13.5C13 13.7761 12.7761 14 12.5 14H3.5C3.22386 14 3 13.7761 3 13.5V2.5Z" stroke="currentColor" strokeWidth="1.2"/><path d="M5.5 5.5H10.5M5.5 8H10.5M5.5 10.5H8.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>
+          </IconButton>
+          <IconButton title="History" onClick={() => setShowHistory(true)}>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5.4" stroke="currentColor" strokeWidth="1.2"/><path d="M8 5V8L10 9.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>
+          </IconButton>
           {turns.length > 0 && (
             <div style={{ position:"relative" }}>
-              <button onClick={() => setShowExport(!showExport)} title="Export conversation" style={{ width:32, height:32, borderRadius:8, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.1)", color:"rgba(255,255,255,0.4)", cursor:"pointer", fontSize:13 }}>⬇</button>
+              <IconButton title="Export" onClick={() => setShowExport(!showExport)}>
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2.5V10.5M8 10.5L5 7.5M8 10.5L11 7.5M3 13H13" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              </IconButton>
               {showExport && (
-                <div style={{ position:"absolute", top:38, right:0, background:"#0E1117", border:"1px solid rgba(99,102,241,0.3)", borderRadius:10, padding:6, zIndex:100, minWidth:140, boxShadow:"0 8px 32px rgba(0,0,0,0.5)" }}>
-                  {[["txt","📄 Plain Text"],["md","📝 Markdown"],["html","🌐 HTML"]].map(([fmt, label]) => (
-                    <button key={fmt} onClick={() => { exportConversation(turns, fmt); setShowExport(false) }} style={{ display:"block", width:"100%", padding:"7px 12px", background:"transparent", border:"none", color:"rgba(255,255,255,0.7)", fontSize:12, cursor:"pointer", textAlign:"left", fontFamily:"monospace", borderRadius:6 }}
-                      onMouseEnter={e=>e.target.style.background="rgba(99,102,241,0.15)"}
-                      onMouseLeave={e=>e.target.style.background="transparent"}
-                    >{label}</button>
+                <div className="ai-menu">
+                  {[["txt","Plain text"],["md","Markdown"],["html","HTML"]].map(([fmt, label]) => (
+                    <button key={fmt} className="ai-menu-item" onClick={() => { exportConversation(turns, fmt); setShowExport(false) }}>{label}</button>
                   ))}
                 </div>
               )}
             </div>
           )}
-          <button onClick={handleVoiceToggle} style={{ width:32, height:32, borderRadius:8, background:voiceMode?`${accent}22`:"transparent", border:`1px solid ${voiceMode?accent:"rgba(255,255,255,0.1)"}`, color:voiceMode?accent:"rgba(255,255,255,0.4)", cursor:"pointer", fontSize:14 }}>
-            {voiceMode ? "🔊" : "🔇"}
-          </button>
-          {/* Settings */}
-          <button onClick={() => setShowSettings(true)} style={{ width:32, height:32, borderRadius:8, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.1)", color:"rgba(255,255,255,0.4)", cursor:"pointer", fontSize:14 }}>⚙</button>
-        </div>
-      </div>
+          <IconButton title={voiceMode ? "Voice mode on" : "Voice mode off"} onClick={handleVoiceToggle} active={voiceMode}>
+            {voiceMode
+              ? <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M9 3L5.5 5.5H3V10.5H5.5L9 13V3Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/><path d="M11.5 5.5C12.5 6.5 12.5 9.5 11.5 10.5M13 4C14.5 5.5 14.5 10.5 13 12" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>
+              : <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M9 3L5.5 5.5H3V10.5H5.5L9 13V3Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/><path d="M11.5 6L14 8.5M14 6L11.5 8.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>
+            }
+          </IconButton>
+          <IconButton title="Settings" onClick={() => setShowSettings(true)}>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.2"/><path d="M8 1.5V3M8 13V14.5M14.5 8H13M3 8H1.5M12.6 3.4L11.5 4.5M4.5 11.5L3.4 12.6M12.6 12.6L11.5 11.5M4.5 4.5L3.4 3.4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>
+          </IconButton>
+        </nav>
+      </header>
 
-      {/* Setup notices */}
+      {/* ───────── Setup notices ───────── */}
       {setupNotices.length > 0 && (
-        <div style={{ padding:"8px 18px", background:"rgba(248,113,113,0.08)", borderBottom:"1px solid rgba(248,113,113,0.15)" }}>
+        <div className="ai-notice">
           {setupNotices.slice(0,1).map((n, i) => (
-            <div key={i} style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-              <span style={{ fontSize:11, color:"#F87171", fontFamily:"monospace" }}>⚠ {n.message}</span>
-              <button onClick={() => setSetupNotices([])} style={{ background:"none", border:"none", color:"rgba(255,255,255,0.3)", cursor:"pointer", fontSize:12 }}>×</button>
+            <div key={i}>
+              <span>{n.message}</span>
+              <button onClick={() => setSetupNotices([])} aria-label="dismiss">×</button>
             </div>
           ))}
         </div>
       )}
 
-      {/* Thread */}
-      <div ref={scrollRef} style={{ flex:1, overflowY:"auto", padding:"20px 18px", display:"flex", flexDirection:"column", gap:14 }}>
+      {/* ───────── Thread ───────── */}
+      <main ref={scrollRef} className="ai-thread">
         {turns.length === 0 && (
-          <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", flex:1, gap:16, paddingTop:60, opacity:0.6 }}>
-            <svg width="64" height="64" viewBox="0 0 36 36" fill="none">
-              <rect width="36" height="36" rx="9" fill="#1C1F28"/>
-              <rect width="36" height="36" rx="9" fill={accent} fillOpacity="0.12"/>
-              {[0,72,144,216,288].map((deg,i) => {
-                const r1=9.5,r2=12,rad=(deg-90)*Math.PI/180
-                const x1=18+r1*Math.cos(rad),y1=18+r1*Math.sin(rad)
-                const x2=18+r2*Math.cos(rad),y2=18+r2*Math.sin(rad)
-                return <g key={i}>
-                  <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="white" strokeWidth="0.9" opacity="0.35"/>
-                  <circle cx={x2} cy={y2} r="2.2" fill={["#E8A87C","#74C69D","#7EB8F7","#C084FC","#FBBF24"][i]} opacity="0.95"/>
-                </g>
-              })}
-              <circle cx="18" cy="18" r="10.5" stroke="white" strokeWidth="0.8" fill="none" opacity="0.25" strokeDasharray="2 2"/>
-              <circle cx="18" cy="18" r="3.2" fill="white" opacity="0.98"/>
-              <circle cx="18" cy="18" r="1.2" fill={accent}/>
-            </svg>
-            <div style={{ textAlign:"center" }}>
-              <div style={{ fontSize:16, fontWeight:600, color:"rgba(255,255,255,0.7)", marginBottom:4 }}>One interface. All your AI.</div>
-              <div style={{ fontSize:12, color:"rgba(255,255,255,0.3)", fontFamily:"monospace" }}>{activeAgents.length} agent{activeAgents.length!==1?"s":""} ready</div>
-            </div>
-            <div style={{ display:"flex", gap:6, flexWrap:"wrap", justifyContent:"center", maxWidth:340 }}>
-              {["Help me brainstorm features","Debate the best approach to this","Expand on that idea","What are you all good at?"].map(q => (
-                <button key={q} onClick={() => setInput(q)} style={{ padding:"6px 12px", borderRadius:20, border:"1px solid rgba(255,255,255,0.1)", background:"rgba(255,255,255,0.04)", color:"rgba(255,255,255,0.4)", fontSize:11, cursor:"pointer", fontFamily:"monospace" }}>{q}</button>
+          <div className="ai-empty">
+            <div className="ai-empty-logo"><Logo size={48}/></div>
+            <h2>One interface. All your AI.</h2>
+            <p>{activeAgents.length} agent{activeAgents.length!==1?"s":""} ready · OpenClaw orchestrating</p>
+            <div className="ai-suggestions">
+              {[
+                "Help me brainstorm features",
+                "Debate the best approach to this",
+                "Plan a 30 second ad",
+                "What are you all good at?",
+              ].map(q => (
+                <button key={q} onClick={() => setInput(q)}>{q}</button>
               ))}
             </div>
           </div>
@@ -463,132 +440,163 @@ export default function TheInterface() {
 
         {turns.map(turn => {
           if (turn.type === "user") return (
-            <div key={turn.id} style={{ display:"flex", justifyContent:"flex-end" }}>
-              <div style={{ background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:"16px 4px 16px 16px", padding:"10px 14px", maxWidth:"75%", fontSize:14, color:"rgba(255,255,255,0.9)", lineHeight:1.6 }}>{turn.text}</div>
+            <div key={turn.id} className="ai-turn ai-turn--user">
+              <div className="ai-user-bubble">{turn.text}</div>
             </div>
           )
           if (turn.type === "tool") return (
-            <div key={turn.id} style={{ padding:"12px 14px", background:"rgba(99,102,241,0.06)", border:"1px solid rgba(99,102,241,0.15)", borderRadius:12 }}>
-              <div style={{ fontSize:10, color:"#6366f1", fontFamily:"monospace", marginBottom:4, letterSpacing:"0.07em" }}>⚡ {(turn.output?.tool || "TOOL").toUpperCase()} OUTPUT</div>
+            <div key={turn.id} className="ai-turn ai-tool-card">
+              <div className="ai-tool-label">{turn.output?.tool || "tool"}</div>
               <ToolOutput output={turn.output} />
             </div>
           )
           if (turn.type === "error") {
             const agent = AGENTS.find(a => a.id === turn.agent)
             const isOrchestrator = turn.agent === "orchestrator"
-            const label = isOrchestrator ? "Orchestrator" : agent?.name
+            const label = isOrchestrator ? "OpenClaw" : agent?.name
             const message = (
               turn.errorType === "rate_limited" ? `${label} hit its rate limit. Wait a moment and retry.` :
               turn.errorType === "out_of_credits" ? `Your ${label} account is out of credits.` :
-              turn.errorType === "invalid_key" ? `Your ${label} API key isn't working — it may have expired or been revoked.` :
+              turn.errorType === "invalid_key" ? `Your ${label} API key isn't working — it may have expired.` :
               turn.errorType === "service_down" ? `${label} is having a service issue. Try again in a moment.` :
               turn.errorType === "network" ? `Couldn't reach ${label}. Check your connection and retry.` :
-              turn.errorType === "orchestrator_down" ? `The orchestrator couldn't process this message. Retry, or check that at least one agent has a valid key.` :
-              turn.errorType === "free_tier_limit" ? `You've hit the free-tier daily limit. Upgrade to Pro for unlimited messages.` :
-              `${label} returned an unexpected error. Retry, or check your API key in Settings.`
+              turn.errorType === "orchestrator_down" ? `OpenClaw couldn't process this message. Retry, or verify your agent keys.` :
+              turn.errorType === "free_tier_limit" ? `You've reached the free-tier daily limit. Upgrade to Pro for unlimited messages.` :
+              `${label} returned an unexpected error. Retry, or check Settings.`
             )
             const billingUrl = agent?.id==="claude"?"https://console.anthropic.com":agent?.id==="gpt"?"https://platform.openai.com/account/billing":agent?.id==="gemini"?"https://aistudio.google.com/app/plan":"https://console.x.ai"
             return (
-              <div key={turn.id} style={{ display:"flex", gap:10 }}>
-                <div style={{ width:32, height:32, borderRadius:"50%", background:agent?.bg || "rgba(248,113,113,0.1)", border:`1px solid ${agent?.border || "rgba(248,113,113,0.25)"}`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, color:agent?.color || "#F87171", flexShrink:0 }}>{agent?.avatar || "!"}</div>
-                <div style={{ background:"rgba(248,113,113,0.08)", border:"1px solid rgba(248,113,113,0.2)", borderRadius:"4px 12px 12px 12px", padding:"10px 14px" }}>
-                  <div>
-                    <div style={{ fontSize:11, fontWeight:700, color:"#F87171", fontFamily:"monospace", marginBottom:4 }}>
-                      {label} isn't responding
-                    </div>
-                    <div style={{ fontSize:11, color:"rgba(255,255,255,0.55)", marginBottom:10, lineHeight:1.5 }}>{message}</div>
-                    <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-                      <button onClick={() => sendMessage(turns.filter(t=>t.type==="user").slice(-1)[0]?.text||"")} style={{ padding:"5px 12px", borderRadius:8, background:"rgba(99,102,241,0.15)", border:"1px solid rgba(99,102,241,0.35)", color:"#a5b4fc", fontSize:11, cursor:"pointer", fontFamily:"monospace" }}>↩ Retry</button>
-                      {turn.errorType === "out_of_credits" && agent && (
-                        <a href={billingUrl} target="_blank" rel="noreferrer" style={{ padding:"5px 12px", borderRadius:8, background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.15)", color:"rgba(255,255,255,0.6)", fontSize:11, cursor:"pointer", fontFamily:"monospace", textDecoration:"none" }}>Add Credits →</a>
-                      )}
-                      {turn.errorType === "invalid_key" && (
-                        <button onClick={() => setShowSettings(true)} style={{ padding:"5px 12px", borderRadius:8, background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.15)", color:"rgba(255,255,255,0.6)", fontSize:11, cursor:"pointer", fontFamily:"monospace" }}>Fix Key in Settings →</button>
-                      )}
-                      {turn.errorType === "rate_limited" && (
-                        <span style={{ fontSize:10, color:"rgba(255,255,255,0.3)", fontFamily:"monospace", alignSelf:"center" }}>Usually clears in 60 seconds</span>
-                      )}
-                    </div>
+              <div key={turn.id} className="ai-turn ai-turn--agent">
+                {agent
+                  ? <div className="ai-avatar" style={{ color: agent.color, borderColor: agent.color }}>{agent.avatar}</div>
+                  : <div className="ai-avatar ai-avatar--error">!</div>
+                }
+                <div className="ai-error">
+                  <div className="ai-error-title">{label} isn't responding</div>
+                  <div className="ai-error-msg">{message}</div>
+                  <div className="ai-actions">
+                    <button className="ai-btn ai-btn--primary" onClick={() => sendMessage(turns.filter(t=>t.type==="user").slice(-1)[0]?.text||"")}>Retry</button>
+                    {turn.errorType === "out_of_credits" && agent && (
+                      <a className="ai-btn" href={billingUrl} target="_blank" rel="noreferrer">Add credits</a>
+                    )}
+                    {turn.errorType === "invalid_key" && (
+                      <button className="ai-btn" onClick={() => setShowSettings(true)}>Fix key</button>
+                    )}
+                    {turn.errorType === "free_tier_limit" && (
+                      <button className="ai-btn ai-btn--primary" onClick={() => setShowSettings(true)}>Upgrade</button>
+                    )}
                   </div>
                 </div>
               </div>
             )
           }
-          if (turn.type === "tool_error") {
-            return (
-              <div key={turn.id} style={{ padding:"12px 14px", background:"rgba(248,113,113,0.08)", border:"1px solid rgba(248,113,113,0.2)", borderRadius:12 }}>
-                <div style={{ fontSize:10, color:"#F87171", fontFamily:"monospace", marginBottom:4, letterSpacing:"0.07em" }}>⚠ {turn.tool?.toUpperCase()} FAILED</div>
-                <div style={{ fontSize:12, color:"rgba(255,255,255,0.7)", lineHeight:1.5, marginBottom:8 }}>{turn.message}</div>
-                {turn.errorType === "missing_key" && (
-                  <button onClick={() => setShowSettings(true)} style={{ padding:"5px 12px", borderRadius:8, background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.15)", color:"rgba(255,255,255,0.6)", fontSize:11, cursor:"pointer", fontFamily:"monospace" }}>Open Settings →</button>
-                )}
-              </div>
-            )
-          }
+          if (turn.type === "tool_error") return (
+            <div key={turn.id} className="ai-tool-error">
+              <div className="ai-tool-error-title">{turn.tool} failed</div>
+              <div className="ai-tool-error-msg">{turn.message}</div>
+              {turn.errorType === "missing_key" && (
+                <button className="ai-btn" onClick={() => setShowSettings(true)}>Open settings</button>
+              )}
+            </div>
+          )
           const agent = AGENTS.find(a => a.id === turn.agent)
           const isActive = activeAgentId === turn.id
           if (!agent) return null
           return (
-            <div key={turn.id} style={{ display:"flex", gap:10 }}>
-              <div style={{ width:32, height:32, borderRadius:"50%", flexShrink:0, background:agent.bg, border:`1.5px solid ${isActive?agent.color:agent.border}`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, fontWeight:700, color:agent.color, fontFamily:"monospace", boxShadow:isActive?`0 0 12px ${agent.color}44`:"none", transition:"box-shadow 0.3s" }}>{agent.avatar}</div>
-              <div style={{ flex:1 }}>
-                <div style={{ fontSize:10, fontWeight:600, color:agent.color, fontFamily:"monospace", letterSpacing:"0.07em", marginBottom:4 }}>{agent.name.toUpperCase()}</div>
-                <div style={{ background:agent.bg, border:`1px solid ${agent.border}`, borderRadius:"4px 14px 14px 14px", padding:"10px 14px", fontSize:14, lineHeight:1.7, color:"rgba(255,255,255,0.88)", position:"relative", overflow:"hidden" }}>
-                  {turn.text || ""}
-                  {isActive && !turn.text && <span style={{ opacity:0.4 }}>...</span>}
-                  {isActive && <div style={{ position:"absolute", top:0, left:0, right:0, height:"1.5px", background:`linear-gradient(90deg,transparent,${agent.color},transparent)`, animation:"shimmer 1.4s infinite" }}/>}
+            <div key={turn.id} className="ai-turn ai-turn--agent">
+              <div className="ai-avatar" style={{ color: agent.color, borderColor: agent.color }}>{agent.avatar}</div>
+              <div className="ai-agent-msg">
+                <div className="ai-agent-name" style={{ color: agent.color }}>{agent.name}</div>
+                <div className={`ai-agent-text${isActive ? " is-streaming" : ""}`}>
+                  {turn.text || (isActive ? <span className="ai-typing">thinking…</span> : "")}
                 </div>
               </div>
             </div>
           )
         })}
-      </div>
+      </main>
 
-      {/* Input */}
-      <div style={{ padding:"12px 18px 20px", borderTop:"1px solid rgba(99,102,241,0.15)", background:"rgba(8,10,15,0.95)", backdropFilter:"blur(16px)" }}>
-        <div style={{ display:"flex", gap:5, marginBottom:8, alignItems:"center", flexWrap:"wrap" }}>
-          <span style={{ fontSize:9, color:"rgba(255,255,255,0.2)", fontFamily:"monospace", marginRight:3 }}>TO</span>
-          <button onClick={() => toggleTarget("all")} style={{ padding:"3px 10px", borderRadius:20, border:`1px solid ${targets.includes("all")?"rgba(99,102,241,0.5)":"rgba(255,255,255,0.1)"}`, background:targets.includes("all")?"rgba(99,102,241,0.15)":"transparent", color:targets.includes("all")?"#a5b4fc":"rgba(255,255,255,0.3)", fontSize:11, cursor:"pointer", fontFamily:"monospace" }}>⊕ All</button>
+      {/* ───────── Composer ───────── */}
+      <footer className="ai-composer">
+        <div className="ai-targets">
+          <span className="ai-targets-label">To</span>
+          <button
+            className={`ai-chip${targets.includes("all") ? " is-active" : ""}`}
+            onClick={() => toggleTarget("all")}
+          >All</button>
           {activeAgents.map(ag => {
             const sel = !targets.includes("all") && targets.includes(ag.id)
-            return <button key={ag.id} onClick={() => toggleTarget(ag.id)} style={{ padding:"3px 10px", borderRadius:20, border:`1px solid ${sel?ag.border:"rgba(255,255,255,0.1)"}`, background:sel?ag.bg:"transparent", color:sel?ag.color:"rgba(255,255,255,0.3)", fontSize:11, cursor:"pointer", fontFamily:"monospace" }}>{ag.name}</button>
+            return (
+              <button
+                key={ag.id}
+                className={`ai-chip${sel ? " is-active" : ""}`}
+                onClick={() => toggleTarget(ag.id)}
+                style={sel ? { color: ag.color, borderColor: ag.color } : {}}
+              >{ag.name}</button>
+            )
           })}
-          {turns.length > 0 && <button onClick={() => { clearTurns(); conversationRef.current = [] }} style={{ marginLeft:"auto", padding:"3px 10px", borderRadius:20, border:"1px solid rgba(255,255,255,0.1)", background:"transparent", color:"rgba(255,255,255,0.3)", fontSize:10, cursor:"pointer", fontFamily:"monospace" }}>Clear</button>}
+          {turns.length > 0 && (
+            <button className="ai-chip ai-chip--clear" onClick={() => { clearTurns(); conversationRef.current = [] }}>Clear</button>
+          )}
         </div>
-        <div style={{ display:"flex", gap:8, alignItems:"flex-end" }}>
-          <textarea value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMessage()} }}
-            placeholder={targets.includes("all")?"Message all agents...":activeAgents.filter(a=>targets.includes(a.id)).map(a=>a.name).join(" + ")+"..."}
-            rows={1} style={{ flex:1, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:12, padding:"10px 14px", color:"rgba(255,255,255,0.9)", fontSize:14, resize:"none", outline:"none", lineHeight:1.55, fontFamily:"inherit" }}/>
+        <div className="ai-input-row">
+          <textarea
+            className="ai-input"
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => { if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMessage()} }}
+            placeholder={targets.includes("all")?"Message all agents…":activeAgents.filter(a=>targets.includes(a.id)).map(a=>a.name).join(" + ")+"…"}
+            rows={1}
+          />
           {voiceMode && (
             <button
+              className={`ai-iconbtn ai-iconbtn--lg${listening ? " is-listening" : ""}`}
               onClick={toggleVoiceListening}
-              style={{
-                width:42, height:42, borderRadius:11,
-                border:`1px solid ${listening?"#F87171":"rgba(99,102,241,0.4)"}`,
-                background:listening?"rgba(248,113,113,0.25)":"rgba(99,102,241,0.15)",
-                color:listening?"#F87171":"#a5b4fc",
-                fontSize:16, cursor:"pointer",
-                display:"flex", alignItems:"center", justifyContent:"center",
-                flexShrink:0,
-                animation:listening?"pulse 1s infinite":"none",
-                boxShadow:listening?"0 0 12px rgba(248,113,113,0.4)":"none",
-              }}
-            >{listening ? "⏹️" : "🎙️"}</button>
+              aria-label={listening ? "Stop listening" : "Start listening"}
+            >
+              {listening
+                ? <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="5" y="5" width="8" height="8" rx="1" fill="currentColor"/></svg>
+                : <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="6.5" y="2" width="5" height="8" rx="2.5" stroke="currentColor" strokeWidth="1.5"/><path d="M3.5 8.5C3.5 11.5 6 13.5 9 13.5C12 13.5 14.5 11.5 14.5 8.5M9 13.5V16M6 16H12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+              }
+            </button>
           )}
-          <button onClick={() => sendMessage()} disabled={!input.trim()||busy} style={{ width:42, height:42, borderRadius:11, border:`1px solid ${input.trim()&&!busy?"rgba(99,102,241,0.5)":"rgba(255,255,255,0.1)"}`, background:input.trim()&&!busy?"rgba(99,102,241,0.2)":"transparent", color:input.trim()&&!busy?"#a5b4fc":"rgba(255,255,255,0.2)", fontSize:17, cursor:input.trim()&&!busy?"pointer":"not-allowed", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>↑</button>
+          <button
+            className="ai-iconbtn ai-iconbtn--lg ai-iconbtn--send"
+            onClick={() => sendMessage()}
+            disabled={!input.trim()||busy}
+            aria-label="Send"
+          >
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M9 14V4M9 4L5 8M9 4L13 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          </button>
         </div>
-        <div style={{ fontSize:10, color:"rgba(255,255,255,0.2)", marginTop:6, fontFamily:"monospace" }}>
-          Enter to send · {activeAgents.length} agent{activeAgents.length!==1?"s":""} live · say "debate this" for 3 rounds
+        <div className="ai-composer-hint">
+          Enter to send · {activeAgents.length} agent{activeAgents.length!==1?"s":""} live · say "build it" to trigger tools
         </div>
-      </div>
-      <style>{`
-        @keyframes shimmer { 0%{transform:translateX(-100%)} 100%{transform:translateX(100%)} }
-        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
-      `}</style>
+      </footer>
+
       {showSettings && <Settings onClose={() => setShowSettings(false)} />}
       {showHistory && <HistorySidebar onClose={() => setShowHistory(false)} accent={accent} />}
       {showPrompts && <PromptLibrary accent={accent} onClose={() => setShowPrompts(false)} onUse={(prompt, mode) => { setInput(prompt); if(mode) setResponseMode(mode); setShowPrompts(false); setTimeout(() => document.querySelector("textarea")?.focus(), 100) }}/>}
     </div>
+  )
+}
+
+function Logo({ size = 28 }) {
+  // Concentric rams-style mark: simple, considered, not busy.
+  return (
+    <svg width={size} height={size} viewBox="0 0 32 32" fill="none" aria-hidden>
+      <circle cx="16" cy="16" r="14" stroke="var(--color-text-primary)" strokeWidth="1.4"/>
+      <circle cx="16" cy="16" r="8" stroke="var(--color-text-primary)" strokeWidth="1.4"/>
+      <circle cx="16" cy="16" r="3" fill="var(--color-accent)"/>
+    </svg>
+  )
+}
+
+function IconButton({ children, onClick, title, active }) {
+  return (
+    <button className={`ai-iconbtn${active ? " is-active" : ""}`} onClick={onClick} title={title} aria-label={title}>
+      {children}
+    </button>
   )
 }
 

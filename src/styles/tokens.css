@@ -1,0 +1,191 @@
+/* ─────────────────────────────────────────────────────────────
+   AGENT INTERFACE — Design Tokens
+   Philosophy: Dieter Rams (Functionalist)
+   "Less but better." Restrained color. Generous breathing room.
+   One accent. Color as information, never decoration.
+   ───────────────────────────────────────────────────────────── */
+
+:root {
+  /* ─── Color: Backgrounds ─── */
+  --color-bg-primary:    #FAFAF8;   /* App background — warm off-white */
+  --color-bg-secondary:  #FFFFFF;   /* Cards, surfaces */
+  --color-bg-tertiary:   #F2F1ED;   /* Input wells, subtle blocks */
+  --color-bg-inverse:    #0E0F12;   /* Dark blocks on light theme */
+
+  /* ─── Color: Text ─── */
+  --color-text-primary:    #0E0F12;   /* Near-black, warm */
+  --color-text-secondary:  #54565B;   /* Body subdued */
+  --color-text-tertiary:   #9A9CA1;   /* Placeholder, meta */
+  --color-text-inverse:    #FAFAF8;
+  --color-text-link:       #2A6EF5;
+
+  /* ─── Color: Borders ─── */
+  --color-border-primary:    #E5E4E0;
+  --color-border-secondary:  #EFEEEA;
+  --color-border-focus:      #2A6EF5;
+
+  /* ─── Color: Single functional accent ─── */
+  --color-accent:          #2A6EF5;   /* Cobalt — the ONE accent */
+  --color-accent-hover:    #1E5FE0;
+  --color-accent-active:   #164FCC;
+  --color-accent-soft:     rgba(42, 110, 245, 0.08);
+  --color-accent-ring:     rgba(42, 110, 245, 0.18);
+
+  /* ─── Color: Agent identities (information, not decoration) ─── */
+  --color-agent-claude:  #B96B3A;   /* Terracotta */
+  --color-agent-gpt:     #2D7A50;   /* Forest */
+  --color-agent-gemini:  #2A6EF5;   /* Cobalt */
+  --color-agent-grok:    #6B4FD8;   /* Indigo */
+
+  /* ─── Color: Status ─── */
+  --color-status-success:  #2D7A50;
+  --color-status-warning:  #B97400;
+  --color-status-error:    #B23A3A;
+  --color-status-info:     #2A6EF5;
+
+  /* ─── Color: Overlays ─── */
+  --color-surface-overlay: rgba(14, 15, 18, 0.5);
+
+  /* ─── Spacing (4px base, used strictly) ─── */
+  --space-0:  0;
+  --space-1:  2px;
+  --space-2:  4px;
+  --space-3:  8px;
+  --space-4:  12px;
+  --space-5:  16px;
+  --space-6:  24px;
+  --space-7:  32px;
+  --space-8:  48px;
+  --space-9:  64px;
+  --space-10: 96px;
+  --space-11: 128px;
+
+  /* ─── Typography ─── */
+  --font-family-display:  'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-family-body:     'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-family-mono:     'IBM Plex Mono', ui-monospace, 'SF Mono', Consolas, monospace;
+
+  --font-size-xs:    11px;
+  --font-size-sm:    13px;
+  --font-size-base:  15px;
+  --font-size-md:    16px;
+  --font-size-lg:    18px;
+  --font-size-xl:    22px;
+  --font-size-2xl:   28px;
+  --font-size-3xl:   36px;
+  --font-size-4xl:   56px;
+
+  --font-weight-normal:   400;
+  --font-weight-medium:   500;
+  --font-weight-semibold: 600;
+  --font-weight-bold:     700;
+
+  --line-height-tight:    1.2;
+  --line-height-normal:   1.55;
+  --line-height-relaxed:  1.7;
+
+  --letter-spacing-tight:   -0.02em;
+  --letter-spacing-normal:  0;
+  --letter-spacing-wide:    0.08em;
+
+  /* ─── Layout ─── */
+  --max-width-content:  720px;
+  --max-width-wide:     960px;
+  --max-width-page:     1280px;
+
+  --radius-sm:    4px;
+  --radius-md:    8px;
+  --radius-lg:    12px;
+  --radius-xl:    16px;
+  --radius-full:  9999px;
+
+  /* ─── Shadows (subtle, used sparingly) ─── */
+  --shadow-sm:    0 1px 2px rgba(14, 15, 18, 0.04);
+  --shadow-md:    0 4px 12px rgba(14, 15, 18, 0.06);
+  --shadow-lg:    0 16px 40px rgba(14, 15, 18, 0.10);
+  --shadow-focus: 0 0 0 3px var(--color-accent-ring);
+
+  /* ─── Motion ─── */
+  --duration-instant:  50ms;
+  --duration-fast:     120ms;
+  --duration-normal:   200ms;
+  --duration-slow:     320ms;
+
+  --easing-default:  cubic-bezier(0.4, 0, 0.2, 1);
+  --easing-out:      cubic-bezier(0, 0, 0.2, 1);
+  --easing-in:       cubic-bezier(0.4, 0, 1, 1);
+}
+
+/* ─── Dark mode ─── */
+[data-theme="dark"] {
+  --color-bg-primary:    #0E0F12;
+  --color-bg-secondary:  #16181D;
+  --color-bg-tertiary:   #1C1F25;
+  --color-bg-inverse:    #FAFAF8;
+
+  --color-text-primary:    #F2F1ED;
+  --color-text-secondary:  #A8A9AD;
+  --color-text-tertiary:   #6B6D72;
+  --color-text-inverse:    #0E0F12;
+  --color-text-link:       #6FA1FF;
+
+  --color-border-primary:    #25272D;
+  --color-border-secondary:  #1F2127;
+  --color-border-focus:      #6FA1FF;
+
+  --color-accent:          #6FA1FF;
+  --color-accent-hover:    #87B1FF;
+  --color-accent-active:   #5C92F5;
+  --color-accent-soft:     rgba(111, 161, 255, 0.10);
+  --color-accent-ring:     rgba(111, 161, 255, 0.25);
+
+  --color-agent-claude:  #D6916A;
+  --color-agent-gpt:     #6FB89A;
+  --color-agent-gemini:  #6FA1FF;
+  --color-agent-grok:    #A18FE8;
+
+  --color-status-success:  #6FB89A;
+  --color-status-warning:  #D6A55C;
+  --color-status-error:    #E07575;
+  --color-status-info:     #6FA1FF;
+
+  --color-surface-overlay: rgba(0, 0, 0, 0.7);
+
+  --shadow-sm:    0 1px 2px rgba(0, 0, 0, 0.20);
+  --shadow-md:    0 4px 12px rgba(0, 0, 0, 0.30);
+  --shadow-lg:    0 16px 40px rgba(0, 0, 0, 0.50);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-bg-primary:    #0E0F12;
+    --color-bg-secondary:  #16181D;
+    --color-bg-tertiary:   #1C1F25;
+    --color-bg-inverse:    #FAFAF8;
+    --color-text-primary:    #F2F1ED;
+    --color-text-secondary:  #A8A9AD;
+    --color-text-tertiary:   #6B6D72;
+    --color-text-inverse:    #0E0F12;
+    --color-text-link:       #6FA1FF;
+    --color-border-primary:    #25272D;
+    --color-border-secondary:  #1F2127;
+    --color-border-focus:      #6FA1FF;
+    --color-accent:          #6FA1FF;
+    --color-accent-hover:    #87B1FF;
+    --color-accent-active:   #5C92F5;
+    --color-accent-soft:     rgba(111, 161, 255, 0.10);
+    --color-accent-ring:     rgba(111, 161, 255, 0.25);
+    --color-agent-claude:  #D6916A;
+    --color-agent-gpt:     #6FB89A;
+    --color-agent-gemini:  #6FA1FF;
+    --color-agent-grok:    #A18FE8;
+    --color-status-success:  #6FB89A;
+    --color-status-warning:  #D6A55C;
+    --color-status-error:    #E07575;
+    --color-status-info:     #6FA1FF;
+    --color-surface-overlay: rgba(0, 0, 0, 0.7);
+    --shadow-sm:    0 1px 2px rgba(0, 0, 0, 0.20);
+    --shadow-md:    0 4px 12px rgba(0, 0, 0, 0.30);
+    --shadow-lg:    0 16px 40px rgba(0, 0, 0, 0.50);
+  }
+}

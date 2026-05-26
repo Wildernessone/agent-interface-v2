@@ -1,0 +1,462 @@
+/* ─────────────────────────────────────────────────────────────
+   AGENT INTERFACE — Chat screen
+   Dieter Rams: restrained, functional, generous breathing room.
+   ───────────────────────────────────────────────────────────── */
+
+.ai-app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  font-family: var(--font-family-body);
+  overflow: hidden;
+}
+
+/* ────────── Header ────────── */
+
+.ai-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-5) var(--space-6);
+  border-bottom: 1px solid var(--color-border-secondary);
+  background: var(--color-bg-primary);
+}
+
+.ai-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.ai-brand h1 {
+  margin: 0;
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--letter-spacing-tight);
+  color: var(--color-text-primary);
+}
+
+.ai-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* ────────── Icon button ────────── */
+
+.ai-iconbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--easing-default),
+              color var(--duration-fast) var(--easing-default);
+}
+
+.ai-iconbtn:hover { background: var(--color-bg-tertiary); color: var(--color-text-primary); }
+.ai-iconbtn:focus-visible { outline: none; box-shadow: var(--shadow-focus); }
+.ai-iconbtn.is-active { color: var(--color-accent); background: var(--color-accent-soft); }
+
+.ai-iconbtn--lg {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+}
+
+.ai-iconbtn--send {
+  background: var(--color-accent);
+  color: var(--color-text-inverse);
+}
+.ai-iconbtn--send:hover { background: var(--color-accent-hover); color: var(--color-text-inverse); }
+.ai-iconbtn--send:disabled {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-tertiary);
+  cursor: not-allowed;
+}
+.ai-iconbtn--send:disabled:hover { background: var(--color-bg-tertiary); color: var(--color-text-tertiary); }
+
+.ai-iconbtn.is-listening {
+  color: var(--color-status-error);
+  animation: ai-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes ai-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+/* ────────── Dropdown menu ────────── */
+
+.ai-menu {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  right: 0;
+  z-index: 100;
+  min-width: 160px;
+  padding: var(--space-2);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+}
+
+.ai-menu-item {
+  display: block;
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  border: 0;
+  background: transparent;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  text-align: left;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--easing-default);
+}
+.ai-menu-item:hover { background: var(--color-bg-tertiary); }
+
+/* ────────── Notice banner ────────── */
+
+.ai-notice {
+  padding: var(--space-4) var(--space-6);
+  background: var(--color-bg-tertiary);
+  border-bottom: 1px solid var(--color-border-secondary);
+}
+.ai-notice > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  max-width: var(--max-width-content);
+  margin: 0 auto;
+}
+.ai-notice span {
+  font-size: var(--font-size-sm);
+  color: var(--color-status-error);
+}
+.ai-notice button {
+  background: none;
+  border: 0;
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-lg);
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+
+/* ────────── Thread ────────── */
+
+.ai-thread {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-7) var(--space-6);
+}
+.ai-thread > * {
+  max-width: var(--max-width-content);
+  margin-left: auto;
+  margin-right: auto;
+}
+.ai-thread > * + * {
+  margin-top: var(--space-6);
+}
+
+/* ────────── Empty state ────────── */
+
+.ai-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding-top: var(--space-10);
+  text-align: center;
+}
+.ai-empty-logo { margin-bottom: var(--space-6); }
+.ai-empty h2 {
+  margin: 0 0 var(--space-3);
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-medium);
+  letter-spacing: var(--letter-spacing-tight);
+  line-height: var(--line-height-tight);
+  color: var(--color-text-primary);
+}
+.ai-empty p {
+  margin: 0 0 var(--space-7);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-tertiary);
+}
+.ai-suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: 360px;
+  width: 100%;
+}
+.ai-suggestions button {
+  padding: var(--space-4) var(--space-5);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-md);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--easing-default),
+              color var(--duration-fast) var(--easing-default);
+}
+.ai-suggestions button:hover {
+  border-color: var(--color-text-secondary);
+  color: var(--color-text-primary);
+}
+
+/* ────────── Turn (message row) ────────── */
+
+.ai-turn {
+  display: flex;
+  gap: var(--space-4);
+}
+.ai-turn--user {
+  justify-content: flex-end;
+}
+
+.ai-user-bubble {
+  max-width: 75%;
+  padding: var(--space-4) var(--space-5);
+  background: var(--color-bg-tertiary);
+  border-radius: var(--radius-lg);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-primary);
+}
+
+.ai-avatar {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-full);
+  border: 1.5px solid currentColor;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  font-family: var(--font-family-mono);
+  background: transparent;
+}
+.ai-avatar--error {
+  color: var(--color-status-error);
+}
+
+.ai-agent-msg {
+  flex: 1;
+  min-width: 0;
+}
+.ai-agent-name {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--letter-spacing-wide);
+  text-transform: uppercase;
+  margin-bottom: var(--space-2);
+}
+.ai-agent-text {
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-relaxed);
+  color: var(--color-text-primary);
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+.ai-agent-text.is-streaming {
+  position: relative;
+}
+.ai-agent-text.is-streaming::after {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 14px;
+  margin-left: 2px;
+  background: var(--color-accent);
+  vertical-align: text-bottom;
+  animation: ai-blink 1s steps(2, start) infinite;
+}
+.ai-typing {
+  color: var(--color-text-tertiary);
+  font-style: italic;
+}
+@keyframes ai-blink {
+  to { visibility: hidden; }
+}
+
+/* ────────── Tool output ────────── */
+
+.ai-tool-card {
+  padding: var(--space-5) var(--space-5);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-lg);
+}
+.ai-tool-label {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--letter-spacing-wide);
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  margin-bottom: var(--space-3);
+}
+
+/* ────────── Error blocks ────────── */
+
+.ai-error {
+  flex: 1;
+  padding: var(--space-4) var(--space-5);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-status-error);
+  border-radius: var(--radius-md);
+}
+.ai-error-title {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-status-error);
+  margin-bottom: var(--space-2);
+}
+.ai-error-msg {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  line-height: var(--line-height-normal);
+  margin-bottom: var(--space-4);
+}
+
+.ai-tool-error {
+  padding: var(--space-4) var(--space-5);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-status-error);
+  border-radius: var(--radius-md);
+}
+.ai-tool-error-title {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--letter-spacing-wide);
+  text-transform: uppercase;
+  color: var(--color-status-error);
+  margin-bottom: var(--space-2);
+}
+.ai-tool-error-msg {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  margin-bottom: var(--space-3);
+}
+
+/* ────────── Buttons ────────── */
+
+.ai-actions {
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.ai-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-3) var(--space-5);
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  text-decoration: none;
+  transition: background var(--duration-fast) var(--easing-default),
+              border-color var(--duration-fast) var(--easing-default);
+}
+.ai-btn:hover { background: var(--color-bg-secondary); border-color: var(--color-text-secondary); }
+.ai-btn--primary {
+  background: var(--color-accent);
+  color: var(--color-text-inverse);
+  border-color: var(--color-accent);
+}
+.ai-btn--primary:hover { background: var(--color-accent-hover); border-color: var(--color-accent-hover); }
+
+/* ────────── Composer ────────── */
+
+.ai-composer {
+  border-top: 1px solid var(--color-border-secondary);
+  background: var(--color-bg-primary);
+  padding: var(--space-5) var(--space-6) var(--space-6);
+}
+.ai-composer > * {
+  max-width: var(--max-width-content);
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.ai-targets {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-4);
+}
+.ai-targets-label {
+  font-size: var(--font-size-xs);
+  letter-spacing: var(--letter-spacing-wide);
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  margin-right: var(--space-2);
+}
+.ai-chip {
+  padding: var(--space-2) var(--space-4);
+  background: transparent;
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-full);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--easing-default);
+}
+.ai-chip:hover { color: var(--color-text-primary); border-color: var(--color-text-secondary); }
+.ai-chip.is-active {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+}
+.ai-chip--clear { margin-left: auto; }
+
+.ai-input-row {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-end;
+}
+.ai-input {
+  flex: 1;
+  padding: var(--space-4) var(--space-5);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-normal);
+  resize: none;
+  outline: none;
+  transition: border-color var(--duration-fast) var(--easing-default),
+              box-shadow var(--duration-fast) var(--easing-default);
+  min-height: 40px;
+  max-height: 200px;
+}
+.ai-input::placeholder { color: var(--color-text-tertiary); }
+.ai-input:focus {
+  border-color: var(--color-accent);
+  box-shadow: var(--shadow-focus);
+}
+
+.ai-composer-hint {
+  margin-top: var(--space-3);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-tertiary);
+}
