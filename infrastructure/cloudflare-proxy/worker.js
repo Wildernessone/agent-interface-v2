@@ -194,4 +194,114 @@ const ROUTES = {
       }),
     })
   },
+
+  stability: async (req) => {
+    const auth = req.headers.get('Authorization')
+    if (!auth) return new Response(JSON.stringify({ error: 'missing_provider_key' }), { status: 400 })
+    const body = await req.json()
+    const form = new FormData()
+    form.append('prompt', body.prompt)
+    form.append('output_format', 'png')
+    const r = await fetch('https://api.stability.ai/v2beta/stable-image/generate/sd3', {
+      method: 'POST',
+      headers: { Authorization: auth, Accept: 'application/json' },
+      body: form,
+    })
+    if (!r.ok) {
+      const text = await r.text()
+      return new Response(text, { status: r.status, headers: { 'Content-Type': 'application/json' } })
+    }
+    return r
+  },
+
+  ideogram: async (req) => {
+    const apiKey = req.headers.get('x-api-key')
+    if (!apiKey) return new Response(JSON.stringify({ error: 'missing_provider_key' }), { status: 400 })
+    const body = await req.json()
+    return fetch('https://api.ideogram.ai/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Api-Key': apiKey },
+      body: JSON.stringify({ image_request: { prompt: body.prompt, aspect_ratio: 'ASPECT_1_1', model: 'V_2' } }),
+    })
+  },
+
+  elevenlabs: async (req) => {
+    const apiKey = req.headers.get('x-api-key')
+    if (!apiKey) return new Response(JSON.stringify({ error: 'missing_provider_key' }), { status: 400 })
+    const body = await req.json()
+    const voiceId = body.voice_id || '21m00Tcm4TlvDq8ikWAM'
+    const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'xi-api-key': apiKey, Accept: 'audio/mpeg' },
+      body: JSON.stringify({ text: body.text, model_id: 'eleven_turbo_v2_5' }),
+    })
+    if (!r.ok) {
+      const text = await r.text()
+      return new Response(text, { status: r.status, headers: { 'Content-Type': 'application/json' } })
+    }
+    const buf = await r.arrayBuffer()
+    const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)))
+    return new Response(JSON.stringify({ audio: b64 }), { headers: { 'Content-Type': 'application/json' } })
+  },
+
+  runway: async (req) => {
+    const auth = req.headers.get('Authorization')
+    if (!auth) return new Response(JSON.stringify({ error: 'missing_provider_key' }), { status: 400 })
+    const body = await req.json()
+    // Start the generation
+    const start = await fetch('https://api.dev.runwayml.com/v1/image_to_video', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: auth, 'X-Runway-Version': '2024-11-06' },
+      body: JSON.stringify({ promptText: body.prompt, model: 'gen3a_turbo', duration: 5, ratio: '1280:720' }),
+    })
+    if (!start.ok) return start
+    const job = await start.json()
+    // Poll for completion (max 90s)
+    for (let i = 0; i < 18; i++) {
+      await new Promise(r => setTimeout(r, 5000))
+      const status = await fetch(`https://api.dev.runwayml.com/v1/tasks/${job.id}`, {
+        headers: { Authorization: auth, 'X-Runway-Version': '2024-11-06' },
+      })
+      const data = await status.json()
+      if (data.status === 'SUCCEEDED') {
+        return new Response(JSON.stringify({ url: data.output?.[0], duration: 5 }), { headers: { 'Content-Type': 'application/json' } })
+      }
+      if (data.status === 'FAILED') {
+        return new Response(JSON.stringify({ error: data.failure || 'runway_failed' }), { status: 502, headers: { 'Content-Type': 'application/json' } })
+      }
+    }
+    return new Response(JSON.stringify({ error: 'timeout' }), { status: 504, headers: { 'Content-Type': 'application/json' } })
+  },
+
+  suno: async (req) => {
+    const auth = req.headers.get('Authorization')
+    if (!auth) return new Response(JSON.stringify({ error: 'missing_provider_key' }), { status: 400 })
+    const body = await req.json()
+    // Using sunoapi.org-compatible endpoint (Suno's own API is not public)
+    const start = await fetch('https://api.sunoapi.org/api/v1/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: auth },
+      body: JSON.stringify({ prompt: body.prompt, make_instrumental: false, wait_audio: false }),
+    })
+    if (!start.ok) return start
+    const job = await start.json()
+    const id = job?.data?.[0]?.id || job.id
+    if (!id) return new Response(JSON.stringify({ error: 'no_job_id' }), { status: 502, headers: { 'Content-Type': 'application/json' } })
+    // Poll
+    for (let i = 0; i < 30; i++) {
+      await new Promise(r => setTimeout(r, 4000))
+      const status = await fetch(`https://api.sunoapi.org/api/v1/feed/${id}`, {
+        headers: { Authorization: auth },
+      })
+      const data = await status.json()
+      const track = Array.isArray(data) ? data[0] : data?.data?.[0]
+      if (track?.audio_url) {
+        return new Response(JSON.stringify({ url: track.audio_url, title: track.title }), { headers: { 'Content-Type': 'application/json' } })
+      }
+      if (track?.status === 'error') {
+        return new Response(JSON.stringify({ error: 'suno_failed' }), { status: 502, headers: { 'Content-Type': 'application/json' } })
+      }
+    }
+    return new Response(JSON.stringify({ error: 'timeout' }), { status: 504, headers: { 'Content-Type': 'application/json' } })
+  },
 }

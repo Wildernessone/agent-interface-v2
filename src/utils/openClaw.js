@@ -131,9 +131,14 @@ export async function orchestrate({
   const correctionPhrases = ["that's not what i meant", "no i wanted", "wrong", "not right", "try again", "that's not", "i said", "i meant", "actually"]
   const isCorrection = correctionPhrases.some(p => userMessage.toLowerCase().includes(p))
 
+  // Detect build-mode signal — user is approving / triggering execution
+  const buildSignals = ["build it", "build this", "make it", "let's do it", "ship it", "do it", "go for it", "create it", "produce it", "generate it", "yes build", "yes do", "yes make", "go ahead", "let's go", "perfect, build", "great build"]
+  const isBuildSignal = buildSignals.some(p => userMessage.toLowerCase().includes(p))
+
   const prompt = `
 USER MESSAGE: "${userMessage}"
 IS CORRECTION: ${isCorrection}
+IS BUILD SIGNAL: ${isBuildSignal}
 VOICE MODE: ${voiceMode}
 
 WHAT AGENTS SAID:
@@ -146,46 +151,45 @@ ACTIVE PROJECT: ${activeProject?.name || "none"}
 USER MEMORY CONTEXT:
 ${memorySummary}
 
-AGENT CAPABILITIES:
-- claude: reasoning, writing, strategy, analysis, ethics
-- gpt: code, technical, structured output, image generation
-- gemini: research, multimodal, real-time data, Google data
-- grok: current events, contrarian views, direct opinions
+AGENT CAPABILITIES (use strengths, skip weaknesses):
+- claude: nuanced reasoning, careful writing, strategy, ethics, ambiguity, long-form thinking
+- gpt: code, technical structure, structured output, image prompting
+- gemini: research, real-time data, Google ecosystem, multimodal
+- grok: current events, contrarian takes, direct opinions, internet culture
 
 TOOL CAPABILITIES:
-- dalle: generates images from text
-- perplexity: searches web for current info
-- elevenlabs: text to speech
+- dalle, stability, ideogram: generate images from text
+- runway: generate video from text/image (async, takes 30-90s)
+- suno: generate full songs with vocals (async, takes 30-90s)
+- elevenlabs: text-to-speech narration / voiceover
+- perplexity, tavily: search the web for current info
 
 YOUR JOB:
-1. Decide which agents should respond (based on topic and capabilities)
-2. Decide how many rounds (1=simple, 2=needs expansion, 3=needs debate)
-3. Decide if a tool should fire (ONLY if explicitly requested or clearly implied)
-4. Build the best tool prompt by synthesizing ALL agent input
-5. Decide where output goes
-6. If this is a correction, note what to learn
-7. In voice mode keep everything SHORT
+1. Pick the agents whose STRENGTHS fit the topic. Skip the weak ones. Don't fire all four unless the topic genuinely needs all perspectives.
+2. Decide how many rounds (1=simple Q&A, 2=needs back-and-forth, 3=full debate)
+3. Decide if this is DISCUSSION mode (agents talk, no tools) or BUILD mode (agents already discussed, user is approving — fire tools).
+4. If BUILD mode: produce a PLAN — an ordered list of tools to fire, with the right prompt for each. Multi-step is encouraged (e.g. ad = script → voice → music → video).
+5. Use prior agent input to write better tool prompts. Synthesize what they agreed on.
+6. If correction, note what to learn.
+7. Voice mode = keep replies extremely short.
 
-TOOL FIRING RULES:
-- Only fire if user EXPLICITLY asked for image/video/music/search
-- "paint a picture of" = metaphor, do NOT fire image tool
-- "make me an image of" = fire image tool
-- "what does X look like" = do NOT fire, just describe
-- "search for X" or "find out about X" = fire search tool
+BUILD MODE RULES:
+- If IS BUILD SIGNAL is true AND there has been prior discussion, set mode="build" and produce a plan.
+- If user explicitly asks for output ("draw me X", "make me a song about Y", "search for Z") with no discussion needed, set mode="build" and plan=[one tool].
+- Otherwise mode="discuss" with plan=[] — let the agents talk.
+- "paint a picture of life" = metaphor, do NOT fire. "make me an image of a sunset" = fire dalle.
+- For a 30s ad: plan = [{tool:"elevenlabs", prompt:"the voiceover script"}, {tool:"suno", prompt:"background music style description"}, {tool:"runway", prompt:"video description"}]
+- Only include tools that are in AVAILABLE TOOLS.
 
-OUTPUT THIS EXACT JSON (no other text):
+OUTPUT EXACT JSON (no other text):
 {
+  "mode": "discuss",
   "agents_to_respond": ["claude"],
   "skip_agents": ["gpt", "gemini", "grok"],
   "skip_reason": "why skipped",
   "rounds": 1,
   "response_mode": "concise",
-  "tool": {
-    "should_fire": false,
-    "tool_id": null,
-    "prompt": null,
-    "destination": "chat"
-  },
+  "plan": [],
   "correction": {
     "detected": false,
     "what_was_wrong": null,
@@ -196,6 +200,8 @@ OUTPUT THIS EXACT JSON (no other text):
   "voice_response_chars": 300,
   "reasoning": "one line"
 }
+
+Each plan entry is { "tool": "<tool_id>", "prompt": "<the prompt for that tool>", "label": "<short label like 'Voiceover' or 'Background music'>" }.
 `
 
   if (!modelConfig) {
@@ -217,11 +223,12 @@ OUTPUT THIS EXACT JSON (no other text):
 // ── Default when OpenClaw unavailable ─────────────────────
 function defaultDecision(enabledAgents, voiceMode) {
   return {
+    mode: "discuss",
     agents_to_respond: enabledAgents,
     skip_agents: [],
     rounds: 1,
     response_mode: voiceMode ? "concise" : "balanced",
-    tool: { should_fire: false, tool_id: null, prompt: null, destination: "chat" },
+    plan: [],
     correction: { detected: false },
     voice_response_chars: voiceMode ? 200 : 500,
     reasoning: "Default — OpenClaw unavailable",

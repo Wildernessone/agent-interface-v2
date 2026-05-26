@@ -7,6 +7,7 @@ import { exportConversation } from '../utils/exportConversation'
 import HistorySidebar from './HistorySidebar'
 import { orchestrate, getProactiveNotices, processCorrection } from '../utils/openClaw'
 import { logUsage, logError, checkTierLimits } from '../utils/telemetry'
+import { saveToDrive } from '../utils/driveStorage'
 import { supabase } from '../utils/supabase'
 import PromptLibrary from './PromptLibrary'
 import ToolOutput from './ToolOutput'
@@ -142,7 +143,7 @@ async function streamGrok(key, messages, onChunk, onDone, onError) {
 }
 
 export default function TheInterface() {
-  const { settings, turns, activeAgentId, voiceMode, addTurn, addToolTurn, appendChunk, finishTurn, addErrorTurn, addToolErrorTurn, clearTurns, setVoiceMode, saveConversation, conversationId, loadMemory, saveMemory } = useStore()
+  const { settings, turns, activeAgentId, voiceMode, addTurn, addToolTurn, updateToolTurn, appendChunk, finishTurn, addErrorTurn, addToolErrorTurn, clearTurns, setVoiceMode, saveConversation, conversationId, loadMemory, saveMemory } = useStore()
   
   const handleVoiceToggle = () => {
     // Recreate VoiceEngine with latest settings when toggling on
@@ -225,9 +226,12 @@ export default function TheInterface() {
       return
     }
 
-    const respondingAgents = clawDecision?.agents_to_respond?.length
-      ? selected.filter(a => clawDecision.agents_to_respond.includes(a.id))
-      : selected
+    const isBuildMode = clawDecision?.mode === "build"
+    const respondingAgents = isBuildMode
+      ? []
+      : (clawDecision?.agents_to_respond?.length
+        ? selected.filter(a => clawDecision.agents_to_respond.includes(a.id))
+        : selected)
     const totalRounds = clawDecision?.rounds || 1
     const activeResponseMode = clawDecision?.response_mode || responseMode
 
@@ -299,26 +303,36 @@ export default function TheInterface() {
       }
     }
 
-    // OpenClaw tool firing — uses clawDecision from above
-    if (clawDecision?.tool?.should_fire && clawDecision?.tool?.tool_id) {
+    // OpenClaw tool plan — fire each step in the plan
+    const plan = Array.isArray(clawDecision?.plan) ? clawDecision.plan : []
+    if (plan.length > 0) {
       setToolsWorking(true)
-      try {
-        const agentContext = conversationRef.current
-          .filter(m => m.role === "assistant")
-          .map(m => m.content).join(" ")
-        const toolPrompt = clawDecision.tool.prompt ||
-          (agentContext.length > 20 ? `${text}. ${agentContext}`.slice(0, 900) : text)
-        const output = await runTool(clawDecision.tool.tool_id, toolPrompt, settings)
-        addToolTurn({ id: `tool-${clawDecision.tool.tool_id}-${Date.now()}`, type: "tool", output })
-        logUsage({ kind: "tool_call", provider: clawDecision.tool.tool_id, success: true })
-      } catch(e) {
-        const errorType = e.errorType || "unknown"
-        addToolErrorTurn(clawDecision.tool.tool_id, errorType, e.message)
-        logUsage({ kind: "tool_call", provider: clawDecision.tool.tool_id, success: false, errorType })
-        if (errorType === "unknown" || errorType === "bad_response") logError("runTool", e, { tool: clawDecision.tool.tool_id })
-      } finally {
-        setToolsWorking(false)
+      const agentContext = conversationRef.current
+        .filter(m => m.role === "assistant")
+        .map(m => m.content).join(" ")
+      const fallback = (agentContext.length > 20 ? `${text}. ${agentContext}`.slice(0, 900) : text)
+
+      for (const step of plan) {
+        if (!step?.tool) continue
+        const turnId = `tool-${step.tool}-${Date.now()}-${Math.random().toString(36).slice(2,7)}`
+        try {
+          const output = await runTool(step.tool, step.prompt || fallback, settings)
+          if (step.label) output.label = step.label
+          addToolTurn({ id: turnId, type: "tool", output })
+          logUsage({ kind: "tool_call", provider: step.tool, success: true })
+
+          // Fire-and-forget save to Drive
+          saveToDrive(output).then(drive => {
+            if (drive?.webViewLink) updateToolTurn(turnId, { driveUrl: drive.webViewLink })
+          })
+        } catch(e) {
+          const errorType = e.errorType || "unknown"
+          addToolErrorTurn(step.tool, errorType, e.message)
+          logUsage({ kind: "tool_call", provider: step.tool, success: false, errorType })
+          if (errorType === "unknown" || errorType === "bad_response") logError("runTool", e, { tool: step.tool })
+        }
       }
+      setToolsWorking(false)
     }
   }
 
@@ -585,17 +599,20 @@ function toolError(toolId, errorType, message) {
   return e
 }
 
+async function proxyFetch(path, body, extraHeaders = {}) {
+  return fetch(`${PROXY}/${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeader()), ...extraHeaders },
+    body: JSON.stringify(body),
+  })
+}
+
 async function runTool(toolId, prompt, settings) {
   const gptKey = settings?.agents?.gpt?.key || ''
 
   if (toolId === "dalle") {
     if (!gptKey) throw toolError("dalle", "missing_key", "DALL-E needs an OpenAI key — add it in Settings → Agents → ChatGPT.")
-    const headers = { "Content-Type": "application/json", "Authorization": `Bearer ${gptKey}`, ...(await authHeader()) }
-    const res = await fetch(`${PROXY}/dalle`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ prompt: prompt.slice(0, 900) }),
-    })
+    const res = await proxyFetch("dalle", { prompt: prompt.slice(0, 900) }, { Authorization: `Bearer ${gptKey}` })
     if (!res.ok) {
       const t = await res.text().catch(() => "")
       throw toolError("dalle", classifyError(res.status, t), t || `DALL-E returned ${res.status}`)
@@ -610,8 +627,51 @@ async function runTool(toolId, prompt, settings) {
     throw toolError("dalle", "bad_response", "DALL-E returned no image.")
   }
 
+  if (toolId === "stability") {
+    const key = settings?.tools?.stability?.key
+    if (!key) throw toolError("stability", "missing_key", "Stable Diffusion needs an API key — add it in Settings → Tools → Images.")
+    const res = await proxyFetch("stability", { prompt: prompt.slice(0, 900) }, { Authorization: `Bearer ${key}` })
+    if (!res.ok) {
+      const t = await res.text().catch(() => "")
+      throw toolError("stability", classifyError(res.status, t), t || `Stability returned ${res.status}`)
+    }
+    const data = await res.json()
+    if (data.error) throw toolError("stability", "bad_response", data.error)
+    const b64 = data.image
+    if (!b64) throw toolError("stability", "bad_response", "Stability returned no image.")
+    return { type: "image", url: `data:image/png;base64,${b64}`, prompt, tool: "stability" }
+  }
+
+  if (toolId === "ideogram") {
+    const key = settings?.tools?.ideogram?.key
+    if (!key) throw toolError("ideogram", "missing_key", "Ideogram needs an API key — add it in Settings → Tools → Images.")
+    const res = await proxyFetch("ideogram", { prompt: prompt.slice(0, 900) }, { "x-api-key": key })
+    if (!res.ok) {
+      const t = await res.text().catch(() => "")
+      throw toolError("ideogram", classifyError(res.status, t), t || `Ideogram returned ${res.status}`)
+    }
+    const data = await res.json()
+    const imgUrl = data.data?.[0]?.url
+    if (!imgUrl) throw toolError("ideogram", "bad_response", "Ideogram returned no image.")
+    return { type: "image", url: imgUrl, prompt, tool: "ideogram" }
+  }
+
+  if (toolId === "elevenlabs") {
+    const key = settings?.tools?.elevenlabs?.key
+    if (!key) throw toolError("elevenlabs", "missing_key", "ElevenLabs needs an API key — add it in Settings → Tools → Voice.")
+    const voiceId = "21m00Tcm4TlvDq8ikWAM" // Rachel — default English voice
+    const res = await proxyFetch("elevenlabs", { text: prompt.slice(0, 2500), voice_id: voiceId }, { "x-api-key": key })
+    if (!res.ok) {
+      const t = await res.text().catch(() => "")
+      throw toolError("elevenlabs", classifyError(res.status, t), t || `ElevenLabs returned ${res.status}`)
+    }
+    const data = await res.json()
+    if (!data.audio) throw toolError("elevenlabs", "bad_response", "ElevenLabs returned no audio.")
+    return { type: "audio", url: `data:audio/mpeg;base64,${data.audio}`, title: prompt.slice(0, 60), prompt, tool: "elevenlabs" }
+  }
+
   if (toolId === "perplexity") {
-    const key = settings?.tools?.perplexity?.key || ''
+    const key = settings?.tools?.perplexity?.key
     if (!key) throw toolError("perplexity", "missing_key", "Perplexity needs an API key — add it in Settings → Tools → Search.")
     const res = await fetch("https://api.perplexity.ai/chat/completions", {
       method: "POST",
@@ -626,6 +686,50 @@ async function runTool(toolId, prompt, settings) {
     const text = data.choices?.[0]?.message?.content
     if (!text) throw toolError("perplexity", "bad_response", "Perplexity returned no content.")
     return { type: "search", text, citations: data.citations || [], tool: "perplexity" }
+  }
+
+  if (toolId === "tavily") {
+    const key = settings?.tools?.tavily?.key
+    if (!key) throw toolError("tavily", "missing_key", "Tavily needs an API key — add it in Settings → Tools → Search.")
+    const res = await fetch("https://api.tavily.com/search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ api_key: key, query: prompt, search_depth: "advanced", max_results: 5, include_answer: true }),
+    })
+    if (!res.ok) {
+      const t = await res.text().catch(() => "")
+      throw toolError("tavily", classifyError(res.status, t), t || `Tavily returned ${res.status}`)
+    }
+    const data = await res.json()
+    const text = data.answer || data.results?.map(r => `${r.title}: ${r.content}`).join('\n\n')
+    if (!text) throw toolError("tavily", "bad_response", "Tavily returned no results.")
+    return { type: "search", text, citations: (data.results || []).map(r => ({ title: r.title, url: r.url })), tool: "tavily" }
+  }
+
+  if (toolId === "runway") {
+    const key = settings?.tools?.runway?.key
+    if (!key) throw toolError("runway", "missing_key", "Runway needs an API key — add it in Settings → Tools → Video.")
+    const res = await proxyFetch("runway", { prompt: prompt.slice(0, 900) }, { Authorization: `Bearer ${key}` })
+    if (!res.ok) {
+      const t = await res.text().catch(() => "")
+      throw toolError("runway", classifyError(res.status, t), t || `Runway returned ${res.status}`)
+    }
+    const data = await res.json()
+    if (!data.url) throw toolError("runway", "bad_response", "Runway returned no video URL.")
+    return { type: "video", url: data.url, prompt, tool: "runway", duration: data.duration }
+  }
+
+  if (toolId === "suno") {
+    const key = settings?.tools?.suno?.key
+    if (!key) throw toolError("suno", "missing_key", "Suno needs an API key — add it in Settings → Tools → Music.")
+    const res = await proxyFetch("suno", { prompt: prompt.slice(0, 500) }, { Authorization: `Bearer ${key}` })
+    if (!res.ok) {
+      const t = await res.text().catch(() => "")
+      throw toolError("suno", classifyError(res.status, t), t || `Suno returned ${res.status}`)
+    }
+    const data = await res.json()
+    if (!data.url) throw toolError("suno", "bad_response", "Suno returned no audio URL.")
+    return { type: "audio", url: data.url, title: data.title || prompt.slice(0, 60), prompt, tool: "suno" }
   }
 
   throw toolError(toolId, "not_implemented", `The ${toolId} tool isn't available yet.`)

@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { supabase } from './utils/supabase'
 import { useStore } from './store/useStore'
 import { initTelemetry, identifyUser } from './utils/telemetry'
+import { captureDriveTokens } from './utils/driveStorage'
 import AuthScreen from './components/AuthScreen'
 import TheInterface from './components/TheInterface'
 import './App.css'
@@ -16,7 +17,10 @@ export default function App() {
       setSession(session)
       setUser(session?.user ?? null)
       identifyUser(session?.user)
-      if (session) loadSettings()
+      if (session) {
+        loadSettings()
+        if (session.provider_token) captureDriveTokens()
+      }
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -24,7 +28,10 @@ export default function App() {
         setSession(session)
         setUser(session?.user ?? null)
         identifyUser(session?.user)
-        if (session) loadSettings()
+        if (session) {
+          loadSettings()
+          if (session.provider_token) captureDriveTokens()
+        }
       }
     )
 

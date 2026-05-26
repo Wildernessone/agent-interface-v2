@@ -5,7 +5,28 @@ export default function ToolOutput({ output }) {
   if (output.type === 'image') return <ImageOutput output={output} />
   if (output.type === 'search') return <SearchOutput output={output} />
   if (output.type === 'audio') return <AudioOutput output={output} />
+  if (output.type === 'video') return <VideoOutput output={output} />
   return null
+}
+
+function VideoOutput({ output }) {
+  return (
+    <div style={{ marginTop:8 }}>
+      {output.label && <div style={{ fontSize:10, color:'rgba(255,255,255,0.4)', fontFamily:'monospace', marginBottom:6, letterSpacing:'0.05em' }}>{output.label}</div>}
+      <video controls src={output.url} style={{ width:'100%', maxWidth:480, borderRadius:12, border:'1px solid rgba(255,255,255,0.1)', display:'block' }}/>
+      <div style={{ display:'flex', gap:8, marginTop:8, flexWrap:'wrap' }}>
+        <a href={output.url} download target="_blank" rel="noreferrer" style={{ fontSize:11, color:'rgba(255,255,255,0.5)', fontFamily:'monospace', textDecoration:'none', padding:'4px 10px', borderRadius:8, border:'1px solid rgba(255,255,255,0.1)', background:'rgba(255,255,255,0.04)' }}>⬇ Download</a>
+        <DriveBadge url={output.driveUrl}/>
+      </div>
+    </div>
+  )
+}
+
+function DriveBadge({ url }) {
+  if (!url) return null
+  return (
+    <a href={url} target="_blank" rel="noreferrer" style={{ fontSize:11, color:'#74C69D', fontFamily:'monospace', textDecoration:'none', padding:'4px 10px', borderRadius:8, border:'1px solid rgba(116,198,157,0.3)', background:'rgba(116,198,157,0.08)' }}>✓ Saved to Drive</a>
+  )
 }
 
 function ImageOutput({ output }) {
@@ -13,6 +34,7 @@ function ImageOutput({ output }) {
   const [zoomed, setZoomed] = useState(false)
   return (
     <div style={{ marginTop:8 }}>
+      {output.label && <div style={{ fontSize:10, color:'rgba(255,255,255,0.4)', fontFamily:'monospace', marginBottom:6, letterSpacing:'0.05em' }}>{output.label}</div>}
       {!loaded && (
         <div style={{ height:160, background:'rgba(255,255,255,0.04)', borderRadius:12, display:'flex', alignItems:'center', justifyContent:'center', border:'1px solid rgba(255,255,255,0.08)' }}>
           <span style={{ fontSize:12, color:'rgba(255,255,255,0.3)', fontFamily:'monospace' }}>Loading image...</span>
@@ -25,10 +47,10 @@ function ImageOutput({ output }) {
           onClick={() => setZoomed(true)}
           style={{ width:'100%', maxWidth:480, borderRadius:12, border:'1px solid rgba(255,255,255,0.1)', cursor:'zoom-in', display:'block' }}
         />
-        {output.mock && <div style={{ fontSize:9, color:'rgba(255,255,255,0.25)', fontFamily:'monospace', marginTop:4 }}>demo image — add API key for real generation</div>}
-        <div style={{ display:'flex', gap:8, marginTop:8 }}>
+        <div style={{ display:'flex', gap:8, marginTop:8, flexWrap:'wrap' }}>
           <a href={output.url} download target="_blank" rel="noreferrer" style={{ fontSize:11, color:'rgba(255,255,255,0.5)', fontFamily:'monospace', textDecoration:'none', padding:'4px 10px', borderRadius:8, border:'1px solid rgba(255,255,255,0.1)', background:'rgba(255,255,255,0.04)' }}>⬇ Download</a>
           <button onClick={() => setZoomed(true)} style={{ fontSize:11, color:'rgba(255,255,255,0.5)', fontFamily:'monospace', padding:'4px 10px', borderRadius:8, border:'1px solid rgba(255,255,255,0.1)', background:'rgba(255,255,255,0.04)', cursor:'pointer' }}>⤢ Expand</button>
+          <DriveBadge url={output.driveUrl}/>
         </div>
       </div>
       {zoomed && (
@@ -49,15 +71,21 @@ function AudioOutput({ output }) {
     else { audioRef.current.play(); setPlaying(true) }
   }
   return (
-    <div style={{ marginTop:8, background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:12, padding:'12px 14px', maxWidth:340 }}>
-      <div style={{ display:'flex', alignItems:'center', gap:12 }}>
-        <button onClick={toggle} style={{ width:36, height:36, borderRadius:'50%', background:'#6366f1', border:'none', color:'white', fontSize:14, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>{playing ? '⏸' : '▶'}</button>
-        <div style={{ flex:1 }}>
-          <div style={{ fontSize:12, color:'rgba(255,255,255,0.7)', fontFamily:'monospace', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{output.title || 'Generated Audio'}</div>
-          {output.mock && <div style={{ fontSize:9, color:'rgba(255,255,255,0.25)', fontFamily:'monospace', marginTop:2 }}>demo — add API key for real audio</div>}
+    <div style={{ marginTop:8 }}>
+      {output.label && <div style={{ fontSize:10, color:'rgba(255,255,255,0.4)', fontFamily:'monospace', marginBottom:6, letterSpacing:'0.05em' }}>{output.label}</div>}
+      <div style={{ background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:12, padding:'12px 14px', maxWidth:340 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+          <button onClick={toggle} style={{ width:36, height:36, borderRadius:'50%', background:'#6366f1', border:'none', color:'white', fontSize:14, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>{playing ? '⏸' : '▶'}</button>
+          <div style={{ flex:1 }}>
+            <div style={{ fontSize:12, color:'rgba(255,255,255,0.7)', fontFamily:'monospace', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{output.title || 'Generated Audio'}</div>
+          </div>
         </div>
+        {output.url && <audio ref={audioRef} src={output.url} onEnded={() => setPlaying(false)} style={{ display:'none' }}/>}
       </div>
-      {output.url && <audio ref={audioRef} src={output.url} onEnded={() => setPlaying(false)} style={{ display:'none' }}/>}
+      <div style={{ display:'flex', gap:8, marginTop:8 }}>
+        <a href={output.url} download target="_blank" rel="noreferrer" style={{ fontSize:11, color:'rgba(255,255,255,0.5)', fontFamily:'monospace', textDecoration:'none', padding:'4px 10px', borderRadius:8, border:'1px solid rgba(255,255,255,0.1)', background:'rgba(255,255,255,0.04)' }}>⬇ Download</a>
+        <DriveBadge url={output.driveUrl}/>
+      </div>
     </div>
   )
 }
@@ -65,7 +93,7 @@ function AudioOutput({ output }) {
 function SearchOutput({ output }) {
   return (
     <div style={{ marginTop:8, background:'rgba(99,102,241,0.06)', border:'1px solid rgba(99,102,241,0.2)', borderRadius:12, padding:'14px 16px', maxWidth:480 }}>
-      <div style={{ fontSize:10, color:'#7EB8F7', fontFamily:'monospace', marginBottom:8, letterSpacing:'0.07em' }}>🔍 SEARCH RESULTS</div>
+      <div style={{ fontSize:10, color:'#7EB8F7', fontFamily:'monospace', marginBottom:8, letterSpacing:'0.07em' }}>🔍 {(output.tool || 'SEARCH').toUpperCase()} RESULTS</div>
       <div style={{ fontSize:13, color:'rgba(255,255,255,0.8)', lineHeight:1.65, marginBottom: output.citations?.length ? 10 : 0 }}>{output.text}</div>
       {output.citations?.length > 0 && (
         <div style={{ borderTop:'1px solid rgba(255,255,255,0.08)', paddingTop:8 }}>
@@ -75,7 +103,6 @@ function SearchOutput({ output }) {
           ))}
         </div>
       )}
-      {output.mock && <div style={{ fontSize:9, color:'rgba(255,255,255,0.25)', fontFamily:'monospace', marginTop:6 }}>demo — add Perplexity key for real search</div>}
     </div>
   )
 }

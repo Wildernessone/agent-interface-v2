@@ -12,9 +12,14 @@ const AGENTS = [
 ]
 
 const TOOLS = [
-  { id:"dalle",      name:"DALL-E",        category:"Images", placeholder:"sk-proj-...",  desc:"Generate images (uses OpenAI key)" },
+  { id:"dalle",      name:"DALL-E",        category:"Images", placeholder:"(uses OpenAI key)", desc:"OpenAI image generation" },
+  { id:"stability",  name:"Stable Diffusion", category:"Images", placeholder:"sk-...",      desc:"Stable Diffusion 3 image generation" },
+  { id:"ideogram",   name:"Ideogram",      category:"Images", placeholder:"ideo-...",     desc:"Best for images with text" },
+  { id:"runway",     name:"Runway Gen-4",  category:"Video",  placeholder:"key-...",      desc:"AI video generation (async)" },
+  { id:"suno",       name:"Suno",          category:"Music",  placeholder:"suno-...",     desc:"Full songs with vocals" },
+  { id:"elevenlabs", name:"ElevenLabs",    category:"Voice",  placeholder:"sk_...",       desc:"Premium AI voice synthesis" },
   { id:"perplexity", name:"Perplexity",    category:"Search", placeholder:"pplx-...",     desc:"Real-time web search" },
-  { id:"elevenlabs", name:"ElevenLabs",    category:"Voice",  placeholder:"el-...",       desc:"Premium AI voice synthesis" },
+  { id:"tavily",     name:"Tavily",        category:"Search", placeholder:"tvly-...",     desc:"AI-optimized search" },
 ]
 
 // Popular ElevenLabs voices with distinct personalities
