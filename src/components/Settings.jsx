@@ -34,21 +34,37 @@ const ELEVENLABS_VOICES = [
 ]
 
 const THEMES = [
-  { id:"dark",     label:"Dark",     swatch:"#0E0F12" },
-  { id:"light",    label:"Light",    swatch:"#FAFAF8" },
-  { id:"midnight", label:"Midnight", swatch:"#04050A" },
-  { id:"slate",    label:"Slate",    swatch:"#161A23" },
+  { id:"dark",     label:"Dark",     desc:"Neutral slate, warm text",
+    bg:"#0E0F12",  bgAlt:"#16181D", border:"#25272D", text:"#F2F1ED", muted:"#A8A9AD" },
+  { id:"light",    label:"Light",    desc:"Warm off-white, easy daytime",
+    bg:"#FAFAF8",  bgAlt:"#FFFFFF", border:"#E5E4E0", text:"#0E0F12", muted:"#54565B" },
+  { id:"midnight", label:"Midnight", desc:"True black, OLED-friendly",
+    bg:"#04050A",  bgAlt:"#0A0C14", border:"#1A1E2A", text:"#EAEDF5", muted:"#9499A8" },
+  { id:"slate",    label:"Slate",    desc:"Desaturated cool blue",
+    bg:"#161A23",  bgAlt:"#1E232E", border:"#2D3340", text:"#E8EAEF", muted:"#9CA1AD" },
 ]
 
 const ACCENTS = [
-  "#2A6EF5", // cobalt (default)
-  "#B96B3A", // terracotta
-  "#2D7A50", // forest
-  "#6B4FD8", // indigo
-  "#B23A3A", // red
-  "#B97400", // amber
-  "#0E908E", // teal
-  "#9333EA", // violet
+  { hex:"#6FA1FF", name:"Cobalt"     },
+  { hex:"#E8A87C", name:"Terracotta" },
+  { hex:"#7DC9A5", name:"Forest"     },
+  { hex:"#B3A1F2", name:"Indigo"     },
+  { hex:"#F08585", name:"Ember"      },
+  { hex:"#E0B36A", name:"Amber"      },
+  { hex:"#7FCFCB", name:"Teal"       },
+  { hex:"#D89BE8", name:"Orchid"     },
+]
+
+const FONT_SIZES = [
+  { id:"Small",  label:"Small",  px:"13px", desc:"Denser, more on screen" },
+  { id:"Medium", label:"Medium", px:"15px", desc:"Default balance" },
+  { id:"Large",  label:"Large",  px:"17px", desc:"Easier on the eyes" },
+]
+
+const BUBBLE_STYLES = [
+  { id:"Rounded", label:"Rounded", radius:"12px" },
+  { id:"Square",  label:"Square",  radius:"4px" },
+  { id:"Pill",    label:"Pill",    radius:"20px" },
 ]
 
 const TABS = [
@@ -226,44 +242,104 @@ export default function Settings({ onClose }) {
             <>
               <section className="settings-card">
                 <label className="settings-label">Theme</label>
-                <div className="settings-theme-grid">
-                  {THEMES.map(t => (
+                <p className="settings-help">Sets the whole color palette. Tap to preview live.</p>
+                <div className="display-theme-grid">
+                  {THEMES.map(t => {
+                    const active = settings.themeId === t.id
+                    return (
+                      <button
+                        key={t.id}
+                        className={`display-theme${active ? " is-active" : ""}`}
+                        onClick={() => updateSetting("themeId", t.id)}
+                        style={{ background: t.bg, borderColor: active ? settings.accent : t.border }}
+                      >
+                        <div className="display-theme-preview" style={{ background: t.bgAlt, borderColor: t.border }}>
+                          <div className="display-theme-line" style={{ background: t.muted, width: "65%" }}/>
+                          <div className="display-theme-line" style={{ background: t.muted, width: "40%", opacity: 0.6 }}/>
+                          <div className="display-theme-bubble" style={{ background: settings.accent, color: t.bg }}>Aa</div>
+                        </div>
+                        <div className="display-theme-foot">
+                          <span className="display-theme-name" style={{ color: t.text }}>{t.label}</span>
+                          <span className="display-theme-desc" style={{ color: t.muted }}>{t.desc}</span>
+                        </div>
+                        {active && <span className="display-theme-check" style={{ background: settings.accent }}>✓</span>}
+                      </button>
+                    )
+                  })}
+                </div>
+              </section>
+
+              <section className="settings-card">
+                <label className="settings-label">Accent</label>
+                <p className="settings-help">The single color used for highlights, links, and active states.</p>
+                <div className="display-accents">
+                  {ACCENTS.map(c => {
+                    const active = settings.accent === c.hex
+                    return (
+                      <button
+                        key={c.hex}
+                        className={`display-accent${active ? " is-active" : ""}`}
+                        onClick={() => updateSetting("accent", c.hex)}
+                        title={c.name}
+                        aria-label={c.name}
+                        style={{ "--swatch": c.hex }}
+                      >
+                        <span className="display-accent-swatch" style={{ background: c.hex }}/>
+                        <span className="display-accent-name">{c.name}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </section>
+
+              <section className="settings-card">
+                <label className="settings-label">Font size</label>
+                <p className="settings-help">Affects every chat message and the input field.</p>
+                <div className="display-fontsize">
+                  {FONT_SIZES.map(sz => (
                     <button
-                      key={t.id}
-                      className={`settings-theme${settings.themeId === t.id ? " is-active" : ""}`}
-                      onClick={() => updateSetting("themeId", t.id)}
+                      key={sz.id}
+                      className={`display-fontsize-opt${settings.fontSize === sz.id ? " is-active" : ""}`}
+                      onClick={() => updateSetting("fontSize", sz.id)}
                     >
-                      <span className="settings-theme-swatch" style={{ background: t.swatch }}/>
-                      <span>{t.label}</span>
-                      {settings.themeId === t.id && <span className="settings-theme-check">✓</span>}
+                      <span className="display-fontsize-sample" style={{ fontSize: sz.px }}>Aa</span>
+                      <span className="display-fontsize-name">{sz.label}</span>
+                      <span className="display-fontsize-desc">{sz.desc}</span>
                     </button>
                   ))}
                 </div>
               </section>
+
               <section className="settings-card">
-                <label className="settings-label">Accent</label>
-                <div className="settings-accents">
-                  {ACCENTS.map(c => (
+                <label className="settings-label">Bubble style</label>
+                <p className="settings-help">Corner shape of message bubbles.</p>
+                <div className="display-bubble-grid">
+                  {BUBBLE_STYLES.map(b => (
                     <button
-                      key={c}
-                      className={`settings-accent${settings.accent === c ? " is-active" : ""}`}
-                      onClick={() => updateSetting("accent", c)}
-                      style={{ background: c }}
-                      aria-label={`Accent ${c}`}
-                    />
+                      key={b.id}
+                      className={`display-bubble-opt${settings.bubbleStyle === b.id ? " is-active" : ""}`}
+                      onClick={() => updateSetting("bubbleStyle", b.id)}
+                    >
+                      <span className="display-bubble-sample" style={{ borderRadius: b.radius, background: settings.accent }}/>
+                      <span className="display-bubble-name">{b.label}</span>
+                    </button>
                   ))}
                 </div>
               </section>
-              <section className="settings-card">
-                <label className="settings-label">Font size</label>
-                <div className="settings-fontsize">
-                  {["Small","Medium","Large"].map(sz => (
-                    <button
-                      key={sz}
-                      className={`settings-size${settings.fontSize === sz ? " is-active" : ""}`}
-                      onClick={() => updateSetting("fontSize", sz)}
-                    >{sz}</button>
-                  ))}
+
+              {/* Live preview — shows the user what the choices look like together */}
+              <section className="settings-card display-preview-card">
+                <label className="settings-label">Preview</label>
+                <div className="display-preview">
+                  <div className="display-preview-user" style={{ borderRadius: `var(--bubble-radius)`, fontSize: `var(--chat-font-size)` }}>
+                    What does the studio actually do?
+                  </div>
+                  <div className="display-preview-agent">
+                    <div className="display-preview-name" style={{ color: settings.accent }}>Claude</div>
+                    <div className="display-preview-text" style={{ fontSize: `var(--chat-font-size)` }}>
+                      It's the orchestration layer. You bring your own keys, your own storage. OpenClaw routes everything intelligently and learns how you work over time.
+                    </div>
+                  </div>
                 </div>
               </section>
             </>

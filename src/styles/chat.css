@@ -230,10 +230,12 @@
   max-width: 75%;
   padding: var(--space-4) var(--space-5);
   background: var(--color-bg-tertiary);
-  border-radius: var(--radius-lg);
-  font-size: var(--font-size-base);
+  border-radius: var(--bubble-radius);
+  font-size: var(--chat-font-size);
   line-height: var(--line-height-normal);
   color: var(--color-text-primary);
+  transition: border-radius var(--duration-normal) var(--easing-default),
+              font-size var(--duration-normal) var(--easing-default);
 }
 
 .ai-avatar {
@@ -266,11 +268,12 @@
   margin-bottom: var(--space-2);
 }
 .ai-agent-text {
-  font-size: var(--font-size-base);
+  font-size: var(--chat-font-size);
   line-height: var(--line-height-relaxed);
   color: var(--color-text-primary);
   white-space: pre-wrap;
   word-wrap: break-word;
+  transition: font-size var(--duration-normal) var(--easing-default);
 }
 .ai-agent-text.is-streaming {
   position: relative;

@@ -4,8 +4,9 @@ import { logError } from '../utils/telemetry'
 
 const DEFAULT_SETTINGS = {
   themeId: 'dark',
-  accent: '#6366f1',
+  accent: '#6FA1FF',
   fontSize: 'Medium',
+  bubbleStyle: 'Rounded',
   plan: 'free',
   agents: {
     claude:  { enabled: true,  key: '' },
@@ -61,6 +62,7 @@ export const useStore = create((set, get) => ({
             themeId: s?.theme_id || state.settings.themeId,
             accent: s?.accent || state.settings.accent,
             fontSize: s?.font_size || state.settings.fontSize,
+            bubbleStyle: s?.bubble_style || state.settings.bubbleStyle,
             plan: s?.plan || state.settings.plan,
             agents: {
               claude:  { enabled: s?.enabled_agents?.claude?.enabled ?? true,  key: k?.claude_key  || '' },
@@ -104,6 +106,7 @@ export const useStore = create((set, get) => ({
           theme_id: settings.themeId,
           accent: settings.accent,
           font_size: settings.fontSize,
+          bubble_style: settings.bubbleStyle,
 
           enabled_agents: {
             claude:  { enabled: settings.agents.claude?.enabled ?? true },
