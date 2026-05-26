@@ -131,8 +131,15 @@ export async function orchestrate({
   const correctionPhrases = ["that's not what i meant", "no i wanted", "wrong", "not right", "try again", "that's not", "i said", "i meant", "actually"]
   const isCorrection = correctionPhrases.some(p => userMessage.toLowerCase().includes(p))
 
-  // Detect build-mode signal — user is approving / triggering execution
-  const buildSignals = ["build it", "build this", "make it", "let's do it", "ship it", "do it", "go for it", "create it", "produce it", "generate it", "yes build", "yes do", "yes make", "go ahead", "let's go", "perfect, build", "great build"]
+  // Detect build-mode signal — user is APPROVING / triggering execution
+  // (kept narrow so 'make me an image of X' does NOT trigger; that's a discuss request)
+  const buildSignals = [
+    "build it", "build this", "let's build", "go build",
+    "ship it", "let's ship", "go for it", "let's go",
+    "do it now", "yes do it", "yes build", "yes make it",
+    "perfect, build", "great, build", "ok build", "let's make this",
+    "go ahead and build", "fire the tools",
+  ]
   const isBuildSignal = buildSignals.some(p => userMessage.toLowerCase().includes(p))
 
   const prompt = `
@@ -173,13 +180,35 @@ YOUR JOB:
 6. If correction, note what to learn.
 7. Voice mode = keep replies extremely short.
 
-BUILD MODE RULES:
-- If IS BUILD SIGNAL is true AND there has been prior discussion, set mode="build" and produce a plan.
-- If user explicitly asks for output ("draw me X", "make me a song about Y", "search for Z") with no discussion needed, set mode="build" and plan=[one tool].
-- Otherwise mode="discuss" with plan=[] — let the agents talk.
-- "paint a picture of life" = metaphor, do NOT fire. "make me an image of a sunset" = fire dalle.
-- For a 30s ad: plan = [{tool:"elevenlabs", prompt:"the voiceover script"}, {tool:"suno", prompt:"background music style description"}, {tool:"runway", prompt:"video description"}]
-- Only include tools that are in AVAILABLE TOOLS.
+MODE RULES (when to talk vs. when to fire tools):
+
+DEFAULT: mode="discuss" with plan=[]. Let the agents talk first.
+
+Creative requests ("make me an image of X", "draw a logo", "write me a song about Y", "design a poster", "build me a 30s ad")
+  → mode="discuss", plan=[]
+  → Agents propose: composition, mood, style, script, music vibe, etc.
+  → Wait for the user to approve before firing tools.
+
+Search / lookup requests ("search for X", "find latest news about Y", "what is Z right now")
+  → mode="build" with a single search tool in plan=[]
+  → No discussion needed; user wants facts now.
+
+Explicit build approval (IS BUILD SIGNAL is true) AND there has been prior discussion
+  → mode="build" with a full plan based on what was discussed.
+  → Synthesize the discussion into great tool prompts.
+
+If IS BUILD SIGNAL is true but there's NO prior discussion
+  → Still mode="discuss" so agents propose first. The user can then approve.
+
+Metaphor guard: "paint a picture of life", "draw conclusions" — do NOT fire tools.
+
+For a 30s ad after approval: plan = [
+  {tool:"elevenlabs", prompt:"the voiceover script in plain text"},
+  {tool:"suno",       prompt:"background music style description"},
+  {tool:"runway",     prompt:"shot-by-shot video description"}
+]
+
+Only include tools that appear in AVAILABLE TOOLS.
 
 OUTPUT EXACT JSON (no other text):
 {
