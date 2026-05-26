@@ -189,35 +189,29 @@ export default function Settings({ onClose }) {
                   || ELEVENLABS_VOICES[0].id
                 return (
                   <section className="settings-card" key={agent.id}>
-                    <div className="settings-row settings-row--tight">
+                    <div className="settings-row">
                       <div className="settings-row-main">
                         <div className="settings-avatar" style={{ color: agent.color, borderColor: agent.color }}>{agent.avatar}</div>
                         <div>
                           <div className="settings-row-title">{agent.name}</div>
-                          <div className="settings-row-sub">{ELEVENLABS_VOICES.find(v => v.id === currentVoiceId)?.name}</div>
+                          <div className="settings-row-sub">{ELEVENLABS_VOICES.find(v => v.id === currentVoiceId)?.desc}</div>
                         </div>
                       </div>
-                    </div>
-                    <div className="settings-voice-list">
-                      {ELEVENLABS_VOICES.map(voice => {
-                        const sel = currentVoiceId === voice.id
-                        return (
-                          <button
-                            key={voice.id}
-                            className={`settings-voice${sel ? " is-active" : ""}`}
-                            onClick={() => {
-                              const agentVoices = { ...(settings.agentVoices || {}) }
-                              agentVoices[agent.id] = { elevenLabsId: voice.id }
-                              updateSetting("agentVoices", agentVoices)
-                            }}
-                          >
-                            <span className="settings-voice-name">{voice.name}</span>
-                            <span className="settings-voice-desc">{voice.desc}</span>
-                            {voice.recommended === agent.id && <span className="settings-voice-tag">recommended</span>}
-                            {sel && <span className="settings-voice-check">✓</span>}
-                          </button>
-                        )
-                      })}
+                      <select
+                        className="settings-select"
+                        value={currentVoiceId}
+                        onChange={(e) => {
+                          const agentVoices = { ...(settings.agentVoices || {}) }
+                          agentVoices[agent.id] = { elevenLabsId: e.target.value }
+                          updateSetting("agentVoices", agentVoices)
+                        }}
+                      >
+                        {ELEVENLABS_VOICES.map(voice => (
+                          <option key={voice.id} value={voice.id}>
+                            {voice.name}{voice.recommended === agent.id ? " (recommended)" : ""}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                   </section>
                 )

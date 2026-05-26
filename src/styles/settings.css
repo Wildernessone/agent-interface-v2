@@ -35,6 +35,8 @@
   justify-content: space-between;
   padding: var(--space-6);
   border-bottom: 1px solid var(--color-border-secondary);
+  background: var(--color-bg-primary);
+  flex-shrink: 0;
 }
 .settings-header h2 {
   margin: 0;
@@ -61,6 +63,8 @@
   padding: 0 var(--space-6);
   border-bottom: 1px solid var(--color-border-secondary);
   overflow-x: auto;
+  background: var(--color-bg-primary);
+  flex-shrink: 0;
 }
 .settings-tab {
   padding: var(--space-4) var(--space-4);
@@ -261,49 +265,25 @@
 }
 .settings-toggle.is-on .settings-toggle-thumb { left: 20px; }
 
-/* ────────── Voice list ────────── */
+/* ────────── Voice select ────────── */
 
-.settings-voice-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  margin-top: var(--space-3);
-}
-.settings-voice {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
+.settings-select {
   padding: var(--space-3) var(--space-4);
-  background: transparent;
+  background: var(--color-bg-primary);
   border: 1px solid var(--color-border-primary);
   border-radius: var(--radius-md);
   color: var(--color-text-primary);
-  cursor: pointer;
-  text-align: left;
-  transition: all var(--duration-fast) var(--easing-default);
-}
-.settings-voice:hover { border-color: var(--color-text-secondary); }
-.settings-voice.is-active {
-  background: var(--color-accent-soft);
-  border-color: var(--color-accent);
-}
-.settings-voice-name {
   font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-medium);
+  font-family: inherit;
+  cursor: pointer;
+  min-width: 160px;
+  outline: none;
+  transition: border-color var(--duration-fast) var(--easing-default),
+              box-shadow var(--duration-fast) var(--easing-default);
 }
-.settings-voice-desc {
-  font-size: var(--font-size-xs);
-  color: var(--color-text-tertiary);
-}
-.settings-voice-tag {
-  font-size: 10px;
-  letter-spacing: var(--letter-spacing-wide);
-  text-transform: uppercase;
-  color: var(--color-accent);
-}
-.settings-voice-check {
-  margin-left: auto;
-  color: var(--color-accent);
+.settings-select:focus {
+  border-color: var(--color-accent);
+  box-shadow: var(--shadow-focus);
 }
 
 /* ────────── Display ────────── */
