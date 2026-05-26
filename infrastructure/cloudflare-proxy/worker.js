@@ -186,10 +186,11 @@ const ROUTES = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: auth },
       body: JSON.stringify({
-        model: 'dall-e-3',
+        model: 'gpt-image-1',
         prompt: body.prompt,
         n: 1,
         size: '1024x1024',
+        quality: 'high',
       }),
     })
   },
