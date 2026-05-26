@@ -13,6 +13,7 @@ import PromptLibrary from './PromptLibrary'
 import ToolOutput from './ToolOutput'
 import OnboardingPanel from './OnboardingPanel'
 import ProjectPicker from './ProjectPicker'
+import MemoryPanel from './MemoryPanel'
 
 const AGENTS = [
   { id:"claude",  name:"Claude",  color:"var(--color-agent-claude)", avatar:"C" },
@@ -165,6 +166,7 @@ export default function TheInterface() {
   const [showSettings, setShowSettings] = useState(false)
   const [showExport, setShowExport] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
+  const [showMemory, setShowMemory] = useState(false)
   const [showPrompts, setShowPrompts] = useState(false)
   const [agentMemory, setAgentMemory] = useState([])
   const [setupNotices, setSetupNotices] = useState([])
@@ -402,6 +404,14 @@ export default function TheInterface() {
           <IconButton title="History" onClick={() => setShowHistory(true)}>
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5.4" stroke="currentColor" strokeWidth="1.2"/><path d="M8 5V8L10 9.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>
           </IconButton>
+          <IconButton title="Memory" onClick={() => setShowMemory(true)} active={agentMemory.length > 0}>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M8 2C5.79086 2 4 3.79086 4 6V7.5C3.17157 7.5 2.5 8.17157 2.5 9V12C2.5 12.8284 3.17157 13.5 4 13.5H12C12.8284 13.5 13.5 12.8284 13.5 12V9C13.5 8.17157 12.8284 7.5 12 7.5V6C12 3.79086 10.2091 2 8 2Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>
+              <circle cx="6" cy="10.5" r="0.7" fill="currentColor"/>
+              <circle cx="8" cy="10.5" r="0.7" fill="currentColor"/>
+              <circle cx="10" cy="10.5" r="0.7" fill="currentColor"/>
+            </svg>
+          </IconButton>
           {turns.length > 0 && (
             <div style={{ position:"relative" }}>
               <IconButton title="Export" onClick={() => setShowExport(!showExport)}>
@@ -618,6 +628,12 @@ export default function TheInterface() {
 
       {showSettings && <Settings onClose={() => setShowSettings(false)} />}
       {showHistory && <HistorySidebar onClose={() => setShowHistory(false)} accent={accent} />}
+      <MemoryPanel
+        open={showMemory}
+        onClose={() => { setShowMemory(false); loadMemory().then(setAgentMemory) }}
+        turns={turns}
+        settings={settings}
+      />
       {showPrompts && <PromptLibrary accent={accent} onClose={() => setShowPrompts(false)} onUse={(prompt, mode) => { setInput(prompt); if(mode) setResponseMode(mode); setShowPrompts(false); setTimeout(() => document.querySelector("textarea")?.focus(), 100) }}/>}
     </div>
   )

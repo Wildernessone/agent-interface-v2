@@ -346,6 +346,102 @@ export async function processCorrection(decision, settings, saveMemory) {
   } catch {}
 }
 
+// ── Memory inference: surface what OpenClaw is learning ──────────────
+/**
+ * Read recent conversation turns and produce candidate memory entries —
+ * lightweight observations about the user that, once confirmed, make
+ * future agent responses feel personalized. Avoids duplicating anything
+ * already in `existingMemories`.
+ *
+ * Returns { candidates: [{title, content, confidence, evidence}], error }
+ */
+export async function inferMemoriesFromConversation({ turns, existingMemories = [], settings }) {
+  const modelConfig = selectOrchestrationModel(settings)
+  if (!modelConfig) return { candidates: [], error: "no_model_key" }
+
+  const transcript = turns
+    .filter(t => t.text && (t.type === "user" || t.type === "agent"))
+    .slice(-40)
+    .map(t => `${t.type === "user" ? "USER" : `AGENT(${t.agent || "?"})`}: ${t.text.slice(0, 600)}`)
+    .join("\n")
+
+  if (!transcript.trim()) return { candidates: [], error: "empty_conversation" }
+
+  const existingList = existingMemories.length
+    ? existingMemories.slice(0, 30).map(m => `- ${m.title}: ${m.content?.slice(0, 200)}`).join("\n")
+    : "(none yet)"
+
+  const system = `You are OpenClaw's memory layer. Your job is to read a conversation between a user and AI agents and identify stable, useful facts about the user that would make future responses feel personalized.
+
+EXTRACT memories that are:
+- Durable (preferences, profession, projects, communication style, expertise, recurring topics)
+- Specific enough to be useful ("prefers concise bullet points" not "likes good answers")
+- Inferred from real evidence in the conversation (cite it)
+
+DO NOT extract:
+- One-off questions or transient curiosity
+- Anything already in EXISTING MEMORIES
+- Sensitive info (passwords, financial details, health diagnoses) unless the user explicitly asked you to remember it
+- Anything you'd guess at — only what's actually evidenced
+
+OUTPUT FORMAT — strict JSON, no prose before or after:
+{
+  "candidates": [
+    {
+      "title": "short label (2-5 words)",
+      "content": "one or two sentences capturing the fact",
+      "confidence": "high" | "medium" | "low",
+      "evidence": "brief quote or paraphrase from the conversation"
+    }
+  ]
+}
+
+If nothing meaningful is new, return {"candidates": []}.
+Maximum 6 candidates per pass — quality over quantity.`
+
+  const prompt = `EXISTING MEMORIES (do not duplicate):
+${existingList}
+
+CONVERSATION:
+${transcript}
+
+Extract new memory candidates as JSON.`
+
+  try {
+    let raw = ""
+    if (modelConfig.provider === "claude") {
+      const res = await fetch(`${PROXY}/claude`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-api-key": modelConfig.key, ...(await authHeader()) },
+        body: JSON.stringify({ messages: [{ role: "user", content: `${system}\n\n${prompt}` }] }),
+      })
+      const data = await res.json()
+      if (!res.ok || data.error) return { candidates: [], error: `claude_${res.status}` }
+      raw = data.content?.[0]?.text || ""
+    } else if (modelConfig.provider === "gpt") {
+      const res = await fetch(`${PROXY}/gpt`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${modelConfig.key}`, ...(await authHeader()) },
+        body: JSON.stringify({ messages: [{ role: "user", content: `${system}\n\n${prompt}` }] }),
+      })
+      raw = await streamToText(res, "gpt")
+    } else if (modelConfig.provider === "gemini") {
+      const res = await fetch(`${PROXY}/gemini`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-api-key": modelConfig.key, ...(await authHeader()) },
+        body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: `${system}\n\n${prompt}` }] }] }),
+      })
+      raw = await streamToText(res, "gemini")
+    }
+
+    const parsed = extractJson(raw)
+    const candidates = Array.isArray(parsed?.candidates) ? parsed.candidates : []
+    return { candidates, error: null }
+  } catch (e) {
+    return { candidates: [], error: e?.message || "infer_failed" }
+  }
+}
+
 // ── Setup guides ──────────────────────────────────────────────────────
 export const SETUP_GUIDES = {
   anthropic:    { name:"Claude",          url:"https://console.anthropic.com/api-keys",         keyPrefix:"sk-ant-" },
