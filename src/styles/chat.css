@@ -821,3 +821,94 @@
   font-size: var(--font-size-xs);
   color: var(--color-text-tertiary);
 }
+
+/* ────────── Responsive: tablet (≤ 768px) ────────── */
+
+@media (max-width: 768px) {
+  .ai-header { padding: var(--space-4); }
+  .ai-brand { gap: var(--space-3); }
+  .ai-brand h1 { font-size: var(--font-size-sm); }
+  .ai-toolbar { gap: var(--space-1); }
+  .ai-composer { padding: var(--space-4); }
+
+  /* Project picker shrinks */
+  .proj-picker { margin-left: var(--space-2); }
+  .proj-trigger { max-width: 140px; padding: var(--space-2); }
+  .proj-trigger-label { font-size: var(--font-size-xs); }
+
+  /* Agent + user bubbles get more width */
+  .ai-user-bubble { max-width: 85%; }
+}
+
+/* ────────── Responsive: phone (≤ 480px) ────────── */
+
+@media (max-width: 480px) {
+  /* Header reflows: brand row on top, toolbar full-width below */
+  .ai-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+  }
+  .ai-brand {
+    justify-content: flex-start;
+    gap: var(--space-2);
+  }
+  /* Hide the title text on phone — logo + project picker carry the brand */
+  .ai-brand h1 { display: none; }
+
+  /* Toolbar gets its own row, scrollable if needed, evenly spaced */
+  .ai-toolbar {
+    width: 100%;
+    justify-content: space-between;
+    gap: var(--space-1);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .ai-toolbar::-webkit-scrollbar { display: none; }
+  .ai-iconbtn { flex-shrink: 0; }
+
+  /* Project picker takes most of the brand row */
+  .proj-picker { flex: 1; margin-left: 0; }
+  .proj-trigger { max-width: none; width: 100%; justify-content: space-between; }
+  .proj-trigger-label { flex: 1; text-align: left; }
+  .proj-menu { min-width: 0; width: calc(100vw - var(--space-7)); }
+
+  /* Composer gets tighter, bubbles fuller */
+  .ai-composer { padding: var(--space-3) var(--space-4) var(--space-4); }
+  .ai-targets { margin-bottom: var(--space-3); }
+  .ai-targets-label { display: none; }
+  .ai-user-bubble { max-width: 90%; }
+
+  /* Chat content uses full width on phone */
+  .ai-turn { gap: var(--space-3); }
+
+  /* Memory panel + history sidebar fill the screen */
+  .mem-panel,
+  .sidebar { width: 100vw; }
+
+  /* Settings modal goes full-screen on phone */
+  .settings-backdrop { padding: 0; }
+  .settings-dialog {
+    max-width: 100vw;
+    max-height: 100vh;
+    width: 100vw;
+    height: 100vh;
+    border-radius: 0;
+  }
+
+  /* Display tab grids collapse */
+  .display-theme-grid { grid-template-columns: 1fr; }
+  .display-accents { grid-template-columns: repeat(3, 1fr); }
+
+  /* OpenClaw decision badge softens */
+  .ai-claw { font-size: var(--font-size-xs); }
+}
+
+/* ────────── Touch-friendly tap targets ────────── */
+
+@media (hover: none) and (pointer: coarse) {
+  .ai-iconbtn { min-width: 36px; min-height: 36px; }
+  .ai-chip, .proj-trigger, .ai-btn { min-height: 36px; }
+}
