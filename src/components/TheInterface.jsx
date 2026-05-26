@@ -210,12 +210,18 @@ export default function TheInterface() {
 
     const selected = targets.includes("all") ? activeAgents : activeAgents.filter(a => targets.includes(a.id))
 
+    // Collect recent agent messages so OpenClaw can see prior discussion
+    const recentAgentResponses = turns
+      .filter(t => t.type === "agent" && t.text)
+      .slice(-8)
+      .map(t => ({ agent: t.agent, text: t.text }))
+
     let clawDecision = null
     try {
       clawDecision = await orchestrate({
         userMessage: text,
         conversationHistory: conversationRef.current,
-        agentResponses: [],
+        agentResponses: recentAgentResponses,
         enabledAgents: selected.map(a => a.id),
         enabledTools,
         memory: agentMemory,
