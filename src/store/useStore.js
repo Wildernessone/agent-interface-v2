@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { supabase } from '../utils/supabase'
+import { logError } from '../utils/telemetry'
 
 const DEFAULT_SETTINGS = {
   themeId: 'dark',
@@ -79,7 +80,7 @@ export const useStore = create((set, get) => ({
         set({ settingsLoaded: true })
       }
     } catch (e) {
-      console.error('Load settings error:', e)
+      logError("loadSettings", e)
       set({ settingsLoaded: true })
     }
   },
@@ -124,10 +125,10 @@ export const useStore = create((set, get) => ({
         }, { onConflict: 'user_id' }),
       ])
 
-      if (e1) console.error('Settings save error:', e1)
-      if (e2) console.error('Keys save error:', e2)
+      if (e1) logError("saveSettings.userSettings", e1)
+      if (e2) logError("saveSettings.userApiKeys", e2)
     } catch (e) {
-      console.error('Save error:', e)
+      logError("saveSettings", e)
     }
   },
 
@@ -156,7 +157,7 @@ export const useStore = create((set, get) => ({
         const { data } = await supabase.from("conversations").insert({ user_id: user.id, title, preview, turn_count: turns.length, turns_data: JSON.stringify(turns), created_at: new Date().toISOString(), updated_at: new Date().toISOString() }).select().single()
         if (data?.id) useStore.setState({ conversationId: data.id })
       }
-    } catch(e) { console.error("Save error:", e) }
+    } catch(e) { logError("saveConversation", e) }
   },
 
   loadConversations: async () => {
@@ -174,7 +175,7 @@ export const useStore = create((set, get) => ({
       if (!user) return
       const { data } = await supabase.from("conversations").select("*").eq("id", id).eq("user_id", user.id).single()
       if (data?.turns_data) useStore.setState({ turns: JSON.parse(data.turns_data), conversationId: id, activeAgentId: null })
-    } catch(e) { console.error("Load error:", e) }
+    } catch(e) { logError("loadConversation", e) }
   },
 
   // ── Agent Memory ──────────────────────────────────────
@@ -202,7 +203,7 @@ export const useStore = create((set, get) => ({
         created_at: new Date().toISOString()
       }).select().single()
       return data
-    } catch(e) { console.error("Save memory error:", e); return null }
+    } catch(e) { logError("saveMemory", e); return null }
   },
 
   deleteMemory: async (id) => {
@@ -210,7 +211,7 @@ export const useStore = create((set, get) => ({
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
       await supabase.from("agent_memory").delete().eq("id", id).eq("user_id", user.id)
-    } catch(e) { console.error("Delete memory error:", e) }
+    } catch(e) { logError("deleteMemory", e) }
   },
 
   deleteConversation: async (id) => {
@@ -218,7 +219,7 @@ export const useStore = create((set, get) => ({
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
       await supabase.from("conversations").delete().eq("id", id).eq("user_id", user.id)
-    } catch(e) { console.error("Delete error:", e) }
+    } catch(e) { logError("deleteConversation", e) }
   },
 
   voiceMode: false,

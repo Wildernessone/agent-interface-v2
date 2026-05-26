@@ -6,6 +6,8 @@ import Settings from './Settings'
 import { exportConversation } from '../utils/exportConversation'
 import HistorySidebar from './HistorySidebar'
 import { orchestrate, getProactiveNotices, processCorrection } from '../utils/openClaw'
+import { logUsage, logError, checkTierLimits } from '../utils/telemetry'
+import { supabase } from '../utils/supabase'
 import PromptLibrary from './PromptLibrary'
 import ToolOutput from './ToolOutput'
 
@@ -17,6 +19,11 @@ const AGENTS = [
 ]
 
 const PROXY = import.meta.env.VITE_PROXY_URL || "https://claude-proxy.jamesreed.workers.dev"
+
+async function authHeader() {
+  const { data: { session } } = await supabase.auth.getSession()
+  return session?.access_token ? { 'x-supabase-auth': `Bearer ${session.access_token}` } : {}
+}
 
 function classifyError(status, text) {
   if (status === 401 || status === 403) return "invalid_key"
@@ -31,7 +38,7 @@ async function streamClaude(key, messages, onChunk, onDone, onError) {
   try {
     const res = await fetch(`${PROXY}/claude`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "x-api-key": key },
+      headers: { "Content-Type": "application/json", "x-api-key": key, ...(await authHeader()) },
       body: JSON.stringify({ messages }),
     })
     if (!res.ok) { const t = await res.text(); onError?.(res.status, t); onDone(); return }
@@ -53,7 +60,7 @@ async function streamOpenAI(key, messages, onChunk, onDone, onError) {
   try {
     const res = await fetch(`${PROXY}/gpt`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${key}` },
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${key}`, ...(await authHeader()) },
       body: JSON.stringify({ messages }),
     })
     if (!res.ok) { const t = await res.text(); onError?.(res.status, t); onDone(); return }
@@ -82,7 +89,7 @@ async function streamGemini(key, messages, onChunk, onDone, onError) {
       .map(m => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }))
     const res = await fetch(`${PROXY}/gemini`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "x-api-key": key },
+      headers: { "Content-Type": "application/json", "x-api-key": key, ...(await authHeader()) },
       body: JSON.stringify({ contents }),
     })
     if (!res.ok) { const t = await res.text(); onError?.(res.status, t); onDone(); return }
@@ -112,7 +119,7 @@ async function streamGrok(key, messages, onChunk, onDone, onError) {
   try {
     const res = await fetch(`${PROXY}/grok`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${key}` },
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${key}`, ...(await authHeader()) },
       body: JSON.stringify({ messages }),
     })
     if (!res.ok) { const t = await res.text(); onError?.(res.status, t); onDone(); return }
@@ -188,6 +195,12 @@ export default function TheInterface() {
     if (!text || busy) return
     if (!overrideText) setInput("")
 
+    const limit = await checkTierLimits()
+    if (!limit.allowed) {
+      addErrorTurn("orchestrator", "free_tier_limit")
+      return
+    }
+
     const userTurnId = "u-" + Date.now()
     addTurn({ id: userTurnId, type: "user", text })
     conversationRef.current = [...conversationRef.current, { role: "user", content: text }]
@@ -207,6 +220,7 @@ export default function TheInterface() {
         voiceMode,
       })
     } catch(e) {
+      logError("orchestrate", e)
       addErrorTurn("orchestrator", "orchestrator_down")
       return
     }
@@ -260,6 +274,9 @@ export default function TheInterface() {
           const onDone = () => {
             conversationRef.current = [...conversationRef.current, { role: "assistant", content: fullText }]
             finishTurn()
+            if (fullText) {
+              logUsage({ kind: "agent_message", provider: agent.id, model: agent.id, tokensOut: fullText.length / 4 | 0, success: true })
+            }
             if (voiceMode && voiceRef.current && fullText) {
               voiceRef.current.speak(fullText.slice(0, 400), agent.id, resolve)
             } else {
@@ -267,7 +284,9 @@ export default function TheInterface() {
             }
           }
           const onError = (status, msg) => {
-            addErrorTurn(agent.id, classifyError(status, msg))
+            const errorType = classifyError(status, msg)
+            addErrorTurn(agent.id, errorType)
+            logUsage({ kind: "agent_message", provider: agent.id, model: agent.id, success: false, errorType })
             resolve()
           }
 
@@ -291,8 +310,12 @@ export default function TheInterface() {
           (agentContext.length > 20 ? `${text}. ${agentContext}`.slice(0, 900) : text)
         const output = await runTool(clawDecision.tool.tool_id, toolPrompt, settings)
         addToolTurn({ id: `tool-${clawDecision.tool.tool_id}-${Date.now()}`, type: "tool", output })
+        logUsage({ kind: "tool_call", provider: clawDecision.tool.tool_id, success: true })
       } catch(e) {
-        addToolErrorTurn(clawDecision.tool.tool_id, e.errorType || "unknown", e.message)
+        const errorType = e.errorType || "unknown"
+        addToolErrorTurn(clawDecision.tool.tool_id, errorType, e.message)
+        logUsage({ kind: "tool_call", provider: clawDecision.tool.tool_id, success: false, errorType })
+        if (errorType === "unknown" || errorType === "bad_response") logError("runTool", e, { tool: clawDecision.tool.tool_id })
       } finally {
         setToolsWorking(false)
       }
@@ -447,6 +470,7 @@ export default function TheInterface() {
               turn.errorType === "service_down" ? `${label} is having a service issue. Try again in a moment.` :
               turn.errorType === "network" ? `Couldn't reach ${label}. Check your connection and retry.` :
               turn.errorType === "orchestrator_down" ? `The orchestrator couldn't process this message. Retry, or check that at least one agent has a valid key.` :
+              turn.errorType === "free_tier_limit" ? `You've hit the free-tier daily limit. Upgrade to Pro for unlimited messages.` :
               `${label} returned an unexpected error. Retry, or check your API key in Settings.`
             )
             const billingUrl = agent?.id==="claude"?"https://console.anthropic.com":agent?.id==="gpt"?"https://platform.openai.com/account/billing":agent?.id==="gemini"?"https://aistudio.google.com/app/plan":"https://console.x.ai"
@@ -566,7 +590,7 @@ async function runTool(toolId, prompt, settings) {
 
   if (toolId === "dalle") {
     if (!gptKey) throw toolError("dalle", "missing_key", "DALL-E needs an OpenAI key — add it in Settings → Agents → ChatGPT.")
-    const headers = { "Content-Type": "application/json", "Authorization": `Bearer ${gptKey}` }
+    const headers = { "Content-Type": "application/json", "Authorization": `Bearer ${gptKey}`, ...(await authHeader()) }
     const res = await fetch(`${PROXY}/dalle`, {
       method: "POST",
       headers,

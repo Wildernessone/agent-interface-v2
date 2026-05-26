@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useStore } from '../store/useStore'
+import { supabase } from '../utils/supabase'
 
 const MEMORY_TYPES = [
   { id:"about",    icon:"👤", label:"About Me",        hint:"Who you are, what you do, your role" },
@@ -40,9 +41,6 @@ export default function MemoryTab({ accent, theme }) {
     if (!title.trim() || !content.trim()) return
     setSaving(true)
     if (editing) {
-      // Update existing
-      const { data: { user } } = await import('../utils/supabase').then(m => m.supabase.auth.getUser())
-      const { supabase } = await import('../utils/supabase')
       const { data } = await supabase.from('agent_memory')
         .update({ title, content, updated_at: new Date().toISOString() })
         .eq('id', editing)

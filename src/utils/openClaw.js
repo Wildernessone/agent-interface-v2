@@ -14,7 +14,14 @@
  * Claude preferred — returns clean JSON.
  */
 
+import { supabase } from './supabase'
+
 const PROXY = import.meta.env.VITE_PROXY_URL || "https://claude-proxy.jamesreed.workers.dev"
+
+async function authHeader() {
+  const { data: { session } } = await supabase.auth.getSession()
+  return session?.access_token ? { 'x-supabase-auth': `Bearer ${session.access_token}` } : {}
+}
 
 // ── Model selection ───────────────────────────────────────
 export function selectOrchestrationModel(settings) {
@@ -37,7 +44,7 @@ Be decisive. Be fast. Be accurate.`
     if (modelConfig.provider === "claude") {
       const res = await fetch(`${PROXY}/claude`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-api-key": modelConfig.key },
+        headers: { "Content-Type": "application/json", "x-api-key": modelConfig.key, ...(await authHeader()) },
         body: JSON.stringify({
           messages: [{ role: "user", content: `${system}\n\n${prompt}` }]
         }),
@@ -50,8 +57,8 @@ Be decisive. Be fast. Be accurate.`
     if (modelConfig.provider === "gemini") {
       const res = await fetch(`${PROXY}/gemini`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-api-key": modelConfig.key },
-        body: JSON.stringify({ messages: [{ role: "user", content: `${system}\n\n${prompt}` }] }),
+        headers: { "Content-Type": "application/json", "x-api-key": modelConfig.key, ...(await authHeader()) },
+        body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: `${system}\n\n${prompt}` }] }] }),
       })
       const reader = res.body.getReader()
       const dec = new TextDecoder()
@@ -64,6 +71,28 @@ Be decisive. Be fast. Be accurate.`
         for (const l of lines) {
           if (!l.startsWith("data: ")) continue
           try { const d = JSON.parse(l.slice(6)); const t = d.candidates?.[0]?.content?.parts?.[0]?.text; if (t) full += t } catch {}
+        }
+      }
+      return JSON.parse(full.replace(/```json|```/g, "").trim())
+    }
+
+    if (modelConfig.provider === "gpt") {
+      const res = await fetch(`${PROXY}/gpt`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${modelConfig.key}`, ...(await authHeader()) },
+        body: JSON.stringify({ messages: [{ role: "user", content: `${system}\n\n${prompt}` }] }),
+      })
+      const reader = res.body.getReader()
+      const dec = new TextDecoder()
+      let buf = "", full = ""
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buf += dec.decode(value, { stream: true })
+        const lines = buf.split("\n"); buf = lines.pop()
+        for (const l of lines) {
+          if (!l.startsWith("data: ") || l.includes("[DONE]")) continue
+          try { const d = JSON.parse(l.slice(6)); const c = d.choices?.[0]?.delta?.content; if (c) full += c } catch {}
         }
       }
       return JSON.parse(full.replace(/```json|```/g, "").trim())
