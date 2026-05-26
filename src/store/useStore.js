@@ -148,7 +148,11 @@ export const useStore = create((set, get) => ({
   activeAgentId: null,
   conversationId: null,
 
-  addTurn: (turn) => set(state => ({ turns: [...state.turns, turn], activeAgentId: turn.id })),
+  addTurn: (turn) => set(state => ({
+    turns: [...state.turns, turn],
+    // Only agent turns set activeAgentId — user, claw, and tool turns are not "streaming"
+    activeAgentId: turn.type === 'agent' ? turn.id : state.activeAgentId,
+  })),
   appendChunk: (id, chunk) => set(state => ({ turns: state.turns.map(t => t.id === id ? { ...t, text: (t.text || '') + chunk } : t) })),
   finishTurn: () => set({ activeAgentId: null }),
   addToolTurn: (turn) => set(state => ({ turns: [...state.turns, turn] })), // doesn't set activeAgentId
