@@ -6,6 +6,7 @@ import Settings from './Settings'
 import { exportConversation } from '../utils/exportConversation'
 import HistorySidebar from './HistorySidebar'
 import { orchestrate, getProactiveNotices, processCorrection, ROLE_POOL, shouldAudit, auditResponse, buildRetryReminder } from '../utils/openClaw'
+import { detectSignalsFromUserMessage, logSignals, logAuditFail, getRecentRolePerformance } from '../utils/roleSignals'
 import { logUsage, logError, checkTierLimits } from '../utils/telemetry'
 import { saveToDrive } from '../utils/driveStorage'
 import { supabase } from '../utils/supabase'
@@ -197,6 +198,16 @@ export default function TheInterface() {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
   }, [turns])
 
+  // V3a: listen for V2 audit failures and log them as learning signals
+  useEffect(() => {
+    const handler = (e) => {
+      const { agent, role } = e.detail || {}
+      if (agent && role) logAuditFail(agent, role, conversationId)
+    }
+    window.addEventListener('openclaw:audit_fail', handler)
+    return () => window.removeEventListener('openclaw:audit_fail', handler)
+  }, [conversationId])
+
   const sendMessage = async (overrideText) => {
     const text = (overrideText || input).trim()
     if (!text || busy) return
@@ -212,6 +223,10 @@ export default function TheInterface() {
     addTurn({ id: userTurnId, type: "user", text })
     conversationRef.current = [...conversationRef.current, { role: "user", content: text }]
 
+    // V3a: harvest learning signal from this user message about the prior turn's roles
+    const signals = detectSignalsFromUserMessage(text, previousRolesRef.current)
+    if (signals.length) logSignals(signals, conversationId)
+
     const selected = targets.includes("all") ? activeAgents : activeAgents.filter(a => targets.includes(a.id))
 
     // Collect recent agent messages so OpenClaw can see prior discussion
@@ -219,6 +234,9 @@ export default function TheInterface() {
       .filter(t => t.type === "agent" && t.text)
       .slice(-8)
       .map(t => ({ agent: t.agent, text: t.text }))
+
+    // V3a: pull aggregated routing performance to feed the dispatcher as priors
+    const routingPerformance = await getRecentRolePerformance(90)
 
     let clawDecision = null
     try {
@@ -231,6 +249,7 @@ export default function TheInterface() {
         memory: agentMemory,
         activeProject,
         previousRoleAssignments: previousRolesRef.current,
+        routingPerformance,
         settings,
         voiceMode,
       })

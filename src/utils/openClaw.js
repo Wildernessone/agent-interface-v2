@@ -195,6 +195,7 @@ function buildOrchestratorPrompt({
   hasPriorDiscussion,
   voiceMode,
   previousRoleAssignments,
+  routingPerformance,
 }) {
   const roleCatalog = Object.entries(ROLE_POOL)
     .map(([id, r]) => `  - "${id}" (${r.name}): ${r.purpose.split('.')[0]}.`)
@@ -203,6 +204,23 @@ function buildOrchestratorPrompt({
   const previousAssignmentsLine = previousRoleAssignments && Object.keys(previousRoleAssignments).length
     ? Object.entries(previousRoleAssignments).map(([a, r]) => `${a}=${r}`).join(", ")
     : "(none — this is the first turn or roles weren't assigned last turn)"
+
+  // V3a: priors from passive learning. Format as compact lines, sorted by
+  // sample size. Empty block on cold-start so there's zero influence.
+  const perfBlock = routingPerformance && routingPerformance.length
+    ? routingPerformance
+        .filter(p => p.agent_id !== '_any_')
+        .slice(0, 12)
+        .map(p => `  - ${p.agent_id} as ${p.role_id}: ${p.total} turns, ${p.positive_pct}% positive`)
+        .join("\n") || "(no actionable signal yet)"
+    : "(no signal yet — first few sessions, weight tendencies above instead)"
+
+  const requestedRoles = routingPerformance
+    ?.filter(p => p.agent_id === '_any_')
+    .map(p => p.role_id) || []
+  const requestedHint = requestedRoles.length
+    ? `\nThe user has previously asked for these roles explicitly (consider assigning them when relevant): ${requestedRoles.join(", ")}`
+    : ""
 
   return `
 You are the DISPATCHER for a panel of specialist AIs. You are NOT a fifth voice in the rotation.
@@ -230,6 +248,9 @@ ${agentSummary || "(nothing yet — first message in this thread)"}
 PREVIOUS TURN'S ROLE ASSIGNMENTS:
 ${previousAssignmentsLine}
 
+PRIOR ROUTING OUTCOMES FOR THIS USER (rolling 90-day window):
+${perfBlock}${requestedHint}
+
 ROLE POOL (assign one per responding agent):
 ${roleCatalog}
 
@@ -250,6 +271,12 @@ ROLE ASSIGNMENT RULES
     • gemini  → strong at Reality Checker, Historian, Numbers Person
     • grok    → strong at Skeptic, Steel-Manner, Pattern Spotter, direct contrarian takes
   These are tendencies, not rules. Override when the moment calls for it.
+- PRIOR ROUTING OUTCOMES are a TIEBREAKER, not an override. If the tendencies
+  above point clearly to one agent for a role, go with them. If two agents are
+  roughly equal candidates and one has stronger prior outcomes for that role
+  with this user, prefer them. Avoid pairings with sustained negative signal
+  unless the conversation specifically calls for it. Sample sizes under 5 are
+  noise — ignore them.
 
 DECISION TREE (apply in order — first match wins)
 ================================================
@@ -318,6 +345,7 @@ export async function orchestrate({
   memory = [],
   activeProject = null,
   previousRoleAssignments = {},
+  routingPerformance = [],
   settings,
   voiceMode = false,
 }) {
@@ -362,6 +390,7 @@ export async function orchestrate({
     hasPriorDiscussion,
     voiceMode,
     previousRoleAssignments,
+    routingPerformance,
   })
 
   if (!modelConfig) {
