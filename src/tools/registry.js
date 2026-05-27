@@ -537,6 +537,80 @@ const docgen = {
   },
 }
 
+// ── pdfgen — generate .pdf documents browser-side ─────────────────
+const pdfgen = {
+  id: 'pdfgen',
+  name: 'PDF document (.pdf)',
+  category: 'document',
+  capability: 'generate a PDF from structured content (title, headings, paragraphs)',
+  desc: 'Browser-side .pdf generation via jspdf — no API key',
+  keySource: null,
+  status: 'live',
+  hidden: true,
+  async run({ structuredInput, label }) {
+    const { jsPDF } = await import('jspdf')
+    const data = typeof structuredInput === 'string' ? JSON.parse(structuredInput) : structuredInput
+
+    const doc = new jsPDF({ unit: 'pt', format: 'letter' })
+    const margin = 56
+    const pageWidth = doc.internal.pageSize.getWidth()
+    const pageHeight = doc.internal.pageSize.getHeight()
+    let y = margin
+
+    const writeWrapped = (text, opts = {}) => {
+      const { size = 11, bold = false, gap = 14 } = opts
+      doc.setFontSize(size)
+      doc.setFont('helvetica', bold ? 'bold' : 'normal')
+      const lines = doc.splitTextToSize(text, pageWidth - margin * 2)
+      for (const line of lines) {
+        if (y > pageHeight - margin) { doc.addPage(); y = margin }
+        doc.text(line, margin, y)
+        y += gap
+      }
+    }
+
+    if (data?.title) {
+      writeWrapped(data.title, { size: 22, bold: true, gap: 28 })
+      y += 8
+    }
+
+    if (Array.isArray(data?.sections)) {
+      for (const sec of data.sections) {
+        if (sec.heading) writeWrapped(sec.heading, { size: 14, bold: true, gap: 18 })
+        for (const p of sec.paragraphs || []) {
+          writeWrapped(p, { size: 11, gap: 14 })
+          y += 6
+        }
+        y += 8
+      }
+    } else if (Array.isArray(data?.slides)) {
+      data.slides.forEach((s, i) => {
+        writeWrapped(`Slide ${i + 1}: ${s.title || ''}`, { size: 14, bold: true, gap: 18 })
+        for (const b of s.bullets || []) {
+          writeWrapped(`• ${b}`, { size: 11, gap: 14 })
+        }
+        if (s.notes) {
+          y += 4
+          writeWrapped('Speaker notes:', { size: 10, bold: true, gap: 12 })
+          writeWrapped(s.notes, { size: 10, gap: 12 })
+        }
+        y += 10
+      })
+    } else if (typeof data === 'string') {
+      writeWrapped(data, { size: 11, gap: 14 })
+    }
+
+    const blob = doc.output('blob')
+    const url = URL.createObjectURL(blob)
+    return {
+      type: 'document',
+      url,
+      filename: `${(label || 'document').replace(/[^a-z0-9-_ ]/gi, '').trim() || 'document'}.pdf`,
+      tool: 'pdfgen',
+    }
+  },
+}
+
 // ── The registry ──────────────────────────────────────────────────
 
 export const TOOL_REGISTRY = [
@@ -551,7 +625,7 @@ export const TOOL_REGISTRY = [
   // Search
   perplexity, tavily,
   // Document generation — browser-side, no API key needed
-  pptxgen, docgen,
+  pptxgen, docgen, pdfgen,
   // Meta — panel-as-tool for multi-step builds
   agentSynth,
 ]

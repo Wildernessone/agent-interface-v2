@@ -320,6 +320,7 @@ DECISION TREE (apply in order — first match wins)
             "document" → {"title", "sections":[{heading, paragraphs[]}]}
        - pptxgen: takes a slides[] structured input, outputs a .pptx file
        - docgen:  takes sections[] OR slides[], outputs a .docx file
+       - pdfgen:  takes sections[] OR slides[] OR plain text, outputs a .pdf file
 
        VARIABLE INTERPOLATION:
        In any step's "input" string, you can reference earlier step

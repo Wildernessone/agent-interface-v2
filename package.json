@@ -13,6 +13,8 @@
     "@sentry/react": "^10.53.1",
     "@supabase/supabase-js": "^2.105.4",
     "docx": "^9.7.1",
+    "jspdf": "^4.2.1",
+    "pdfjs-dist": "^5.7.284",
     "pptxgenjs": "^4.0.1",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",

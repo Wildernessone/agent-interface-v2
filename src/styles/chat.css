@@ -728,6 +728,50 @@
   font-style: normal;
 }
 
+/* ────────── Composer attachments ────────── */
+
+.ai-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+  padding: var(--space-2) 0;
+}
+.ai-attachment {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  max-width: 280px;
+}
+.ai-attachment--loading {
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+  font-style: italic;
+}
+.ai-attachment-icon { font-size: 14px; }
+.ai-attachment-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ai-attachment-remove {
+  background: transparent;
+  border: 0;
+  color: var(--color-text-tertiary);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+  border-radius: var(--radius-sm);
+}
+.ai-attachment-remove:hover { color: var(--color-text-primary); }
+
 /* ────────── Build card (multi-step deliverable) ────────── */
 
 .ai-build-card {

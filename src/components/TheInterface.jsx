@@ -11,6 +11,7 @@ import { logUsage, logError, checkTierLimits } from '../utils/telemetry'
 import { saveToCloud } from '../utils/cloudStorage'
 import { TOOLS_BY_ID, ToolError, readKey } from '../tools/registry'
 import { runBuild } from '../utils/buildExecutor'
+import { ingestFile, formatIngested } from '../utils/fileIngestion'
 import { supabase } from '../utils/supabase'
 import PromptLibrary from './PromptLibrary'
 import ToolOutput from './ToolOutput'
@@ -162,6 +163,9 @@ export default function TheInterface() {
     setVoiceMode(!voiceMode)
   }
   const [input, setInput] = useState("")
+  const [attachments, setAttachments] = useState([]) // ingested files awaiting send
+  const [ingesting, setIngesting] = useState(false)
+  const fileInputRef = useRef(null)
   const [targets, setTargets] = useState(["all"])
   const [responseMode, setResponseMode] = useState("concise")
   const [toolsWorking, setToolsWorking] = useState(false)
@@ -210,9 +214,27 @@ export default function TheInterface() {
     return () => window.removeEventListener('openclaw:audit_fail', handler)
   }, [conversationId])
 
+  const handleFiles = async (fileList) => {
+    if (!fileList?.length) return
+    setIngesting(true)
+    for (const file of fileList) {
+      const result = await ingestFile(file, settings)
+      if (result.ok) {
+        setAttachments(prev => [...prev, result])
+      } else {
+        addErrorTurn('orchestrator', 'attachment_failed')
+        logError('ingestFile', new Error(result.error || 'unknown'), { name: file.name, type: file.type })
+      }
+    }
+    setIngesting(false)
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  const removeAttachment = (idx) => setAttachments(prev => prev.filter((_, i) => i !== idx))
+
   const sendMessage = async (overrideText) => {
     const text = (overrideText || input).trim()
-    if (!text || busy) return
+    if ((!text && attachments.length === 0) || busy) return
     if (!overrideText) setInput("")
 
     const limit = await checkTierLimits()
@@ -221,9 +243,18 @@ export default function TheInterface() {
       return
     }
 
+    // Prepend ingested file content as conversation context. The user
+    // sees their original message in the UI; the agents see the file
+    // content + message.
+    const ingestedPrefix = attachments.map(formatIngested).join('')
+    const messageForAgents = ingestedPrefix + (text || 'Discuss the attached file(s).')
+    const displayText = text || `[Attached ${attachments.length} file${attachments.length === 1 ? '' : 's'}]`
+    const attachedNames = attachments.map(a => a.filename)
+    setAttachments([])
+
     const userTurnId = "u-" + Date.now()
-    addTurn({ id: userTurnId, type: "user", text })
-    conversationRef.current = [...conversationRef.current, { role: "user", content: text }]
+    addTurn({ id: userTurnId, type: "user", text: displayText, attachments: attachedNames })
+    conversationRef.current = [...conversationRef.current, { role: "user", content: messageForAgents }]
 
     // V3a: harvest learning signal from this user message about the prior turn's roles
     const signals = detectSignalsFromUserMessage(text, previousRolesRef.current)
@@ -690,13 +721,46 @@ export default function TheInterface() {
             <button className="ai-chip ai-chip--clear" onClick={() => { clearTurns(); conversationRef.current = []; previousRolesRef.current = {} }}>Clear</button>
           )}
         </div>
+        {attachments.length > 0 && (
+          <div className="ai-attachments">
+            {attachments.map((a, i) => (
+              <span key={i} className={`ai-attachment ai-attachment--${a.kind}`}>
+                <span className="ai-attachment-icon">
+                  {a.kind === 'pdf' ? '📄' : a.kind === 'image' ? '🖼' : a.kind === 'audio' ? '🎙' : '📝'}
+                </span>
+                <span className="ai-attachment-name">{a.filename}</span>
+                <button className="ai-attachment-remove" onClick={() => removeAttachment(i)} aria-label="Remove">×</button>
+              </span>
+            ))}
+            {ingesting && <span className="ai-attachment ai-attachment--loading">Reading…</span>}
+          </div>
+        )}
         <div className="ai-input-row">
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept="text/*,image/*,audio/*,application/pdf,.md,.csv,.json"
+            style={{ display: 'none' }}
+            onChange={e => handleFiles(e.target.files)}
+          />
+          <button
+            className="ai-iconbtn ai-iconbtn--lg"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={ingesting || busy}
+            aria-label="Attach file"
+            title="Attach file — PDF, image, audio, or text"
+          >
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+              <path d="M14.5 8L8.5 14C7.4 15.1 5.6 15.1 4.5 14C3.4 12.9 3.4 11.1 4.5 10L10.5 4C11.2 3.3 12.3 3.3 13 4C13.7 4.7 13.7 5.8 13 6.5L7.5 12C7.2 12.3 6.8 12.3 6.5 12C6.2 11.7 6.2 11.3 6.5 11L11 6.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </button>
           <textarea
             className="ai-input"
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => { if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMessage()} }}
-            placeholder={targets.includes("all")?"Message all agents…":activeAgents.filter(a=>targets.includes(a.id)).map(a=>a.name).join(" + ")+"…"}
+            placeholder={attachments.length > 0 ? `Ask about the ${attachments.length === 1 ? 'attached file' : 'attachments'}…` : (targets.includes("all")?"Message all agents…":activeAgents.filter(a=>targets.includes(a.id)).map(a=>a.name).join(" + ")+"…")}
             rows={1}
           />
           {voiceMode && (
@@ -714,7 +778,7 @@ export default function TheInterface() {
           <button
             className="ai-iconbtn ai-iconbtn--lg ai-iconbtn--send"
             onClick={() => sendMessage()}
-            disabled={!input.trim()||busy}
+            disabled={(!input.trim() && attachments.length === 0) || busy || ingesting}
             aria-label="Send"
           >
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M9 14V4M9 4L5 8M9 4L13 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>
