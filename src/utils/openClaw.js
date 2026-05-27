@@ -445,6 +445,105 @@ export async function processCorrection(decision, settings, saveMemory) {
   } catch {}
 }
 
+// ── Role audit (V2 check-and-rewrite layer) ────────────────────────
+// Roles that are most prone to drifting back to "helpful and additive".
+// Other roles (Builder, Synthesizer, Numbers Person, etc.) don't drift
+// the same way — their failure modes are different and the audit cost
+// isn't justified.
+const DRIFT_PRONE_ROLES = new Set(['skeptic', 'reality_checker', 'steel_manner'])
+
+const AUDIT_TESTS = {
+  skeptic:         "Did they find an actual flaw? PASS = a real objection, even a small one. FAIL = soft agreement, 'good point but also...', restating the user's idea back, or generic concerns.",
+  reality_checker: "Did they only flag unstated assumptions and missing context? PASS = surfacing what's unspoken (money? time? skills? evidence?). FAIL = giving opinions on the idea itself, or saying 'this is great' / 'this is risky'.",
+  steel_manner:    "Did they make the strongest possible case for the idea? PASS = a real argument FOR. FAIL = hedging, 'on one hand... on the other', or sliding into critique.",
+}
+
+export function shouldAudit(role, voiceMode) {
+  if (voiceMode) return false
+  return DRIFT_PRONE_ROLES.has(role)
+}
+
+/**
+ * Audit a specialist's response against its assigned role. Single quick
+ * LLM call using the user's orchestration model. Returns:
+ *   { passed: bool, reason: string }
+ * On any error (timeout, parse fail) we PASS — never block a response
+ * because the auditor itself broke.
+ */
+export async function auditResponse({ text, role, userMessage, settings }) {
+  if (!text || text.length < 20) return { passed: true, reason: "empty" }
+  const modelConfig = selectOrchestrationModel(settings)
+  if (!modelConfig) return { passed: true, reason: "no_model" }
+
+  const roleDef = ROLE_POOL[role]
+  if (!roleDef) return { passed: true, reason: "unknown_role" }
+
+  const audit = AUDIT_TESTS[role] || "Did they stay in role?"
+
+  const prompt = `You are auditing whether a specialist AI stayed in its assigned role on this turn.
+
+ROLE ASSIGNED: ${roleDef.name}
+ROLE PURPOSE: ${roleDef.purpose}
+
+USER'S MESSAGE: "${userMessage?.slice(0, 600) || "(unknown)"}"
+
+AGENT'S RESPONSE: "${text.slice(0, 1500)}"
+
+AUDIT TEST FOR THIS ROLE: ${audit}
+
+Return EXACTLY this JSON, no preface, no fence:
+{"passed": true|false, "reason": "<one short sentence>"}`
+
+  try {
+    let raw = ""
+    if (modelConfig.provider === "claude") {
+      const res = await fetch(`${PROXY}/claude`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-api-key": modelConfig.key, ...(await authHeader()) },
+        body: JSON.stringify({ messages: [{ role: "user", content: prompt }] }),
+      })
+      const data = await res.json()
+      if (!res.ok || data.error) return { passed: true, reason: "audit_error" }
+      raw = data.content?.[0]?.text || ""
+    } else if (modelConfig.provider === "gpt") {
+      const res = await fetch(`${PROXY}/gpt`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${modelConfig.key}`, ...(await authHeader()) },
+        body: JSON.stringify({ messages: [{ role: "user", content: prompt }] }),
+      })
+      raw = await streamToText(res, "gpt")
+    } else if (modelConfig.provider === "gemini") {
+      const res = await fetch(`${PROXY}/gemini`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-api-key": modelConfig.key, ...(await authHeader()) },
+        body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: prompt }] }] }),
+      })
+      raw = await streamToText(res, "gemini")
+    }
+    const parsed = extractJson(raw)
+    if (parsed && typeof parsed.passed === "boolean") {
+      return { passed: parsed.passed, reason: parsed.reason || "" }
+    }
+    return { passed: true, reason: "audit_parse_failed" }
+  } catch {
+    return { passed: true, reason: "audit_exception" }
+  }
+}
+
+/**
+ * Build a hardened system prompt for the retry pass. Stronger anti-drift
+ * language, names the specific failure mode, references the audit reason.
+ */
+export function buildRetryReminder(role, auditReason) {
+  const roleDef = ROLE_POOL[role]
+  if (!roleDef) return ""
+  return `IMPORTANT — your previous response slipped out of role.
+Audit feedback: ${auditReason || "you drifted toward generic helpfulness"}.
+You were assigned: ${roleDef.name}.
+Your job, restated and not optional: ${roleDef.purpose}
+This time, do the job. ${role === 'skeptic' ? "Find the actual flaw. If you genuinely cannot, say so explicitly and explain why — but do not paper over disagreement." : role === 'reality_checker' ? "Surface only what's unspoken. No opinions on whether the idea is good or bad." : role === 'steel_manner' ? "Make the strongest possible case. No hedging." : ""}`
+}
+
 // ── Memory inference: surface what OpenClaw is learning ──────────────
 /**
  * Read recent conversation turns and produce candidate memory entries —

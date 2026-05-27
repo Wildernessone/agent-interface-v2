@@ -282,6 +282,13 @@
   border-radius: 999px;
   opacity: 0.85;
 }
+.ai-agent-rerolled {
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  font-weight: var(--font-weight-normal);
+  letter-spacing: 0.04em;
+  text-transform: none;
+}
 .ai-agent-text {
   font-size: var(--chat-font-size);
   line-height: var(--line-height-relaxed);

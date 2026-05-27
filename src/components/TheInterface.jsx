@@ -5,7 +5,7 @@ import { VoiceEngine } from '../utils/voiceEngine'
 import Settings from './Settings'
 import { exportConversation } from '../utils/exportConversation'
 import HistorySidebar from './HistorySidebar'
-import { orchestrate, getProactiveNotices, processCorrection, ROLE_POOL } from '../utils/openClaw'
+import { orchestrate, getProactiveNotices, processCorrection, ROLE_POOL, shouldAudit, auditResponse, buildRetryReminder } from '../utils/openClaw'
 import { logUsage, logError, checkTierLimits } from '../utils/telemetry'
 import { saveToDrive } from '../utils/driveStorage'
 import { supabase } from '../utils/supabase'
@@ -146,7 +146,7 @@ async function streamGrok(key, messages, onChunk, onDone, onError) {
 }
 
 export default function TheInterface() {
-  const { settings, turns, activeAgentId, voiceMode, addTurn, addToolTurn, updateToolTurn, appendChunk, finishTurn, addErrorTurn, addToolErrorTurn, clearTurns, setVoiceMode, saveConversation, conversationId, loadMemory, saveMemory, activeProject, projects, loadProjects, createProject, setActiveProject } = useStore()
+  const { settings, turns, activeAgentId, voiceMode, addTurn, addToolTurn, updateToolTurn, appendChunk, finishTurn, addErrorTurn, addToolErrorTurn, clearTurns, setVoiceMode, saveConversation, conversationId, loadMemory, saveMemory, resetTurnForRetry, activeProject, projects, loadProjects, createProject, setActiveProject } = useStore()
   
   const handleVoiceToggle = () => {
     // Recreate VoiceEngine with latest settings when toggling on
@@ -279,60 +279,68 @@ export default function TheInterface() {
       }
 
       for (const agent of respondingAgents) {
-        await new Promise((resolve) => {
-          const id = `${agent.id}-${Date.now()}`
-          const role = clawDecision?.role_assignments?.[agent.id] || null
-          addTurn({ id, type: "agent", agent: agent.id, role, text: "", directed: !targets.includes("all") })
+        const id = `${agent.id}-${Date.now()}`
+        const role = clawDecision?.role_assignments?.[agent.id] || null
+        addTurn({ id, type: "agent", agent: agent.id, role, text: "", directed: !targets.includes("all") })
 
-          // Build memory context string
-          const memoryContext = agentMemory.length > 0
-            ? agentMemory.slice(0, 8).map(m => `[${m.title}]: ${m.content.slice(0, 300)}`).join("\n")
-            : ""
+        const memoryContext = agentMemory.length > 0
+          ? agentMemory.slice(0, 8).map(m => `[${m.title}]: ${m.content.slice(0, 300)}`).join("\n")
+          : ""
 
-          const systemPrompt = buildSystemPrompt({
-            activeAgentIds: selected.map(a => a.id),
-            enabledTools,
-            mode: activeResponseMode,
-            round: round + 1,
-            totalRounds,
-            agentId: agent.id,
-            voiceMode,
-            memoryContext,
-            role,
-          })
+        const baseSystemPrompt = buildSystemPrompt({
+          activeAgentIds: selected.map(a => a.id),
+          enabledTools, mode: activeResponseMode, round: round + 1, totalRounds,
+          agentId: agent.id, voiceMode, memoryContext, role,
+        })
 
-          const messages = [
-            { role: "user", content: systemPrompt },
-            ...conversationRef.current,
-          ]
-
+        // Run one stream pass. Returns the full streamed text (or "" on error).
+        const streamOnce = (systemPrompt) => new Promise((resolve) => {
+          const messages = [{ role: "user", content: systemPrompt }, ...conversationRef.current]
           let fullText = ""
           const onChunk = (c) => { fullText += c; appendChunk(id, c) }
-          const onDone = () => {
-            conversationRef.current = [...conversationRef.current, { role: "assistant", content: fullText }]
-            finishTurn()
-            if (fullText) {
-              logUsage({ kind: "agent_message", provider: agent.id, model: agent.id, tokensOut: fullText.length / 4 | 0, success: true })
-            }
-            if (voiceMode && voiceRef.current && fullText) {
-              voiceRef.current.speak(fullText.slice(0, 400), agent.id, resolve)
-            } else {
-              resolve()
-            }
-          }
+          const onDone = () => { finishTurn(); resolve({ text: fullText, error: null }) }
           const onError = (status, msg) => {
             const errorType = classifyError(status, msg)
             addErrorTurn(agent.id, errorType)
             logUsage({ kind: "agent_message", provider: agent.id, model: agent.id, success: false, errorType })
-            resolve()
+            resolve({ text: "", error: errorType })
           }
-
           const key = settings.agents[agent.id]?.key
           if (agent.id === "claude") streamClaude(key, messages, onChunk, onDone, onError)
           else if (agent.id === "gpt") streamOpenAI(key, messages, onChunk, onDone, onError)
           else if (agent.id === "gemini") streamGemini(key, messages, onChunk, onDone, onError)
           else if (agent.id === "grok") streamGrok(key, messages, onChunk, onDone, onError)
         })
+
+        // First pass
+        let result = await streamOnce(baseSystemPrompt)
+        let auditResult = null
+
+        // V2 check-and-rewrite: only audit drift-prone roles, only outside voice mode
+        if (!result.error && shouldAudit(role, voiceMode)) {
+          auditResult = await auditResponse({ text: result.text, role, userMessage: text, settings })
+          if (!auditResult.passed) {
+            // One retry with a hardened reminder appended to the system prompt
+            const reminder = buildRetryReminder(role, auditResult.reason)
+            const hardened = `${baseSystemPrompt}\n\n${reminder}`
+            resetTurnForRetry(id)
+            const retry = await streamOnce(hardened)
+            if (!retry.error) result = retry
+            // Log so V3 can use audit fails as a learning signal
+            window.dispatchEvent(new CustomEvent('openclaw:audit_fail', {
+              detail: { agent: agent.id, role, reason: auditResult.reason }
+            }))
+          }
+        }
+
+        // Commit to history + voice + usage
+        if (result.text) {
+          conversationRef.current = [...conversationRef.current, { role: "assistant", content: result.text }]
+          logUsage({ kind: "agent_message", provider: agent.id, model: agent.id, tokensOut: result.text.length / 4 | 0, success: true })
+          if (voiceMode && voiceRef.current) {
+            await new Promise(r => voiceRef.current.speak(result.text.slice(0, 400), agent.id, r))
+          }
+        }
       }
     }
 
@@ -584,6 +592,7 @@ export default function TheInterface() {
                 <div className="ai-agent-name" style={{ color: agent.color }}>
                   {agent.name}
                   {roleDef && <span className="ai-agent-role" style={{ borderColor: agent.color, color: agent.color }}>{roleDef.name}</span>}
+                  {turn.reRolled && <span className="ai-agent-rerolled" title="OpenClaw asked this agent to retry — first response was off-role">↻ re-rolled</span>}
                 </div>
                 <div className={`ai-agent-text${isActive ? " is-streaming" : ""}`}>
                   {turn.text || (isActive ? <span className="ai-typing">thinking…</span> : "")}

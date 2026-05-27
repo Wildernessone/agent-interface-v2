@@ -154,6 +154,11 @@ export const useStore = create((set, get) => ({
     activeAgentId: turn.type === 'agent' ? turn.id : state.activeAgentId,
   })),
   appendChunk: (id, chunk) => set(state => ({ turns: state.turns.map(t => t.id === id ? { ...t, text: (t.text || '') + chunk } : t) })),
+  // Clear a turn's text and mark it for a retry pass (audit found drift)
+  resetTurnForRetry: (id) => set(state => ({
+    turns: state.turns.map(t => t.id === id ? { ...t, text: '', reRolled: true } : t),
+    activeAgentId: id,
+  })),
   finishTurn: () => set({ activeAgentId: null }),
   addToolTurn: (turn) => set(state => ({ turns: [...state.turns, turn] })), // doesn't set activeAgentId
   updateToolTurn: (id, patch) => set(state => ({ turns: state.turns.map(t => t.id === id ? { ...t, output: { ...t.output, ...patch } } : t) })),
