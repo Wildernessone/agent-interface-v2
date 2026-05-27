@@ -7,8 +7,8 @@ import { useStore } from '../store/useStore'
 const PROVIDERS = [
   {
     id:"google_drive",
-    name:"Google Drive",
-    desc:"Save every output to your Drive — images, audio, video, docs. Per-project folders auto-created.",
+    name:"Google Drive + Gmail",
+    desc:"Save every output to your Drive. Same connection unlocks email sending via Gmail when the panel ships a deliverable.",
     icon:"🟢",
   },
   {
@@ -45,7 +45,7 @@ export default function StorageTab() {
           provider: "google",
           options: {
             redirectTo: window.location.origin,
-            scopes: "https://www.googleapis.com/auth/drive.file",
+            scopes: "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/gmail.send",
             queryParams: { access_type: "offline", prompt: "consent" },
           },
         })

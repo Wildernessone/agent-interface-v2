@@ -611,6 +611,130 @@ const pdfgen = {
   },
 }
 
+// ── Gmail send — uses existing Google OAuth token + gmail.send scope ─
+// No separate API key needed. Reuses the user's Drive connection.
+const gmail = {
+  id: 'gmail',
+  name: 'Email (Gmail)',
+  category: 'action',
+  capability: 'send an email through the user\'s own Gmail (with optional Drive-hosted attachments)',
+  desc: 'Uses your Google connection — no separate key. Reconnect Drive after this update to add the gmail.send scope.',
+  keySource: null,  // uses OAuth token from storage_connections
+  status: 'live',
+  hidden: true,  // surfaces only via build plans, not as a Settings toggle
+  async run({ structuredInput, prompt, settings }) {
+    // Look up the Google OAuth token from storage_connections
+    const { supabase } = await import('../utils/supabase')
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) throw new ToolError('gmail', 'no_user', 'Not signed in.')
+    const { data: conn } = await supabase.from('storage_connections')
+      .select('access_token').eq('user_id', user.id).eq('provider', 'google_drive').maybeSingle()
+    if (!conn?.access_token) throw new ToolError('gmail', 'no_token', 'Connect Google Drive first (Settings → Storage).')
+
+    // Input can be either a structured object {to, subject, body} or a
+    // string the model wrote naturally. Try structured first.
+    const input = typeof structuredInput === 'object' && structuredInput !== null
+      ? structuredInput
+      : { to: null, subject: null, body: (prompt || '') }
+
+    const to = input.to
+    const subject = input.subject || 'From your Agent Interface panel'
+    const body = input.body || prompt || ''
+
+    if (!to) throw new ToolError('gmail', 'no_recipient', 'No recipient email specified.')
+
+    // Build RFC 2822 message, base64url-encoded for Gmail API
+    const mime = [
+      `To: ${to}`,
+      `Subject: ${subject}`,
+      'Content-Type: text/plain; charset=utf-8',
+      '',
+      body,
+    ].join('\r\n')
+
+    const raw = btoa(unescape(encodeURIComponent(mime)))
+      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+
+    const res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${conn.access_token}` },
+      body: JSON.stringify({ raw }),
+    })
+    if (!res.ok) {
+      const t = await res.text().catch(() => '')
+      if (res.status === 403 && t.includes('insufficient')) {
+        throw new ToolError('gmail', 'needs_scope', 'Gmail send needs an additional permission. Disconnect and reconnect Google Drive in Settings → Storage to grant it.')
+      }
+      throw new ToolError('gmail', 'send_failed', `Gmail returned ${res.status}: ${t.slice(0, 200)}`)
+    }
+    const data = await res.json()
+    return {
+      type: 'action',
+      tool: 'gmail',
+      summary: `Email sent to ${to}`,
+      meta: { messageId: data.id, threadId: data.threadId, to, subject },
+    }
+  },
+}
+
+// ── narrate_per_slide — ElevenLabs per slide for synced narration ──
+// Produces N audio files (one per slide) plus timing metadata, ready
+// to combine with the slide deck into a synced video later.
+const narratePerSlide = {
+  id: 'narrate_per_slide',
+  name: 'Per-slide narration',
+  category: 'audio_tts',
+  capability: 'narrate a slide deck one slide at a time — N audio files with timing data',
+  desc: 'Internal — used in deck builds to produce slide-synced narration',
+  keySource: 'tool_keys.elevenlabs',
+  status: 'live',
+  hidden: true,
+  async run({ structuredInput, key, proxy }) {
+    if (!key) throw new ToolError('narrate_per_slide', 'missing_key', 'ElevenLabs needs an API key.')
+    const data = typeof structuredInput === 'string' ? JSON.parse(structuredInput) : structuredInput
+    const slides = data?.slides || []
+    if (slides.length === 0) throw new ToolError('narrate_per_slide', 'no_slides', 'No slides to narrate.')
+
+    const voiceId = '21m00Tcm4TlvDq8ikWAM' // Rachel
+    const files = []
+    let cumulativeSec = 0
+    for (let i = 0; i < slides.length; i++) {
+      const s = slides[i]
+      const text = s.notes || `${s.title || ''}. ${(s.bullets || []).join('. ')}`
+      const safe = text.slice(0, 2500).trim()
+      if (!safe) continue
+
+      const res = await proxy('elevenlabs', { text: safe, voice_id: voiceId }, { 'x-api-key': key })
+      if (!res.ok) {
+        files.push({ slideIndex: i + 1, error: `elevenlabs_${res.status}` })
+        continue
+      }
+      const payload = await res.json()
+      if (!payload.audio) {
+        files.push({ slideIndex: i + 1, error: 'no_audio' })
+        continue
+      }
+      // Rough duration estimate: ~150 words/min, ~5 chars/word → ~12.5 chars/sec
+      const estSec = Math.max(2, Math.round(safe.length / 12.5))
+      files.push({
+        slideIndex: i + 1,
+        url: `data:audio/mpeg;base64,${payload.audio}`,
+        startSec: cumulativeSec,
+        durationSec: estSec,
+        filename: `slide-${String(i + 1).padStart(2, '0')}.mp3`,
+      })
+      cumulativeSec += estSec
+    }
+
+    return {
+      type: 'audio_bundle',
+      tool: 'narrate_per_slide',
+      files,
+      totalDurationSec: cumulativeSec,
+    }
+  },
+}
+
 // ── The registry ──────────────────────────────────────────────────
 
 export const TOOL_REGISTRY = [
@@ -626,6 +750,10 @@ export const TOOL_REGISTRY = [
   perplexity, tavily,
   // Document generation — browser-side, no API key needed
   pptxgen, docgen, pdfgen,
+  // Per-slide narration (synced audio for deck builds)
+  narratePerSlide,
+  // Action layer
+  gmail,
   // Meta — panel-as-tool for multi-step builds
   agentSynth,
 ]

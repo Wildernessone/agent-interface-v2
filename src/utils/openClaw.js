@@ -321,6 +321,18 @@ DECISION TREE (apply in order — first match wins)
        - pptxgen: takes a slides[] structured input, outputs a .pptx file
        - docgen:  takes sections[] OR slides[], outputs a .docx file
        - pdfgen:  takes sections[] OR slides[] OR plain text, outputs a .pdf file
+       - narrate_per_slide: takes slides[], produces ONE audio file per
+         slide using ElevenLabs (needs the user's elevenlabs key).
+         Output has files[] with timing data — use this for deck
+         narration instead of plain elevenlabs when the deliverable
+         is a slide deck.
+       - gmail: sends an email. Structured input shape:
+            { "to": "user@example.com", "subject": "...", "body": "..." }
+         Use it as the LAST step of a build to ship the deliverable.
+         The user's Gmail is wired through their existing Google
+         connection — no separate key needed. Recipient should be
+         pulled from the conversation if mentioned, OR you can ask
+         the user for it via a discuss-mode response first.
 
        VARIABLE INTERPOLATION:
        In any step's "input" string, you can reference earlier step

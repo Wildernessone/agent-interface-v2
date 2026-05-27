@@ -159,7 +159,7 @@ export async function runBuild(plan, ctx, onStep = () => {}) {
 
       stepOutputs[step.id] = output
 
-      // If the output is a file-bearing artifact, save it into the build folder
+      // File-bearing single output (image/audio/video/document) → save once
       if (output && (output.type === 'image' || output.type === 'audio' || output.type === 'video' || output.type === 'document')) {
         const saved = await saveToCloud({
           ...output,
@@ -171,6 +171,47 @@ export async function runBuild(plan, ctx, onStep = () => {}) {
           output,
           savedLink: saved?.webViewLink || null,
           savedProvider: saved?.provider || null,
+        })
+        // Merge savedLink back into the cached output so downstream steps
+        // can reference {step.savedLink} in their interpolated input.
+        if (saved) {
+          stepOutputs[step.id] = { ...output, savedLink: saved.webViewLink, savedProvider: saved.provider }
+        }
+      }
+
+      // Bundle outputs (per-slide narration, image series, etc.) — save each
+      // child as its own file, all into the same build folder.
+      if (output && output.type === 'audio_bundle' && Array.isArray(output.files)) {
+        const savedLinks = []
+        for (const child of output.files) {
+          if (child.error) continue
+          const saved = await saveToCloud({
+            type: 'audio',
+            url: child.url,
+            filename: child.filename,
+            tool: output.tool,
+            prompt: `${step.label || step.id} — ${child.filename}`,
+          }, buildProject)
+          savedLinks.push(saved?.webViewLink || null)
+        }
+        files.push({
+          stepId: step.id,
+          label: `${step.label || step.id} (${output.files.length} files)`,
+          output,
+          savedLinks,
+          savedProvider: savedLinks[0] ? 'multiple' : null,
+        })
+        stepOutputs[step.id] = { ...output, savedLinks }
+      }
+
+      // Action outputs (email sent, calendar created, etc.) — log only, no file
+      if (output && output.type === 'action') {
+        files.push({
+          stepId: step.id,
+          label: step.label || step.id,
+          output,
+          savedLink: null,
+          savedProvider: null,
         })
       }
 
