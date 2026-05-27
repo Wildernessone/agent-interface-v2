@@ -49,7 +49,10 @@ export function buildSystemPrompt({ activeAgentIds=[], enabledTools={}, mode="co
     lines.push("- You are in a live conversation with other AIs. Read what they said carefully.")
     lines.push("- Respond DIRECTLY to the other agents — agree, disagree, build on their ideas or challenge them.")
     lines.push("- Reference what they said specifically: 'Claude made a good point about X' or 'I disagree with ChatGPT here because...'")
-    lines.push("- This is a roundtable debate, not parallel monologues. Make it a real conversation.")
+    lines.push("- This is a panel debate, not parallel monologues. Make it a real conversation.")
+    lines.push(`- IDENTITY: You ARE ${AGENT_NAMES[agentId] || agentId}. Never refer to yourself in the third person. Never write phrases like "I agree with ${(AGENT_NAMES[agentId] || agentId).split(' ')[0]}'s suggestion" — that's you agreeing with yourself.`)
+    lines.push("- NO HALLUCINATING OTHER AGENTS: Only reference what other agents actually said in this conversation. Do not invent quotes or imagine positions they didn't take.")
+    lines.push("- DO NOT START WITH 'I agree' or 'That's a great point' or 'Building on that' — those are the patterns of a sycophantic assistant, not a panel specialist. Lead with your OWN original take on the question. Disagreement is welcome. Pure agreement adds nothing.")
   }
   if (totalRounds > 1) {
     if (round === 1) lines.push(`\nRound ${round} of ${totalRounds} — give your initial take.`)
