@@ -9,6 +9,7 @@ import { orchestrate, getProactiveNotices, processCorrection, ROLE_POOL, shouldA
 import { detectSignalsFromUserMessage, logSignals, logAuditFail, getRecentRolePerformance } from '../utils/roleSignals'
 import { logUsage, logError, checkTierLimits } from '../utils/telemetry'
 import { saveToCloud } from '../utils/cloudStorage'
+import { TOOLS_BY_ID, ToolError, readKey } from '../tools/registry'
 import { supabase } from '../utils/supabase'
 import PromptLibrary from './PromptLibrary'
 import ToolOutput from './ToolOutput'
@@ -739,12 +740,7 @@ function IconButton({ children, onClick, title, active }) {
   )
 }
 
-function toolError(toolId, errorType, message) {
-  const e = new Error(message || `${toolId} failed`)
-  e.errorType = errorType
-  e.toolId = toolId
-  return e
-}
+// toolError() removed — runners throw ToolError from the registry now.
 
 async function proxyFetch(path, body, extraHeaders = {}) {
   return fetch(`${PROXY}/${path}`, {
@@ -754,130 +750,19 @@ async function proxyFetch(path, body, extraHeaders = {}) {
   })
 }
 
-async function runTool(toolId, prompt, settings) {
-  const gptKey = settings?.agents?.gpt?.key || ''
-
-  if (toolId === "dalle") {
-    if (!gptKey) throw toolError("dalle", "missing_key", "DALL-E needs an OpenAI key — add it in Settings → Agents → ChatGPT.")
-    const res = await proxyFetch("dalle", { prompt: prompt.slice(0, 900) }, { Authorization: `Bearer ${gptKey}` })
-    if (!res.ok) {
-      const t = await res.text().catch(() => "")
-      throw toolError("dalle", classifyError(res.status, t), t || `DALL-E returned ${res.status}`)
-    }
-    let data
-    try { data = await res.json() } catch { throw toolError("dalle", "bad_response", "DALL-E returned a malformed response.") }
-    if (data.error) throw toolError("dalle", classifyError(0, data.error), data.error?.message || "DALL-E error")
-    const b64 = data.data?.[0]?.b64_json
-    const imgUrl = data.data?.[0]?.url
-    if (b64) return { type: "image", url: `data:image/png;base64,${b64}`, prompt, tool: "dalle" }
-    if (imgUrl) return { type: "image", url: imgUrl, prompt, tool: "dalle" }
-    throw toolError("dalle", "bad_response", "DALL-E returned no image.")
+/**
+ * Registry-driven tool dispatch. Every tool lives in src/tools/registry.js
+ * with the same {id, keySource, run({prompt, key, settings, proxy, context})}
+ * shape — adding a new provider is one entry in that file.
+ */
+async function runTool(toolId, prompt, settings, context = {}) {
+  const tool = TOOLS_BY_ID[toolId]
+  if (!tool) {
+    throw new ToolError(toolId, 'not_implemented', `The ${toolId} tool isn't available yet.`)
   }
-
-  if (toolId === "stability") {
-    const key = settings?.tools?.stability?.key
-    if (!key) throw toolError("stability", "missing_key", "Stable Diffusion needs an API key — add it in Settings → Tools → Images.")
-    const res = await proxyFetch("stability", { prompt: prompt.slice(0, 900) }, { Authorization: `Bearer ${key}` })
-    if (!res.ok) {
-      const t = await res.text().catch(() => "")
-      throw toolError("stability", classifyError(res.status, t), t || `Stability returned ${res.status}`)
-    }
-    const data = await res.json()
-    if (data.error) throw toolError("stability", "bad_response", data.error)
-    const b64 = data.image
-    if (!b64) throw toolError("stability", "bad_response", "Stability returned no image.")
-    return { type: "image", url: `data:image/png;base64,${b64}`, prompt, tool: "stability" }
+  if (typeof tool.run !== 'function') {
+    throw new ToolError(toolId, 'not_implemented', `${tool.name} doesn't have a runner yet.`)
   }
-
-  if (toolId === "ideogram") {
-    const key = settings?.tools?.ideogram?.key
-    if (!key) throw toolError("ideogram", "missing_key", "Ideogram needs an API key — add it in Settings → Tools → Images.")
-    const res = await proxyFetch("ideogram", { prompt: prompt.slice(0, 900) }, { "x-api-key": key })
-    if (!res.ok) {
-      const t = await res.text().catch(() => "")
-      throw toolError("ideogram", classifyError(res.status, t), t || `Ideogram returned ${res.status}`)
-    }
-    const data = await res.json()
-    const imgUrl = data.data?.[0]?.url
-    if (!imgUrl) throw toolError("ideogram", "bad_response", "Ideogram returned no image.")
-    return { type: "image", url: imgUrl, prompt, tool: "ideogram" }
-  }
-
-  if (toolId === "elevenlabs") {
-    const key = settings?.tools?.elevenlabs?.key
-    if (!key) throw toolError("elevenlabs", "missing_key", "ElevenLabs needs an API key — add it in Settings → Tools → Voice.")
-    const voiceId = "21m00Tcm4TlvDq8ikWAM" // Rachel — default English voice
-    const res = await proxyFetch("elevenlabs", { text: prompt.slice(0, 2500), voice_id: voiceId }, { "x-api-key": key })
-    if (!res.ok) {
-      const t = await res.text().catch(() => "")
-      throw toolError("elevenlabs", classifyError(res.status, t), t || `ElevenLabs returned ${res.status}`)
-    }
-    const data = await res.json()
-    if (!data.audio) throw toolError("elevenlabs", "bad_response", "ElevenLabs returned no audio.")
-    return { type: "audio", url: `data:audio/mpeg;base64,${data.audio}`, title: prompt.slice(0, 60), prompt, tool: "elevenlabs" }
-  }
-
-  if (toolId === "perplexity") {
-    const key = settings?.tools?.perplexity?.key
-    if (!key) throw toolError("perplexity", "missing_key", "Perplexity needs an API key — add it in Settings → Tools → Search.")
-    const res = await fetch("https://api.perplexity.ai/chat/completions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${key}` },
-      body: JSON.stringify({ model: "llama-3.1-sonar-small-128k-online", messages: [{ role: "user", content: prompt }] }),
-    })
-    if (!res.ok) {
-      const t = await res.text().catch(() => "")
-      throw toolError("perplexity", classifyError(res.status, t), t || `Perplexity returned ${res.status}`)
-    }
-    const data = await res.json()
-    const text = data.choices?.[0]?.message?.content
-    if (!text) throw toolError("perplexity", "bad_response", "Perplexity returned no content.")
-    return { type: "search", text, citations: data.citations || [], tool: "perplexity" }
-  }
-
-  if (toolId === "tavily") {
-    const key = settings?.tools?.tavily?.key
-    if (!key) throw toolError("tavily", "missing_key", "Tavily needs an API key — add it in Settings → Tools → Search.")
-    const res = await fetch("https://api.tavily.com/search", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ api_key: key, query: prompt, search_depth: "advanced", max_results: 5, include_answer: true }),
-    })
-    if (!res.ok) {
-      const t = await res.text().catch(() => "")
-      throw toolError("tavily", classifyError(res.status, t), t || `Tavily returned ${res.status}`)
-    }
-    const data = await res.json()
-    const text = data.answer || data.results?.map(r => `${r.title}: ${r.content}`).join('\n\n')
-    if (!text) throw toolError("tavily", "bad_response", "Tavily returned no results.")
-    return { type: "search", text, citations: (data.results || []).map(r => ({ title: r.title, url: r.url })), tool: "tavily" }
-  }
-
-  if (toolId === "runway") {
-    const key = settings?.tools?.runway?.key
-    if (!key) throw toolError("runway", "missing_key", "Runway needs an API key — add it in Settings → Tools → Video.")
-    const res = await proxyFetch("runway", { prompt: prompt.slice(0, 900) }, { Authorization: `Bearer ${key}` })
-    if (!res.ok) {
-      const t = await res.text().catch(() => "")
-      throw toolError("runway", classifyError(res.status, t), t || `Runway returned ${res.status}`)
-    }
-    const data = await res.json()
-    if (!data.url) throw toolError("runway", "bad_response", "Runway returned no video URL.")
-    return { type: "video", url: data.url, prompt, tool: "runway", duration: data.duration }
-  }
-
-  if (toolId === "suno") {
-    const key = settings?.tools?.suno?.key
-    if (!key) throw toolError("suno", "missing_key", "Suno needs an API key — add it in Settings → Tools → Music.")
-    const res = await proxyFetch("suno", { prompt: prompt.slice(0, 500) }, { Authorization: `Bearer ${key}` })
-    if (!res.ok) {
-      const t = await res.text().catch(() => "")
-      throw toolError("suno", classifyError(res.status, t), t || `Suno returned ${res.status}`)
-    }
-    const data = await res.json()
-    if (!data.url) throw toolError("suno", "bad_response", "Suno returned no audio URL.")
-    return { type: "audio", url: data.url, title: data.title || prompt.slice(0, 60), prompt, tool: "suno" }
-  }
-
-  throw toolError(toolId, "not_implemented", `The ${toolId} tool isn't available yet.`)
+  const key = readKey(settings, tool.keySource)
+  return tool.run({ prompt, key, settings, proxy: proxyFetch, context })
 }

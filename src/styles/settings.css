@@ -682,6 +682,21 @@
 }
 .storage-sub-note a { color: var(--color-accent); }
 
+/* Status badge for tool cards (coming soon, beta, etc.) */
+.tool-status-badge {
+  display: inline-block;
+  margin-left: var(--space-3);
+  padding: 1px 8px;
+  font-size: 10px;
+  font-weight: var(--font-weight-medium);
+  letter-spacing: var(--letter-spacing-wide);
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border-primary);
+  border-radius: 999px;
+}
+
 .storage-folder {
   margin-top: var(--space-3);
   padding: var(--space-3) var(--space-4);

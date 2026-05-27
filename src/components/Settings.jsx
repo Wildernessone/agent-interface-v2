@@ -3,6 +3,7 @@ import MemoryTab from './MemoryTab'
 import StorageTab from './StorageTab'
 import { supabase } from '../utils/supabase'
 import { useStore } from '../store/useStore'
+import { TOOL_REGISTRY, ROADMAP_TOOLS, CATEGORY_LABELS } from '../tools/registry'
 
 const AGENTS = [
   { id:"claude",  name:"Claude",  provider:"Anthropic", color:"var(--color-agent-claude)", avatar:"C",  placeholder:"sk-ant-api03-...", docsUrl:"https://console.anthropic.com/" },
@@ -11,16 +12,8 @@ const AGENTS = [
   { id:"grok",    name:"Grok",    provider:"xAI",       color:"var(--color-agent-grok)",   avatar:"GR", placeholder:"xai-...",          docsUrl:"https://console.x.ai/" },
 ]
 
-const TOOLS = [
-  { id:"dalle",      name:"DALL-E",           category:"Images", placeholder:"(uses OpenAI key)", desc:"OpenAI image generation" },
-  { id:"stability",  name:"Stable Diffusion", category:"Images", placeholder:"sk-...",            desc:"Stable Diffusion 3" },
-  { id:"ideogram",   name:"Ideogram",         category:"Images", placeholder:"ideo-...",          desc:"Best for images with text" },
-  { id:"runway",     name:"Runway Gen-4",     category:"Video",  placeholder:"key-...",           desc:"AI video generation (async)" },
-  { id:"suno",       name:"Suno",             category:"Music",  placeholder:"suno-...",          desc:"Full songs with vocals" },
-  { id:"elevenlabs", name:"ElevenLabs",       category:"Voice",  placeholder:"sk_...",            desc:"Premium AI voice synthesis" },
-  { id:"perplexity", name:"Perplexity",       category:"Search", placeholder:"pplx-...",          desc:"Real-time web search" },
-  { id:"tavily",     name:"Tavily",           category:"Search", placeholder:"tvly-...",          desc:"AI-optimized search" },
-]
+// Tools come from the registry now — no duplicate list here. The
+// roadmap section reads from ROADMAP_TOOLS.
 
 const ELEVENLABS_VOICES = [
   { id:"ErXwobaYiN019PkySvjV", name:"Antoni",  desc:"Warm, thoughtful",     recommended:"claude" },
@@ -87,8 +80,14 @@ export default function Settings({ onClose }) {
     updateSetting("agents", { ...settings.agents, [agentId]: { ...settings.agents[agentId], [field]: value } })
   }
 
-  const updateTool = (toolId, field, value) => {
-    updateSetting("tools", { ...settings.tools, [toolId]: { ...settings.tools[toolId], [field]: value } })
+  // Tool enabled/disabled flag — flat object keyed by tool id.
+  const updateToolEnabled = (toolId, enabled) => {
+    updateSetting("tools", { ...settings.tools, [toolId]: { enabled } })
+  }
+
+  // Tool API key — written to the jsonb-backed toolKeys map.
+  const updateToolKey = (toolId, key) => {
+    updateSetting("toolKeys", { ...(settings.toolKeys || {}), [toolId]: key })
   }
 
   const handleSignOut = async () => {
@@ -96,7 +95,12 @@ export default function Settings({ onClose }) {
     onClose()
   }
 
-  const categories = [...new Set(TOOLS.map(t => t.category))]
+  // Group tools by category — live registry first, then roadmap
+  const toolCategories = [...new Set(TOOL_REGISTRY.map(t => t.category))]
+  const roadmapByCategory = ROADMAP_TOOLS.reduce((acc, t) => {
+    (acc[t.category] = acc[t.category] || []).push(t)
+    return acc
+  }, {})
 
   return (
     <div className="settings-backdrop" onClick={e => e.target === e.currentTarget && onClose()}>
@@ -159,40 +163,94 @@ export default function Settings({ onClose }) {
             </section>
           ))}
 
-          {tab === "tools" && categories.map(cat => (
-            <div key={cat} className="settings-group">
-              <div className="settings-group-label">{cat}</div>
-              {TOOLS.filter(t => t.category === cat).map(tool => {
-                const on = settings.tools[tool.id]?.enabled
-                return (
-                  <section className="settings-card settings-card--tight" key={tool.id}>
-                    <div className="settings-row">
-                      <div>
-                        <div className="settings-row-title">{tool.name}</div>
-                        <div className="settings-row-sub">{tool.desc}</div>
+          {tab === "tools" && (
+            <>
+              {toolCategories.map(cat => (
+                <div key={cat} className="settings-group">
+                  <div className="settings-group-label">{CATEGORY_LABELS[cat] || cat}</div>
+                  {TOOL_REGISTRY.filter(t => t.category === cat).map(tool => {
+                    const on = settings.tools?.[tool.id]?.enabled
+                    const usesAgentKey = tool.keySource?.startsWith('agent.')
+                    const isStubbed = tool.status === 'needs_proxy_route' || tool.status === 'beta'
+                    return (
+                      <section className={`settings-card settings-card--tight${isStubbed ? " settings-card--quiet" : ""}`} key={tool.id}>
+                        <div className="settings-row">
+                          <div>
+                            <div className="settings-row-title">
+                              {tool.name}
+                              {tool.status === 'needs_proxy_route' && <span className="tool-status-badge">Worker route pending</span>}
+                              {tool.status === 'beta' && <span className="tool-status-badge">beta</span>}
+                            </div>
+                            <div className="settings-row-sub">{tool.desc}</div>
+                          </div>
+                          <Toggle
+                            value={on || false}
+                            onChange={v => updateToolEnabled(tool.id, v)}
+                          />
+                        </div>
+                        {on && !usesAgentKey && (
+                          <>
+                            <label className="settings-label">API key</label>
+                            <input
+                              className="settings-input"
+                              type="password"
+                              placeholder={tool.keyPrefix ? `${tool.keyPrefix}...` : "paste key"}
+                              value={settings.toolKeys?.[tool.id] || ""}
+                              onChange={e => updateToolKey(tool.id, e.target.value)}
+                            />
+                            {tool.docsUrl && (
+                              <a className="settings-link" href={tool.docsUrl} target="_blank" rel="noreferrer">Get API key ↗</a>
+                            )}
+                            {tool.setupHint && (
+                              <div className="settings-helper">{tool.setupHint}</div>
+                            )}
+                          </>
+                        )}
+                        {on && usesAgentKey && (
+                          <div className="settings-helper">Uses your OpenAI key from the Agents tab — no separate key needed.</div>
+                        )}
+                      </section>
+                    )
+                  })}
+
+                  {/* Roadmap entries in this category */}
+                  {roadmapByCategory[cat]?.map(tool => (
+                    <section className="settings-card settings-card--tight settings-card--quiet" key={tool.id}>
+                      <div className="settings-row">
+                        <div>
+                          <div className="settings-row-title">
+                            {tool.name}
+                            <span className="tool-status-badge">coming soon</span>
+                          </div>
+                          <div className="settings-row-sub">{tool.desc}</div>
+                        </div>
                       </div>
-                      <Toggle value={on || false} onChange={v => updateTool(tool.id, "enabled", v)}/>
-                    </div>
-                    {on && tool.id !== "dalle" && (
-                      <>
-                        <label className="settings-label">API key</label>
-                        <input
-                          className="settings-input"
-                          type="password"
-                          placeholder={tool.placeholder}
-                          value={settings.tools[tool.id]?.key || ""}
-                          onChange={e => updateTool(tool.id, "key", e.target.value)}
-                        />
-                      </>
-                    )}
-                    {tool.id === "dalle" && on && (
-                      <div className="settings-helper">Uses your OpenAI key from the Agents tab.</div>
-                    )}
-                  </section>
-                )
-              })}
-            </div>
-          ))}
+                    </section>
+                  ))}
+                </div>
+              ))}
+
+              {/* Roadmap categories with no live tools yet */}
+              {Object.entries(roadmapByCategory).filter(([cat]) => !toolCategories.includes(cat)).map(([cat, tools]) => (
+                <div key={cat} className="settings-group">
+                  <div className="settings-group-label">{CATEGORY_LABELS[cat] || cat}</div>
+                  {tools.map(tool => (
+                    <section className="settings-card settings-card--tight settings-card--quiet" key={tool.id}>
+                      <div className="settings-row">
+                        <div>
+                          <div className="settings-row-title">
+                            {tool.name}
+                            <span className="tool-status-badge">coming soon</span>
+                          </div>
+                          <div className="settings-row-sub">{tool.desc}</div>
+                        </div>
+                      </div>
+                    </section>
+                  ))}
+                </div>
+              ))}
+            </>
+          )}
 
           {tab === "voice" && (
             <>

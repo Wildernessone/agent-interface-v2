@@ -1,12 +1,8 @@
 import { ROLE_POOL } from './openClaw'
+import { TOOLS_BY_ID } from '../tools/registry'
 
 export function buildSystemPrompt({ activeAgentIds=[], enabledTools={}, mode="concise", round=1, totalRounds=1, agentId="claude", voiceMode=false, memoryContext="", leadAgent=null, role=null }) {
   const AGENT_NAMES = { claude:"Claude (Anthropic)", gpt:"ChatGPT (OpenAI)", gemini:"Gemini (Google)", grok:"Grok (xAI)" }
-  const TOOL_CAPS = {
-    dalle:       "generate images from text prompts",
-    perplexity:  "search the web for real-time information",
-    elevenlabs:  "synthesize realistic AI voices",
-  }
   const otherAgents = activeAgentIds.filter(id => id !== agentId).map(id => AGENT_NAMES[id] || id)
   const lines = []
   lines.push(`You are ${AGENT_NAMES[agentId] || agentId} in a live multi-agent AI panel.`)
@@ -28,7 +24,11 @@ export function buildSystemPrompt({ activeAgentIds=[], enabledTools={}, mode="co
     lines.push(`\nUse this context naturally in your responses. Don't announce that you have it — just use it.`)
   }
   if (otherAgents.length > 0) lines.push(`Also on the panel: ${otherAgents.join(", ")}.`)
-  const tools = Object.entries(enabledTools).filter(([,v])=>v).map(([id])=>TOOL_CAPS[id]).filter(Boolean)
+  // Capability list comes from the registry — single source of truth
+  const tools = Object.entries(enabledTools)
+    .filter(([,v]) => v)
+    .map(([id]) => TOOLS_BY_ID[id]?.capability)
+    .filter(Boolean)
   if (tools.length > 0) {
     lines.push(`\nAVAILABLE TOOLS — you have these right now:`)
     tools.forEach(t => lines.push(`- ${t}`))

@@ -14,16 +14,13 @@ const DEFAULT_SETTINGS = {
     gemini:  { enabled: false, key: '' },
     grok:    { enabled: false, key: '' },
   },
-  tools: {
-    dalle:      { enabled: false, key: '' },
-    stability:  { enabled: false, key: '' },
-    ideogram:   { enabled: false, key: '' },
-    runway:     { enabled: false, key: '' },
-    suno:       { enabled: false, key: '' },
-    elevenlabs: { enabled: false, key: '' },
-    perplexity: { enabled: false, key: '' },
-    tavily:     { enabled: false, key: '' },
-  },
+  // Per-tool enabled flags. Just on/off — the actual key for every
+  // tool lives in toolKeys below.
+  tools: {},
+  // Single source of truth for tool API keys, mirroring the
+  // user_api_keys.tool_keys jsonb column. Adding a new tool means
+  // adding one entry to the registry — no changes here.
+  toolKeys: {},
   voiceModeEnabled: false,
   agentVoices: {},
 }
@@ -71,18 +68,11 @@ export const useStore = create((set, get) => ({
               gemini:  { enabled: s?.enabled_agents?.gemini?.enabled  ?? false, key: k?.gemini_key  || '' },
               grok:    { enabled: s?.enabled_agents?.grok?.enabled    ?? false, key: k?.grok_key    || '' },
             },
-            tools: {
-              ...state.settings.tools,
-              ...(s?.enabled_tools || {}),
-              elevenlabs: { ...(s?.enabled_tools?.elevenlabs || state.settings.tools.elevenlabs), key: k?.elevenlabs_key  || '' },
-              perplexity: { ...(s?.enabled_tools?.perplexity || state.settings.tools.perplexity), key: k?.perplexity_key  || '' },
-              stability:  { ...(s?.enabled_tools?.stability  || state.settings.tools.stability),  key: k?.stability_key   || '' },
-              ideogram:   { ...(s?.enabled_tools?.ideogram   || state.settings.tools.ideogram),   key: k?.ideogram_key    || '' },
-              tavily:     { ...(s?.enabled_tools?.tavily     || state.settings.tools.tavily),     key: k?.tavily_key      || '' },
-              runway:     { ...(s?.enabled_tools?.runway     || state.settings.tools.runway),     key: k?.runway_key      || '' },
-              suno:       { ...(s?.enabled_tools?.suno       || state.settings.tools.suno),       key: k?.suno_key        || '' },
-              dalle:      { ...(s?.enabled_tools?.dalle      || state.settings.tools.dalle),      key: '' },
-            },
+            // Enabled flags only — keys live in toolKeys
+            tools: Object.fromEntries(
+              Object.entries(s?.enabled_tools || {}).map(([id, v]) => [id, { enabled: !!v?.enabled }])
+            ),
+            toolKeys: k?.tool_keys || {},
           },
           settingsLoaded: true,
         }))
@@ -123,17 +113,14 @@ export const useStore = create((set, get) => ({
 
         supabase.from('user_api_keys').upsert({
           user_id: user.id,
-          claude_key:     settings.agents.claude?.key || '',
-          gpt_key:        settings.agents.gpt?.key || '',
-          gemini_key:     settings.agents.gemini?.key || '',
-          grok_key:       settings.agents.grok?.key    || '',
-          elevenlabs_key: settings.tools.elevenlabs?.key || '',
-          perplexity_key: settings.tools.perplexity?.key || '',
-          stability_key:  settings.tools.stability?.key || '',
-          ideogram_key:   settings.tools.ideogram?.key || '',
-          tavily_key:     settings.tools.tavily?.key || '',
-          runway_key:     settings.tools.runway?.key || '',
-          suno_key:       settings.tools.suno?.key || '',
+          // Agent keys remain as columns — they're the panel members,
+          // a different conceptual category from tools.
+          claude_key: settings.agents.claude?.key || '',
+          gpt_key:    settings.agents.gpt?.key    || '',
+          gemini_key: settings.agents.gemini?.key || '',
+          grok_key:   settings.agents.grok?.key   || '',
+          // Every tool key lives in this jsonb. One place. Forever.
+          tool_keys:  settings.toolKeys || {},
           updated_at: new Date().toISOString(),
         }, { onConflict: 'user_id' }),
       ])
