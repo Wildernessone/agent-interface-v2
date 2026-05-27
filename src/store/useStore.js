@@ -150,6 +150,19 @@ export const useStore = create((set, get) => ({
   finishTurn: () => set({ activeAgentId: null }),
   addToolTurn: (turn) => set(state => ({ turns: [...state.turns, turn] })), // doesn't set activeAgentId
   updateToolTurn: (id, patch) => set(state => ({ turns: state.turns.map(t => t.id === id ? { ...t, output: { ...t.output, ...patch } } : t) })),
+  // For build turns, patches merge at the top level. If a patch value is a
+  // function, it gets called with the current value (used for step status
+  // updates where we need to mutate one item in an array).
+  updateBuildTurn: (id, patch) => set(state => ({
+    turns: state.turns.map(t => {
+      if (t.id !== id) return t
+      const updated = { ...t }
+      for (const [k, v] of Object.entries(patch)) {
+        updated[k] = typeof v === 'function' ? v(t[k]) : v
+      }
+      return updated
+    }),
+  })),
   addErrorTurn: (agentId, errorType) => set(state => ({ turns: [...state.turns, { id: `err-${agentId}-${Date.now()}`, type: 'error', agent: agentId, errorType }], activeAgentId: null })),
   addToolErrorTurn: (tool, errorType, message) => set(state => ({ turns: [...state.turns, { id: `tool-err-${tool}-${Date.now()}`, type: 'tool_error', tool, errorType, message }] })),
   clearTurns: () => set({ turns: [], activeAgentId: null, conversationId: null }),

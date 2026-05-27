@@ -70,20 +70,36 @@ async function ensureRootFolder(token) {
 }
 
 async function ensureProjectFolder(token, rootId, project) {
-  // Cached path: if project already has storage_folder_id, use it
-  if (project?.storage_folder_id) return project.storage_folder_id
   if (!project?.name) return rootId
 
-  const folderId = await findOrCreateFolder(token, project.name, rootId)
+  // Names can be slashed paths for nested build folders, e.g.
+  //   "Salt+Pine Coffee Launch/2026-05-26 — Pitch deck"
+  // Walk the segments, find-or-create each, return the leaf.
+  const segments = project.name.split('/').map(s => s.trim()).filter(Boolean)
+  if (segments.length === 0) return rootId
 
-  // Cache the folder id back to the project row
-  try {
-    await supabase.from('projects')
-      .update({ storage_folder_id: folderId, storage_provider: 'google_drive' })
-      .eq('id', project.id)
-  } catch {}
+  // Cache shortcut: if storage_folder_id is set AND this is a single-
+  // segment path, trust the cache. For nested paths we always walk.
+  if (segments.length === 1 && project?.storage_folder_id) return project.storage_folder_id
 
-  return folderId
+  let parent = rootId
+  let topFolderId = null
+  for (let i = 0; i < segments.length; i++) {
+    const id = await findOrCreateFolder(token, segments[i], parent)
+    if (i === 0) topFolderId = id
+    parent = id
+  }
+
+  // Cache the top-level project folder so future single-segment paths skip the walk
+  if (project?.id && topFolderId) {
+    try {
+      await supabase.from('projects')
+        .update({ storage_folder_id: topFolderId, storage_provider: 'google_drive' })
+        .eq('id', project.id)
+    } catch {}
+  }
+
+  return parent
 }
 
 async function uploadFile(token, parentId, filename, mimeType, body) {
@@ -146,6 +162,14 @@ export async function saveToDrive(output, project = null) {
     if (output.type === 'image') { mimeType = 'image/png'; ext = 'png' }
     if (output.type === 'audio') { mimeType = 'audio/mpeg'; ext = 'mp3' }
     if (output.type === 'video') { mimeType = 'video/mp4'; ext = 'mp4' }
+    if (output.type === 'document') {
+      const fn = output.filename || ''
+      if (fn.endsWith('.pptx')) { mimeType = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'; ext = 'pptx' }
+      else if (fn.endsWith('.docx')) { mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'; ext = 'docx' }
+      else if (fn.endsWith('.pdf')) { mimeType = 'application/pdf'; ext = 'pdf' }
+      else if (fn.endsWith('.json')) { mimeType = 'application/json'; ext = 'json' }
+      else if (fn.endsWith('.txt') || fn.endsWith('.md')) { mimeType = 'text/plain'; ext = fn.endsWith('.md') ? 'md' : 'txt' }
+    }
 
     let body
     if (output.url?.startsWith('data:')) {

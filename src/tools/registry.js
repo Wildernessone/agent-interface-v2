@@ -340,6 +340,203 @@ const tavily = {
   },
 }
 
+// ── agent_synth — the panel as a tool ─────────────────────────────
+// Used inside a build plan when one step needs structured output from
+// the orchestration model: turn a topic into a slide outline, distill
+// a discussion into bullet points, etc. Lets builds intersperse "agents
+// think" steps with "tools create" steps.
+
+const agentSynth = {
+  id: 'agent_synth',
+  name: 'Agent synthesis',
+  category: 'meta',
+  capability: 'have the panel produce structured content (outlines, scripts, summaries) for downstream steps',
+  desc: 'Internal — used by multi-step builds to feed structured input into other tools',
+  keySource: 'agent.claude',  // prefers Claude key; falls back below if missing
+  status: 'live',
+  hidden: true,  // not shown in Settings — it's a build-internal tool
+  async run({ prompt, settings, outputSchema }) {
+    // Pick whichever orchestration model the user has — Claude → GPT → Gemini
+    const cfg =
+      settings?.agents?.claude?.key ? { provider: 'claude', key: settings.agents.claude.key } :
+      settings?.agents?.gpt?.key    ? { provider: 'gpt',    key: settings.agents.gpt.key } :
+      settings?.agents?.gemini?.key ? { provider: 'gemini', key: settings.agents.gemini.key } :
+      null
+    if (!cfg) throw new ToolError('agent_synth', 'no_model', 'No orchestration model available — add a Claude, GPT, or Gemini key.')
+
+    const PROXY = import.meta.env.VITE_PROXY_URL || 'https://claude-proxy.jamesreed.workers.dev'
+
+    const schemaHint = outputSchema === 'slides'
+      ? `\nReturn JSON of this exact shape: {"slides":[{"title":"...", "bullets":["...","..."], "notes":"speaker notes"}, ...]}`
+      : outputSchema === 'document'
+      ? `\nReturn JSON of this exact shape: {"title":"...", "sections":[{"heading":"...", "paragraphs":["...","..."]}, ...]}`
+      : `\nReturn clean JSON only — no markdown fences, no prose around it.`
+
+    const fullPrompt = `${prompt}${schemaHint}`
+
+    let raw = ''
+    if (cfg.provider === 'claude') {
+      const res = await fetch(`${PROXY}/claude`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': cfg.key },
+        body: JSON.stringify({ messages: [{ role: 'user', content: fullPrompt }] }),
+      })
+      if (!res.ok) throw new ToolError('agent_synth', 'bad_response', `claude_${res.status}`)
+      const data = await res.json()
+      raw = data.content?.[0]?.text || ''
+    } else if (cfg.provider === 'gpt') {
+      const res = await fetch(`${PROXY}/gpt`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.key}` },
+        body: JSON.stringify({ messages: [{ role: 'user', content: fullPrompt }] }),
+      })
+      raw = await res.text()
+    } else if (cfg.provider === 'gemini') {
+      const res = await fetch(`${PROXY}/gemini`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': cfg.key },
+        body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: fullPrompt }] }] }),
+      })
+      raw = await res.text()
+    }
+
+    // Robust JSON extraction — finds the first balanced { ... }
+    const cleaned = raw.replace(/```json\s*/gi, '').replace(/```/g, '').trim()
+    const start = cleaned.indexOf('{')
+    if (start === -1) throw new ToolError('agent_synth', 'bad_response', 'No JSON in response')
+    let depth = 0, inString = false, escape = false
+    for (let i = start; i < cleaned.length; i++) {
+      const c = cleaned[i]
+      if (inString) {
+        if (escape) { escape = false; continue }
+        if (c === '\\') { escape = true; continue }
+        if (c === '"') inString = false
+        continue
+      }
+      if (c === '"') { inString = true; continue }
+      if (c === '{') depth++
+      else if (c === '}') {
+        depth--
+        if (depth === 0) {
+          try {
+            return JSON.parse(cleaned.slice(start, i + 1))
+          } catch {
+            throw new ToolError('agent_synth', 'bad_response', 'Malformed JSON')
+          }
+        }
+      }
+    }
+    throw new ToolError('agent_synth', 'bad_response', 'Unterminated JSON')
+  },
+}
+
+// ── pptxgen — generate .pptx slides browser-side, no key needed ───
+const pptxgen = {
+  id: 'pptxgen',
+  name: 'Slide deck (.pptx)',
+  category: 'document',
+  capability: 'generate a PowerPoint deck from a structured slide outline',
+  desc: 'Browser-side .pptx generation — no API key, no rate limit',
+  keySource: null,  // no key needed
+  status: 'live',
+  hidden: true,  // surfaces only inside build plans
+  async run({ structuredInput, label }) {
+    const { default: PptxGenJS } = await import('pptxgenjs')
+    const data = typeof structuredInput === 'string' ? JSON.parse(structuredInput) : structuredInput
+    const slides = data?.slides || []
+    if (!Array.isArray(slides) || slides.length === 0) {
+      throw new ToolError('pptxgen', 'no_input', 'pptxgen needs a slides[] array')
+    }
+
+    const pres = new PptxGenJS()
+    pres.layout = 'LAYOUT_WIDE'
+    for (const s of slides) {
+      const slide = pres.addSlide()
+      if (s.title) {
+        slide.addText(s.title, {
+          x: 0.5, y: 0.4, w: 12, h: 1,
+          fontSize: 32, bold: true, color: '0E0F12',
+        })
+      }
+      if (Array.isArray(s.bullets) && s.bullets.length) {
+        slide.addText(
+          s.bullets.map(b => ({ text: b, options: { bullet: true } })),
+          { x: 0.7, y: 1.6, w: 11.5, h: 5, fontSize: 20, color: '263238' }
+        )
+      }
+      if (s.notes) {
+        slide.addNotes(s.notes)
+      }
+    }
+
+    const blob = await pres.write({ outputType: 'blob' })
+    const url = URL.createObjectURL(blob)
+    return {
+      type: 'document',
+      url,
+      filename: `${(label || 'deck').replace(/[^a-z0-9-_ ]/gi, '').trim() || 'deck'}.pptx`,
+      tool: 'pptxgen',
+      meta: { slideCount: slides.length },
+    }
+  },
+}
+
+// ── docgen — generate .docx documents browser-side ────────────────
+const docgen = {
+  id: 'docgen',
+  name: 'Document (.docx)',
+  category: 'document',
+  capability: 'generate a Word document from a structured outline',
+  desc: 'Browser-side .docx generation — no API key',
+  keySource: null,
+  status: 'live',
+  hidden: true,
+  async run({ structuredInput, label }) {
+    const docxMod = await import('docx')
+    const { Document, Packer, Paragraph, HeadingLevel, TextRun } = docxMod
+    const data = typeof structuredInput === 'string' ? JSON.parse(structuredInput) : structuredInput
+
+    const children = []
+    if (data?.title) {
+      children.push(new Paragraph({ heading: HeadingLevel.TITLE, children: [new TextRun({ text: data.title })] }))
+    }
+
+    // Two supported shapes:
+    //   - { sections: [{ heading, paragraphs[] }] }
+    //   - { slides: [{ title, bullets, notes }] } — used for speaker notes from a deck outline
+    if (Array.isArray(data?.sections)) {
+      for (const sec of data.sections) {
+        if (sec.heading) children.push(new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun(sec.heading)] }))
+        for (const p of sec.paragraphs || []) {
+          children.push(new Paragraph({ children: [new TextRun(p)] }))
+        }
+      }
+    } else if (Array.isArray(data?.slides)) {
+      data.slides.forEach((s, i) => {
+        children.push(new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun(`Slide ${i + 1}: ${s.title || ''}`)] }))
+        for (const b of s.bullets || []) {
+          children.push(new Paragraph({ bullet: { level: 0 }, children: [new TextRun(b)] }))
+        }
+        if (s.notes) {
+          children.push(new Paragraph({ children: [new TextRun({ text: 'Speaker notes:', bold: true })] }))
+          children.push(new Paragraph({ children: [new TextRun(s.notes)] }))
+        }
+      })
+    }
+
+    const doc = new Document({ sections: [{ properties: {}, children }] })
+    const blob = await Packer.toBlob(doc)
+    const url = URL.createObjectURL(blob)
+    return {
+      type: 'document',
+      url,
+      filename: `${(label || 'document').replace(/[^a-z0-9-_ ]/gi, '').trim() || 'document'}.docx`,
+      tool: 'docgen',
+      meta: { sections: Array.isArray(data?.sections) ? data.sections.length : (data?.slides?.length || 0) },
+    }
+  },
+}
+
 // ── The registry ──────────────────────────────────────────────────
 
 export const TOOL_REGISTRY = [
@@ -353,6 +550,10 @@ export const TOOL_REGISTRY = [
   runway,
   // Search
   perplexity, tavily,
+  // Document generation — browser-side, no API key needed
+  pptxgen, docgen,
+  // Meta — panel-as-tool for multi-step builds
+  agentSynth,
 ]
 
 export const TOOLS_BY_ID = Object.fromEntries(TOOL_REGISTRY.map(t => [t.id, t]))
@@ -378,8 +579,10 @@ export const CATEGORY_LABELS = {
   audio_tts:   'Voice',
   audio_music: 'Music',
   video:       'Video',
+  document:    'Documents',
   search:      'Search',
   action:      'Actions',
+  meta:        'Internal',
 }
 
 export function listEnabledTools(settings) {

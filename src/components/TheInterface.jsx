@@ -10,6 +10,7 @@ import { detectSignalsFromUserMessage, logSignals, logAuditFail, getRecentRolePe
 import { logUsage, logError, checkTierLimits } from '../utils/telemetry'
 import { saveToCloud } from '../utils/cloudStorage'
 import { TOOLS_BY_ID, ToolError, readKey } from '../tools/registry'
+import { runBuild } from '../utils/buildExecutor'
 import { supabase } from '../utils/supabase'
 import PromptLibrary from './PromptLibrary'
 import ToolOutput from './ToolOutput'
@@ -148,7 +149,7 @@ async function streamGrok(key, messages, onChunk, onDone, onError) {
 }
 
 export default function TheInterface() {
-  const { settings, turns, activeAgentId, voiceMode, addTurn, addToolTurn, updateToolTurn, appendChunk, finishTurn, addErrorTurn, addToolErrorTurn, clearTurns, setVoiceMode, saveConversation, conversationId, loadMemory, saveMemory, resetTurnForRetry, activeProject, projects, loadProjects, createProject, setActiveProject } = useStore()
+  const { settings, turns, activeAgentId, voiceMode, addTurn, addToolTurn, updateToolTurn, updateBuildTurn, appendChunk, finishTurn, addErrorTurn, addToolErrorTurn, clearTurns, setVoiceMode, saveConversation, conversationId, loadMemory, saveMemory, resetTurnForRetry, activeProject, projects, loadProjects, createProject, setActiveProject } = useStore()
   
   const handleVoiceToggle = () => {
     // Recreate VoiceEngine with latest settings when toggling on
@@ -364,35 +365,39 @@ export default function TheInterface() {
       }
     }
 
-    // OpenClaw tool plan — fire each step in the plan
-    const plan = Array.isArray(clawDecision?.plan) ? clawDecision.plan : []
-    if (plan.length > 0) {
+    // OpenClaw build plan — runBuild handles dependencies + bundling
+    const plan = clawDecision?.plan
+    const steps = plan?.steps || []
+    if (steps.length > 0) {
       setToolsWorking(true)
-      const agentContext = conversationRef.current
-        .filter(m => m.role === "assistant")
-        .map(m => m.content).join(" ")
-      const fallback = (agentContext.length > 20 ? `${text}. ${agentContext}`.slice(0, 900) : text)
+      const buildTurnId = `build-${Date.now()}`
+      addToolTurn({
+        id: buildTurnId,
+        type: 'build',
+        deliverable: plan.deliverable || 'Build',
+        steps: steps.map(s => ({ id: s.id, label: s.label, tool: s.tool, status: 'pending' })),
+        files: [],
+        errors: [],
+      })
 
-      for (const step of plan) {
-        if (!step?.tool) continue
-        const turnId = `tool-${step.tool}-${Date.now()}-${Math.random().toString(36).slice(2,7)}`
-        try {
-          const output = await runTool(step.tool, step.prompt || fallback, settings)
-          if (step.label) output.label = step.label
-          addToolTurn({ id: turnId, type: "tool", output })
-          logUsage({ kind: "tool_call", provider: step.tool, success: true })
-
-          // Fire-and-forget save to Drive
-          saveToCloud(output, activeProject).then(saved => {
-            if (saved?.webViewLink) updateToolTurn(turnId, { driveUrl: saved.webViewLink, savedProvider: saved.provider })
+      const result = await runBuild(
+        { deliverable: plan.deliverable, steps },
+        { settings, project: activeProject, proxy: proxyFetch },
+        (stepId, status, reason) => {
+          updateBuildTurn(buildTurnId, {
+            steps: (s) => (s || []).map(x => x.id === stepId ? { ...x, status, reason } : x),
           })
-        } catch(e) {
-          const errorType = e.errorType || "unknown"
-          addToolErrorTurn(step.tool, errorType, e.message)
-          logUsage({ kind: "tool_call", provider: step.tool, success: false, errorType })
-          if (errorType === "unknown" || errorType === "bad_response") logError("runTool", e, { tool: step.tool })
         }
-      }
+      )
+
+      updateBuildTurn(buildTurnId, {
+        files: result.files,
+        errors: result.errors,
+        folderName: result.folderName,
+      })
+      result.files.forEach(f => logUsage({ kind: 'tool_call', provider: f.output?.tool || 'build', success: true }))
+      result.errors.forEach(e => logUsage({ kind: 'tool_call', provider: e.stepId, success: false, errorType: 'build_step' }))
+
       setToolsWorking(false)
     }
   }
@@ -555,6 +560,42 @@ export default function TheInterface() {
               <ToolOutput output={turn.output} />
             </div>
           )
+          if (turn.type === "build") {
+            const done = turn.steps?.every(s => s.status === 'done' || s.status === 'failed')
+            const folderHref = turn.files?.find(f => f.savedLink)?.savedLink
+            return (
+              <div key={turn.id} className="ai-turn ai-build-card">
+                <div className="ai-build-header">
+                  <div className="ai-build-title">📦 {turn.deliverable}</div>
+                  {done && turn.folderName && (
+                    <div className="ai-build-folder">Saved to: <em>{turn.folderName}</em></div>
+                  )}
+                </div>
+                <ul className="ai-build-steps">
+                  {(turn.steps || []).map(s => (
+                    <li key={s.id} className={`ai-build-step is-${s.status}`}>
+                      <span className="ai-build-step-icon">
+                        {s.status === 'done' ? '✓' : s.status === 'failed' ? '✕' : s.status === 'started' ? '◐' : '○'}
+                      </span>
+                      <span className="ai-build-step-label">{s.label}</span>
+                      <span className="ai-build-step-tool">{s.tool}</span>
+                      {s.status === 'failed' && s.reason && <span className="ai-build-step-reason">{s.reason}</span>}
+                    </li>
+                  ))}
+                </ul>
+                {done && turn.files?.length > 0 && (
+                  <div className="ai-build-files">
+                    {turn.files.length} file{turn.files.length === 1 ? '' : 's'} bundled
+                    {folderHref && (
+                      <a className="ai-build-folder-link" href={folderHref} target="_blank" rel="noreferrer">
+                        Open ↗
+                      </a>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          }
           if (turn.type === "error") {
             const agent = AGENTS.find(a => a.id === turn.agent)
             const isOrchestrator = turn.agent === "orchestrator"

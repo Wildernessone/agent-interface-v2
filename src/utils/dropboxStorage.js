@@ -177,8 +177,24 @@ async function ensureFolder(token, path) {
 
 function buildProjectPath(project) {
   if (!project?.name) return '/Agent Interface'
-  const safe = project.name.replace(/[<>:"\\|?*]/g, '').slice(0, 80)
-  return `/Agent Interface/${safe}`
+  // project.name may include '/' for nested build folders. Sanitize
+  // per segment so we don't strip the structural slashes.
+  const segments = project.name.split('/').map(s =>
+    s.replace(/[<>:"\\|?*]/g, '').slice(0, 80).trim()
+  ).filter(Boolean)
+  return `/Agent Interface/${segments.join('/')}`
+}
+
+// Ensure each parent in a nested path exists. Dropbox doesn't auto-
+// create parent folders on upload (or rather, the behavior varies).
+async function ensureNestedFolders(token, fullPath) {
+  const parts = fullPath.split('/').filter(Boolean)
+  let path = ''
+  for (const p of parts) {
+    path += '/' + p
+    await ensureFolder(token, path).catch(() => {}) // 409 already-exists is ignored upstream
+  }
+  return fullPath
 }
 
 async function uploadFile(token, path, body) {
@@ -252,6 +268,15 @@ export async function saveToDropbox(output, project = null) {
     if (output.type === 'image') ext = 'png'
     if (output.type === 'audio') ext = 'mp3'
     if (output.type === 'video') ext = 'mp4'
+    if (output.type === 'document') {
+      const fn = output.filename || ''
+      if (fn.endsWith('.pptx')) ext = 'pptx'
+      else if (fn.endsWith('.docx')) ext = 'docx'
+      else if (fn.endsWith('.pdf')) ext = 'pdf'
+      else if (fn.endsWith('.json')) ext = 'json'
+      else if (fn.endsWith('.md')) ext = 'md'
+      else if (fn.endsWith('.txt')) ext = 'txt'
+    }
 
     let body
     if (output.url?.startsWith('data:')) {
@@ -265,7 +290,7 @@ export async function saveToDropbox(output, project = null) {
     }
 
     const folderPath = buildProjectPath(project)
-    await ensureFolder(token, folderPath)
+    await ensureNestedFolders(token, folderPath)
 
     const safePrompt = (output.prompt || output.tool || 'output').replace(/[^a-z0-9-_ ]/gi, '').slice(0, 60).trim() || 'output'
     const filename = `${Date.now()}-${output.tool}-${safePrompt}.${ext}`

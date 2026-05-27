@@ -305,18 +305,73 @@ DECISION TREE (apply in order — first match wins)
 
 2. If EXPLICIT BUILD APPROVAL DETECTED is yes AND PRIOR AGENT DISCUSSION is yes:
      → mode = "build"
-     → plan = a real list of {tool, prompt, label} steps, synthesized from
-       the agent discussion. Use only tools that appear in TOOLS AVAILABLE.
      → agents_to_respond = []
      → role_assignments = {}
-     → Examples of what to put in plan:
-       • image request → [{tool:"dalle", prompt:"<final detailed image prompt>", label:"Image"}]
-         (prefer dalle, fall back to stability or ideogram if dalle unavailable)
-       • 30-second ad → [
-            {tool:"elevenlabs", prompt:"<final voiceover script>", label:"Voiceover"},
-            {tool:"suno",       prompt:"<music vibe description>", label:"Music"},
-            {tool:"runway",     prompt:"<shot-by-shot description>", label:"Video"}
+     → Set deliverable = a short name for the whole output (used as the
+       folder name in cloud storage). Example: "Pitch deck — Salt+Pine Series A"
+     → plan = a MULTI-STEP graph of {id, tool, needs[], input, label}
+       steps. Use only tools that appear in TOOLS AVAILABLE plus these
+       internal build-only tools: "agent_synth", "pptxgen", "docgen".
+
+       BUILD-INTERNAL TOOLS (always available, no setup needed):
+       - agent_synth: have the panel produce STRUCTURED CONTENT for
+         downstream steps. Returns JSON. Use output_schema to shape it:
+            "slides"   → {"slides":[{title, bullets[], notes}]}
+            "document" → {"title", "sections":[{heading, paragraphs[]}]}
+       - pptxgen: takes a slides[] structured input, outputs a .pptx file
+       - docgen:  takes sections[] OR slides[], outputs a .docx file
+
+       VARIABLE INTERPOLATION:
+       In any step's "input" string, you can reference earlier step
+       outputs with {stepId} or {stepId.field}. Examples:
+         input: "Narrate each slide naturally. Slides: {outline}"
+         input: "{outline}"   (passes the raw outline object through)
+
+       DEPENDENCY ORDER:
+       List each step's needs[] — runBuild does topological sort.
+
+       EXAMPLE — pitch deck with narration + speaker notes:
+       {
+         "deliverable": "Pitch deck — Salt+Pine Coffee Series A",
+         "steps": [
+           {
+             "id": "outline", "tool": "agent_synth",
+             "input": "Produce a 6-slide investor deck outline for Salt+Pine Coffee Series A based on the discussion above.",
+             "output_schema": "slides",
+             "label": "Outline"
+           },
+           {
+             "id": "deck", "tool": "pptxgen",
+             "needs": ["outline"],
+             "input": "{outline}",
+             "label": "Pitch deck"
+           },
+           {
+             "id": "narration", "tool": "elevenlabs",
+             "needs": ["outline"],
+             "input": "Read this deck naturally, one slide at a time: {outline}",
+             "label": "Narration"
+           },
+           {
+             "id": "notes", "tool": "docgen",
+             "needs": ["outline"],
+             "input": "{outline}",
+             "label": "Speaker notes"
+           }
          ]
+       }
+
+       EXAMPLE — single image (still valid as a 1-step graph):
+       {
+         "deliverable": "Logo concept",
+         "steps": [
+           { "id": "logo", "tool": "dalle", "input": "<final image prompt>", "label": "Logo" }
+         ]
+       }
+
+       Match the deliverable structure to what the user actually wants.
+       A song = 1 step. A full marketing campaign = many steps with
+       interpolation between them.
 
 3. Otherwise:
      → mode = "discuss"
@@ -335,9 +390,12 @@ OUTPUT (return EXACTLY this JSON shape — no preface, no fence, no trailing tex
   "role_assignments": { "claude": "skeptic", "gpt": "builder" },
   "rounds": 1,
   "response_mode": "concise" | "balanced" | "detailed",
-  "plan": [
-    { "tool": "<tool_id>", "prompt": "<tool prompt>", "label": "<short label>" }
-  ],
+  "deliverable": "<short folder-friendly name for the build, or null in discuss mode>",
+  "plan": {
+    "steps": [
+      { "id": "<step-id>", "tool": "<tool_id>", "needs": [], "input": "<prompt or {stepRef}>", "label": "<short label>", "output_schema": "slides" }
+    ]
+  },
   "correction": {
     "detected": false,
     "what_was_wrong": null,
@@ -442,15 +500,48 @@ export async function orchestrate({
   }
   decision.role_assignments = cleanRoles
 
-  // Filter plan to enabled tools only
+  // Plan: accept either the legacy flat array OR the new graph shape
+  // {deliverable, steps[]}. Normalize to the graph internally.
+  const BUILD_INTERNAL_TOOLS = new Set(['agent_synth', 'pptxgen', 'docgen'])
+  const isToolAllowed = (toolId) =>
+    BUILD_INTERNAL_TOOLS.has(toolId) || !!enabledTools?.[toolId]
+
+  let steps = []
+  let deliverable = decision.deliverable || null
   if (Array.isArray(decision.plan)) {
-    decision.plan = decision.plan.filter(step => step?.tool && enabledTools?.[step.tool])
-  } else {
-    decision.plan = []
+    // Legacy flat-array path → wrap as a single-step graph
+    steps = decision.plan
+      .filter(s => s?.tool && isToolAllowed(s.tool))
+      .map((s, i) => ({
+        id: s.id || `step_${i}`,
+        tool: s.tool,
+        input: s.input || s.prompt || '',
+        needs: [],
+        label: s.label || s.tool,
+        output_schema: s.output_schema,
+      }))
+  } else if (decision.plan?.steps && Array.isArray(decision.plan.steps)) {
+    steps = decision.plan.steps
+      .filter(s => s?.id && s?.tool && isToolAllowed(s.tool))
+      .map(s => ({
+        id: s.id,
+        tool: s.tool,
+        input: s.input || s.prompt || '',
+        needs: Array.isArray(s.needs) ? s.needs : [],
+        label: s.label || s.tool,
+        output_schema: s.output_schema,
+      }))
+    deliverable = decision.plan.deliverable || deliverable
   }
 
+  // Drop needs[] references that point to filtered-out steps
+  const validIds = new Set(steps.map(s => s.id))
+  steps = steps.map(s => ({ ...s, needs: s.needs.filter(n => validIds.has(n)) }))
+
+  decision.plan = { deliverable, steps }
+
   // Sanity: if mode is "build" but plan is empty after filtering, fall back to discuss
-  if (decision.mode === "build" && decision.plan.length === 0) {
+  if (decision.mode === "build" && steps.length === 0) {
     decision.mode = "discuss"
     decision.agents_to_respond = decision.agents_to_respond?.length ? decision.agents_to_respond : enabledAgents
     decision.reasoning = (decision.reasoning || "") + " (no usable tool in plan — switched to discuss)"

@@ -95,8 +95,11 @@ export default function Settings({ onClose }) {
     onClose()
   }
 
-  // Group tools by category — live registry first, then roadmap
-  const toolCategories = [...new Set(TOOL_REGISTRY.map(t => t.category))]
+  // Group tools by category — live registry first, then roadmap.
+  // Skip hidden tools (agent_synth, pptxgen, docgen — used internally
+  // by multi-step builds, not user-configurable).
+  const visibleTools = TOOL_REGISTRY.filter(t => !t.hidden)
+  const toolCategories = [...new Set(visibleTools.map(t => t.category))]
   const roadmapByCategory = ROADMAP_TOOLS.reduce((acc, t) => {
     (acc[t.category] = acc[t.category] || []).push(t)
     return acc
@@ -168,7 +171,7 @@ export default function Settings({ onClose }) {
               {toolCategories.map(cat => (
                 <div key={cat} className="settings-group">
                   <div className="settings-group-label">{CATEGORY_LABELS[cat] || cat}</div>
-                  {TOOL_REGISTRY.filter(t => t.category === cat).map(tool => {
+                  {visibleTools.filter(t => t.category === cat).map(tool => {
                     const on = settings.tools?.[tool.id]?.enabled
                     const usesAgentKey = tool.keySource?.startsWith('agent.')
                     const isStubbed = tool.status === 'needs_proxy_route' || tool.status === 'beta'
