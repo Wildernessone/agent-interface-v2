@@ -261,11 +261,26 @@
   min-width: 0;
 }
 .ai-agent-name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-semibold);
   letter-spacing: var(--letter-spacing-wide);
   text-transform: uppercase;
   margin-bottom: var(--space-2);
+}
+.ai-agent-role {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  font-size: 10px;
+  font-weight: var(--font-weight-medium);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border: 1px solid;
+  border-radius: 999px;
+  opacity: 0.85;
 }
 .ai-agent-text {
   font-size: var(--chat-font-size);
@@ -652,6 +667,24 @@
 .ai-claw-plan {
   color: var(--color-accent);
   font-weight: var(--font-weight-medium);
+}
+.ai-claw-roles {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+.ai-claw-role-pair {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  padding: 1px 8px;
+  border: 1px solid var(--color-border-primary);
+  border-radius: 999px;
+}
+.ai-claw-role-pair strong {
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-semibold);
+  text-transform: capitalize;
 }
 
 /* ────────── Tool output ────────── */

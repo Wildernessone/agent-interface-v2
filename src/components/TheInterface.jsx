@@ -5,7 +5,7 @@ import { VoiceEngine } from '../utils/voiceEngine'
 import Settings from './Settings'
 import { exportConversation } from '../utils/exportConversation'
 import HistorySidebar from './HistorySidebar'
-import { orchestrate, getProactiveNotices, processCorrection } from '../utils/openClaw'
+import { orchestrate, getProactiveNotices, processCorrection, ROLE_POOL } from '../utils/openClaw'
 import { logUsage, logError, checkTierLimits } from '../utils/telemetry'
 import { saveToDrive } from '../utils/driveStorage'
 import { supabase } from '../utils/supabase'
@@ -174,6 +174,9 @@ export default function TheInterface() {
   const scrollRef = useRef(null)
   const voiceRef = useRef(null)
   const conversationRef = useRef([])
+  // Last turn's role assignments — fed into OpenClaw so roles stay sticky
+  // unless the conversation shape shifts.
+  const previousRolesRef = useRef({})
 
   const activeAgents = AGENTS.filter(a => settings.agents[a.id]?.enabled && settings.agents[a.id]?.key)
   // Respect the user's toggles. DALL-E doesn't need its own key — it uses
@@ -227,6 +230,7 @@ export default function TheInterface() {
         enabledTools,
         memory: agentMemory,
         activeProject,
+        previousRoleAssignments: previousRolesRef.current,
         settings,
         voiceMode,
       })
@@ -234,6 +238,11 @@ export default function TheInterface() {
       logError("orchestrate", e)
       addErrorTurn("orchestrator", "orchestrator_down")
       return
+    }
+
+    // Remember role assignments for next turn's stickiness check
+    if (clawDecision?.role_assignments && Object.keys(clawDecision.role_assignments).length) {
+      previousRolesRef.current = clawDecision.role_assignments
     }
 
     // Surface OpenClaw's decision in the thread so the user sees what it's doing
@@ -244,6 +253,7 @@ export default function TheInterface() {
         mode: clawDecision.mode || "discuss",
         reasoning: clawDecision.reasoning || "",
         plan: clawDecision.plan || [],
+        roleAssignments: clawDecision.role_assignments || {},
       })
     }
 
@@ -271,7 +281,8 @@ export default function TheInterface() {
       for (const agent of respondingAgents) {
         await new Promise((resolve) => {
           const id = `${agent.id}-${Date.now()}`
-          addTurn({ id, type: "agent", agent: agent.id, text: "", directed: !targets.includes("all") })
+          const role = clawDecision?.role_assignments?.[agent.id] || null
+          addTurn({ id, type: "agent", agent: agent.id, role, text: "", directed: !targets.includes("all") })
 
           // Build memory context string
           const memoryContext = agentMemory.length > 0
@@ -287,6 +298,7 @@ export default function TheInterface() {
             agentId: agent.id,
             voiceMode,
             memoryContext,
+            role,
           })
 
           const messages = [
@@ -483,17 +495,29 @@ export default function TheInterface() {
               <div className="ai-user-bubble">{turn.text}</div>
             </div>
           )
-          if (turn.type === "claw") return (
-            <div key={turn.id} className="ai-claw">
-              <span className={`ai-claw-tag ai-claw-tag--${turn.mode}`}>OpenClaw · {turn.mode}</span>
-              <span className="ai-claw-text">{turn.reasoning}</span>
-              {turn.plan?.length > 0 && (
-                <span className="ai-claw-plan">
-                  → firing {turn.plan.map(s => s.label || s.tool).join(", ")}
-                </span>
-              )}
-            </div>
-          )
+          if (turn.type === "claw") {
+            const rolePairs = turn.roleAssignments ? Object.entries(turn.roleAssignments) : []
+            return (
+              <div key={turn.id} className="ai-claw">
+                <span className={`ai-claw-tag ai-claw-tag--${turn.mode}`}>OpenClaw · {turn.mode}</span>
+                <span className="ai-claw-text">{turn.reasoning}</span>
+                {rolePairs.length > 0 && (
+                  <span className="ai-claw-roles">
+                    {rolePairs.map(([a, r]) => (
+                      <span key={a} className="ai-claw-role-pair">
+                        <strong>{a}</strong> as {ROLE_POOL[r]?.name || r}
+                      </span>
+                    ))}
+                  </span>
+                )}
+                {turn.plan?.length > 0 && (
+                  <span className="ai-claw-plan">
+                    → firing {turn.plan.map(s => s.label || s.tool).join(", ")}
+                  </span>
+                )}
+              </div>
+            )
+          }
           if (turn.type === "tool") return (
             <div key={turn.id} className="ai-turn ai-tool-card">
               <div className="ai-tool-label">{turn.output?.tool || "tool"}</div>
@@ -552,11 +576,15 @@ export default function TheInterface() {
           const agent = AGENTS.find(a => a.id === turn.agent)
           const isActive = activeAgentId === turn.id
           if (!agent) return null
+          const roleDef = turn.role && ROLE_POOL[turn.role]
           return (
             <div key={turn.id} className="ai-turn ai-turn--agent">
               <div className="ai-avatar" style={{ color: agent.color, borderColor: agent.color }}>{agent.avatar}</div>
               <div className="ai-agent-msg">
-                <div className="ai-agent-name" style={{ color: agent.color }}>{agent.name}</div>
+                <div className="ai-agent-name" style={{ color: agent.color }}>
+                  {agent.name}
+                  {roleDef && <span className="ai-agent-role" style={{ borderColor: agent.color, color: agent.color }}>{roleDef.name}</span>}
+                </div>
                 <div className={`ai-agent-text${isActive ? " is-streaming" : ""}`}>
                   {turn.text || (isActive ? <span className="ai-typing">thinking…</span> : "")}
                 </div>
@@ -586,7 +614,7 @@ export default function TheInterface() {
             )
           })}
           {turns.length > 0 && (
-            <button className="ai-chip ai-chip--clear" onClick={() => { clearTurns(); conversationRef.current = [] }}>Clear</button>
+            <button className="ai-chip ai-chip--clear" onClick={() => { clearTurns(); conversationRef.current = []; previousRolesRef.current = {} }}>Clear</button>
           )}
         </div>
         <div className="ai-input-row">

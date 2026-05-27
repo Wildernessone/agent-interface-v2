@@ -14,6 +14,52 @@ import { supabase } from './supabase'
 
 const PROXY = import.meta.env.VITE_PROXY_URL || "https://claude-proxy.jamesreed.workers.dev"
 
+// ── Role pool ──────────────────────────────────────────────────────
+// Roles are ASSIGNMENTS, not identities. The dispatcher assigns one to
+// each responding agent per turn. The same agent can play different
+// roles on different turns. Roles are sticky — they persist unless the
+// conversation shape changes.
+export const ROLE_POOL = {
+  skeptic: {
+    name: "Skeptic",
+    purpose: "Find what's broken. Do not agree with the premise. Only 'no, because' — never 'yes, and'. If you genuinely cannot find a flaw, say so explicitly: 'I can't find a flaw here, and here's why this is unusually solid.' That rare admission is your most useful signal — never fake skepticism, never fake comfort.",
+  },
+  reality_checker: {
+    name: "Reality Checker",
+    purpose: "Surface unstated assumptions and missing context. Ask the questions the user didn't think to ask. What does this plan require that we have not confirmed the user has — money, time, connections, skills, access, audience? No opinions on the idea itself — only flag what's unspoken.",
+  },
+  builder: {
+    name: "Builder",
+    purpose: "Take the idea seriously and figure out how it would actually work on day one with what's in front of us right now. Constructive and concrete. Specific first step, specific tool, specific output. No hand-waving.",
+  },
+  synthesizer: {
+    name: "Synthesizer",
+    purpose: "Write the actual read across what everyone said. Not consensus — real conclusions, including the disagreements that didn't resolve. Example shape: 'Three of us think this is solid. The Skeptic's objection is X, and it wasn't answered. Here's what to do about it.'",
+  },
+  pattern_spotter: {
+    name: "Pattern Spotter",
+    purpose: "Notice the shape underneath. Connect this idea to structures from other domains, prior conversations the user mentioned, or recurring patterns the user might not see. One sharp connection beats five vague ones.",
+  },
+  steel_manner: {
+    name: "Steel-Manner",
+    purpose: "Argue for the idea as strongly as possible. Make the best version of the case before anyone tears it down. Even if you privately disagree, your job is to articulate why this could actually work, taken at its strongest.",
+  },
+  numbers_person: {
+    name: "Numbers Person",
+    purpose: "Get concrete about money, time, and math. Real numbers — costs, hours, conversion rates, break-evens, traffic estimates. If you have to estimate, estimate openly and show the math. No vague 'this could be profitable' — give actual figures.",
+  },
+  translator: {
+    name: "Translator",
+    purpose: "Restate the idea or the discussion in plainer terms. Strip the jargon. Confirm everyone (user + other agents) is using the same words to mean the same things.",
+  },
+  historian: {
+    name: "Historian",
+    purpose: "Pull in what we've discussed before — prior conversations, memory the user has confirmed, decisions they've already made. Bring continuity. Surface a contradiction with something they said earlier if you spot one.",
+  },
+}
+
+const ROLE_IDS = Object.keys(ROLE_POOL)
+
 async function authHeader() {
   const { data: { session } } = await supabase.auth.getSession()
   return session?.access_token ? { 'x-supabase-auth': `Bearer ${session.access_token}` } : {}
@@ -148,8 +194,21 @@ function buildOrchestratorPrompt({
   isBuildSignal,
   hasPriorDiscussion,
   voiceMode,
+  previousRoleAssignments,
 }) {
+  const roleCatalog = Object.entries(ROLE_POOL)
+    .map(([id, r]) => `  - "${id}" (${r.name}): ${r.purpose.split('.')[0]}.`)
+    .join("\n")
+
+  const previousAssignmentsLine = previousRoleAssignments && Object.keys(previousRoleAssignments).length
+    ? Object.entries(previousRoleAssignments).map(([a, r]) => `${a}=${r}`).join(", ")
+    : "(none — this is the first turn or roles weren't assigned last turn)"
+
   return `
+You are the DISPATCHER for a panel of specialist AIs. You are NOT a fifth voice in the rotation.
+Your job: read the user's intent and the prior discussion, decide which specialist(s) should speak,
+assign each one a ROLE for this turn, and decide when the panel has done its job.
+
 INPUT
 =====
 USER MESSAGE: "${userMessage}"
@@ -168,6 +227,30 @@ ${memorySummary || "none"}
 WHAT AGENTS SAID JUST NOW:
 ${agentSummary || "(nothing yet — first message in this thread)"}
 
+PREVIOUS TURN'S ROLE ASSIGNMENTS:
+${previousAssignmentsLine}
+
+ROLE POOL (assign one per responding agent):
+${roleCatalog}
+
+ROLE ASSIGNMENT RULES
+=====================
+- Roles are ASSIGNMENTS, not identities. The same agent can play different roles
+  on different turns. The same role can be assigned to whichever agent fits best.
+- Roles are STICKY by default. If an agent had a role last turn and the user is
+  following up on what that role said, keep them in that role. Only reassign when
+  the SHAPE of the conversation shifts (brainstorm → stress-test, debate → synthesis),
+  not when the topic shifts.
+- Pick 2-3 roles per turn from the pool. Not every role needs to appear. Silence
+  from a role is a meaningful signal — "no skeptic was needed" means nothing was
+  broken. Don't force everyone to speak.
+- Match the role to the agent's actual strengths when possible:
+    • claude  → strong at Skeptic, Synthesizer, Translator, Pattern Spotter
+    • gpt     → strong at Builder, Numbers Person, Reality Checker
+    • gemini  → strong at Reality Checker, Historian, Numbers Person
+    • grok    → strong at Skeptic, Steel-Manner, Pattern Spotter, direct contrarian takes
+  These are tendencies, not rules. Override when the moment calls for it.
+
 DECISION TREE (apply in order — first match wins)
 ================================================
 1. If TOOLS AVAILABLE includes a search tool AND the user asked a search question
@@ -175,12 +258,14 @@ DECISION TREE (apply in order — first match wins)
      → mode = "build"
      → plan = [{tool: <search tool>, prompt: <topic to search>}]
      → agents_to_respond = []
+     → role_assignments = {}
 
 2. If EXPLICIT BUILD APPROVAL DETECTED is yes AND PRIOR AGENT DISCUSSION is yes:
      → mode = "build"
      → plan = a real list of {tool, prompt, label} steps, synthesized from
        the agent discussion. Use only tools that appear in TOOLS AVAILABLE.
      → agents_to_respond = []
+     → role_assignments = {}
      → Examples of what to put in plan:
        • image request → [{tool:"dalle", prompt:"<final detailed image prompt>", label:"Image"}]
          (prefer dalle, fall back to stability or ideogram if dalle unavailable)
@@ -193,18 +278,18 @@ DECISION TREE (apply in order — first match wins)
 3. Otherwise:
      → mode = "discuss"
      → plan = []
-     → agents_to_respond = the subset of AGENTS AVAILABLE whose strengths fit:
-         - claude: nuanced reasoning, writing, strategy, ethics
-         - gpt: code, structured output, technical
-         - gemini: research, real-time data, multimodal
-         - grok: current events, contrarian takes, direct opinions
-     → rounds = 1 for simple Q&A, 2 for back-and-forth, 3 for full debate
-     → Voice mode: keep replies short (response_mode = "concise")
+     → agents_to_respond = 2-3 agents from AGENTS AVAILABLE based on what the
+       conversation needs right now (read the user message + prior discussion).
+     → role_assignments = an object mapping each agent in agents_to_respond
+       to a role_id from the ROLE POOL. Honor stickiness.
+     → rounds = 1 for simple Q&A, 2 for back-and-forth, 3 only for genuine debate.
+     → Voice mode: response_mode = "concise", rounds = 1, fewer agents.
 
 OUTPUT (return EXACTLY this JSON shape — no preface, no fence, no trailing text):
 {
   "mode": "discuss" | "build",
   "agents_to_respond": ["claude", "gpt"],
+  "role_assignments": { "claude": "skeptic", "gpt": "builder" },
   "rounds": 1,
   "response_mode": "concise" | "balanced" | "detailed",
   "plan": [
@@ -232,6 +317,7 @@ export async function orchestrate({
   enabledTools = {},
   memory = [],
   activeProject = null,
+  previousRoleAssignments = {},
   settings,
   voiceMode = false,
 }) {
@@ -275,6 +361,7 @@ export async function orchestrate({
     isBuildSignal,
     hasPriorDiscussion,
     voiceMode,
+    previousRoleAssignments,
   })
 
   if (!modelConfig) {
@@ -299,6 +386,17 @@ export async function orchestrate({
     }
   }
 
+  // Sanitize role_assignments: only known roles, only for agents that will actually respond
+  const cleanRoles = {}
+  if (decision.role_assignments && typeof decision.role_assignments === "object") {
+    for (const [agent, role] of Object.entries(decision.role_assignments)) {
+      if (decision.agents_to_respond?.includes(agent) && ROLE_IDS.includes(role)) {
+        cleanRoles[agent] = role
+      }
+    }
+  }
+  decision.role_assignments = cleanRoles
+
   // Filter plan to enabled tools only
   if (Array.isArray(decision.plan)) {
     decision.plan = decision.plan.filter(step => step?.tool && enabledTools?.[step.tool])
@@ -321,6 +419,7 @@ function defaultDecision(enabledAgents, voiceMode) {
   return {
     mode: "discuss",
     agents_to_respond: enabledAgents,
+    role_assignments: {},
     skip_agents: [],
     rounds: 1,
     response_mode: voiceMode ? "concise" : "balanced",

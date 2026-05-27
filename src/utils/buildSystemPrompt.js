@@ -1,5 +1,6 @@
+import { ROLE_POOL } from './openClaw'
 
-export function buildSystemPrompt({ activeAgentIds=[], enabledTools={}, mode="concise", round=1, totalRounds=1, agentId="claude", voiceMode=false, memoryContext="", leadAgent=null }) {
+export function buildSystemPrompt({ activeAgentIds=[], enabledTools={}, mode="concise", round=1, totalRounds=1, agentId="claude", voiceMode=false, memoryContext="", leadAgent=null, role=null }) {
   const AGENT_NAMES = { claude:"Claude (Anthropic)", gpt:"ChatGPT (OpenAI)", gemini:"Gemini (Google)", grok:"Grok (xAI)" }
   const TOOL_CAPS = {
     dalle:       "generate images from text prompts",
@@ -8,7 +9,17 @@ export function buildSystemPrompt({ activeAgentIds=[], enabledTools={}, mode="co
   }
   const otherAgents = activeAgentIds.filter(id => id !== agentId).map(id => AGENT_NAMES[id] || id)
   const lines = []
-  lines.push(`You are ${AGENT_NAMES[agentId] || agentId} in a live multi-agent AI roundtable.`)
+  lines.push(`You are ${AGENT_NAMES[agentId] || agentId} in a live multi-agent AI panel.`)
+
+  // ROLE ASSIGNMENT — the dispatcher hands you a job for this turn.
+  // Sharp, single-purpose. Resist the urge to be helpful in the generic sense
+  // and stay in role. Roles are the whole point of this panel.
+  const roleDef = role && ROLE_POOL[role]
+  if (roleDef) {
+    lines.push(`\nYOUR ROLE THIS TURN: ${roleDef.name.toUpperCase()}`)
+    lines.push(roleDef.purpose)
+    lines.push(`Stay in role. Do not drift into being a generally-helpful assistant — that's what the panel exists to avoid.`)
+  }
 
   // Inject user memory context
   if (memoryContext) {
@@ -16,7 +27,7 @@ export function buildSystemPrompt({ activeAgentIds=[], enabledTools={}, mode="co
     lines.push(memoryContext)
     lines.push(`\nUse this context naturally in your responses. Don't announce that you have it — just use it.`)
   }
-  if (otherAgents.length > 0) lines.push(`Also here: ${otherAgents.join(", ")}.`)
+  if (otherAgents.length > 0) lines.push(`Also on the panel: ${otherAgents.join(", ")}.`)
   const tools = Object.entries(enabledTools).filter(([,v])=>v).map(([id])=>TOOL_CAPS[id]).filter(Boolean)
   if (tools.length > 0) {
     lines.push(`\nAVAILABLE TOOLS — you have these right now:`)
