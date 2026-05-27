@@ -63,6 +63,7 @@ export const useStore = create((set, get) => ({
             accent: s?.accent || state.settings.accent,
             fontSize: s?.font_size || state.settings.fontSize,
             bubbleStyle: s?.bubble_style || state.settings.bubbleStyle,
+            primaryStorageProvider: s?.primary_storage_provider || null,
             plan: s?.plan || state.settings.plan,
             agents: {
               claude:  { enabled: s?.enabled_agents?.claude?.enabled ?? true,  key: k?.claude_key  || '' },

@@ -639,6 +639,15 @@
 }
 
 .storage-card.is-connected { border-color: var(--color-status-success); }
+.storage-card.is-primary {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 1px var(--color-accent-soft);
+}
+
+.storage-icon {
+  margin-right: var(--space-2);
+  font-size: var(--font-size-base);
+}
 
 .storage-badge {
   font-size: 10px;
@@ -649,7 +658,29 @@
   padding: var(--space-1) var(--space-2);
   background: rgba(45, 122, 80, 0.1);
   border-radius: var(--radius-sm);
+  margin-left: var(--space-2);
 }
+.storage-badge--primary {
+  color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+
+.storage-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.storage-sub-note {
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  background: var(--color-bg-tertiary);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+}
+.storage-sub-note a { color: var(--color-accent); }
 
 .storage-folder {
   margin-top: var(--space-3);

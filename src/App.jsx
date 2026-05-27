@@ -3,6 +3,7 @@ import { supabase } from './utils/supabase'
 import { useStore } from './store/useStore'
 import { initTelemetry, identifyUser } from './utils/telemetry'
 import { captureDriveTokens } from './utils/driveStorage'
+import { finishDropboxAuth } from './utils/dropboxStorage'
 import { applyTheme } from './utils/applyTheme'
 import AuthScreen from './components/AuthScreen'
 import TheInterface from './components/TheInterface'
@@ -15,6 +16,9 @@ export default function App() {
 
   // Live-apply theme + accent + font + bubble whenever settings change
   useEffect(() => { applyTheme(settings) }, [settings?.themeId, settings?.accent, settings?.fontSize, settings?.bubbleStyle])
+
+  // Handle Dropbox OAuth callback on first load
+  useEffect(() => { finishDropboxAuth() }, [])
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {

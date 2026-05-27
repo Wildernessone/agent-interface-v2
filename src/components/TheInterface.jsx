@@ -8,7 +8,7 @@ import HistorySidebar from './HistorySidebar'
 import { orchestrate, getProactiveNotices, processCorrection, ROLE_POOL, shouldAudit, auditResponse, buildRetryReminder } from '../utils/openClaw'
 import { detectSignalsFromUserMessage, logSignals, logAuditFail, getRecentRolePerformance } from '../utils/roleSignals'
 import { logUsage, logError, checkTierLimits } from '../utils/telemetry'
-import { saveToDrive } from '../utils/driveStorage'
+import { saveToCloud } from '../utils/cloudStorage'
 import { supabase } from '../utils/supabase'
 import PromptLibrary from './PromptLibrary'
 import ToolOutput from './ToolOutput'
@@ -382,8 +382,8 @@ export default function TheInterface() {
           logUsage({ kind: "tool_call", provider: step.tool, success: true })
 
           // Fire-and-forget save to Drive
-          saveToDrive(output, activeProject).then(drive => {
-            if (drive?.webViewLink) updateToolTurn(turnId, { driveUrl: drive.webViewLink })
+          saveToCloud(output, activeProject).then(saved => {
+            if (saved?.webViewLink) updateToolTurn(turnId, { driveUrl: saved.webViewLink, savedProvider: saved.provider })
           })
         } catch(e) {
           const errorType = e.errorType || "unknown"
