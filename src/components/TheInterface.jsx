@@ -527,20 +527,23 @@ export default function TheInterface() {
             return (
               <div key={turn.id} className="ai-claw">
                 <span className={`ai-claw-tag ai-claw-tag--${turn.mode}`}>OpenClaw · {turn.mode}</span>
-                <span className="ai-claw-text">{turn.reasoning}</span>
-                {rolePairs.length > 0 && (
-                  <span className="ai-claw-roles">
-                    {rolePairs.map(([a, r]) => (
-                      <span key={a} className="ai-claw-role-pair">
-                        <strong>{a}</strong> as {ROLE_POOL[r]?.name || r}
-                      </span>
-                    ))}
-                  </span>
-                )}
+                <p className="ai-claw-text">{turn.reasoning}</p>
                 {turn.plan?.length > 0 && (
                   <span className="ai-claw-plan">
                     → firing {turn.plan.map(s => s.label || s.tool).join(", ")}
                   </span>
+                )}
+                {rolePairs.length > 0 && (
+                  <div className="ai-claw-roles-section">
+                    <span className="ai-claw-roles-label">Panel for this turn</span>
+                    <div className="ai-claw-roles">
+                      {rolePairs.map(([a, r]) => (
+                        <span key={a} className="ai-claw-role-pair">
+                          <strong>{a}</strong> <em>as</em> {ROLE_POOL[r]?.name || r}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
                 )}
               </div>
             )

@@ -641,25 +641,29 @@
 
 .ai-claw {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  flex-direction: column;
   gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
-  font-size: var(--font-size-xs);
-  color: var(--color-text-tertiary);
-  font-family: var(--font-family-mono);
-  line-height: var(--line-height-normal);
+  padding: var(--space-4) var(--space-5);
+  margin: var(--space-2) 0;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border-primary);
+  border-left: 2px solid var(--color-accent);
+  border-radius: var(--radius-md);
 }
 .ai-claw-tag {
+  align-self: flex-start;
   display: inline-flex;
   align-items: center;
-  padding: var(--space-1) var(--space-3);
+  padding: 2px var(--space-3);
   border-radius: var(--radius-sm);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
   font-weight: var(--font-weight-medium);
   letter-spacing: var(--letter-spacing-wide);
   text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  background: var(--color-bg-tertiary);
   border: 1px solid var(--color-border-primary);
-  background: var(--color-bg-secondary);
 }
 .ai-claw-tag--build {
   color: var(--color-accent);
@@ -668,23 +672,47 @@
 }
 .ai-claw-text {
   color: var(--color-text-secondary);
-  flex: 1;
-  min-width: 0;
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-relaxed);
+  font-family: var(--font-family-body);
 }
 .ai-claw-plan {
+  align-self: flex-start;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
   color: var(--color-accent);
   font-weight: var(--font-weight-medium);
+  padding: 2px var(--space-3);
+  background: var(--color-accent-soft);
+  border-radius: var(--radius-sm);
+}
+.ai-claw-roles-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px dashed var(--color-border-secondary);
+}
+.ai-claw-roles-label {
+  font-family: var(--font-family-mono);
+  font-size: 10px;
+  letter-spacing: var(--letter-spacing-wide);
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
 }
 .ai-claw-roles {
-  display: inline-flex;
+  display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
-  align-items: center;
 }
 .ai-claw-role-pair {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
   font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
-  padding: 1px 8px;
+  padding: 3px var(--space-3);
+  background: var(--color-bg-primary);
   border: 1px solid var(--color-border-primary);
   border-radius: 999px;
 }
@@ -692,6 +720,12 @@
   color: var(--color-text-primary);
   font-weight: var(--font-weight-semibold);
   text-transform: capitalize;
+  font-family: var(--font-family-mono);
+  font-size: 11px;
+}
+.ai-claw-role-pair em {
+  color: var(--color-text-tertiary);
+  font-style: normal;
 }
 
 /* ────────── Tool output ────────── */
