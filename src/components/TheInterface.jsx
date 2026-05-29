@@ -185,6 +185,9 @@ export default function TheInterface() {
   const voiceRef = useRef(null)
   const conversationRef = useRef([])
   const previousRolesRef = useRef({})
+  // Stick the last spend_mode across turns so a frugal brainstorm stays
+  // frugal until the user signals otherwise (build it, "use the best", etc).
+  const previousSpendModeRef = useRef(null)
 
   const activeAgents = AGENTS.filter(a => settings.agents[a.id]?.enabled && settings.agents[a.id]?.key)
   const enabledTools = Object.fromEntries(Object.entries(settings.tools || {}).filter(([,v]) => v.enabled))
@@ -274,6 +277,7 @@ export default function TheInterface() {
         memory: agentMemory,
         activeProject,
         previousRoleAssignments: previousRolesRef.current,
+        previousSpendMode: previousSpendModeRef.current,
         routingPerformance,
         settings,
         voiceMode,
@@ -288,11 +292,19 @@ export default function TheInterface() {
       previousRolesRef.current = clawDecision.role_assignments
     }
 
+    // Spend mode: frugal | balanced | premium. Stick across turns so the
+    // user doesn't have to repeat "cheap" every message.
+    const spendMode = clawDecision?.spend_mode || previousSpendModeRef.current || 'balanced'
+    if (clawDecision?.spend_mode) previousSpendModeRef.current = clawDecision.spend_mode
+    const isFrugal = spendMode === 'frugal'
+    const isPremium = spendMode === 'premium'
+
     if (clawDecision?.reasoning || clawDecision?.mode) {
       addTurn({
         id: `claw-${Date.now()}`,
         type: "claw",
         mode: clawDecision.mode || "discuss",
+        spendMode,
         reasoning: clawDecision.reasoning || "",
         plan: clawDecision.plan || [],
         roleAssignments: clawDecision.role_assignments || {},
@@ -332,7 +344,10 @@ export default function TheInterface() {
         // Per-agent skills toggle: when false, this agent's prompt won't
         // include shared/ or its own skill files. Default true so users
         // who haven't touched the setting get the full benefit.
-        const agentUseSkills = settings.agents[agent.id]?.useSkills !== false
+        // Spend mode overrides the per-agent default: frugal skips skills
+        // to save tokens, premium forces them on for max quality.
+        const userPref = settings.agents[agent.id]?.useSkills !== false
+        const agentUseSkills = isFrugal ? false : isPremium ? true : userPref
 
         const baseSystemPrompt = buildSystemPrompt({
           activeAgentIds: selected.map(a => a.id),
@@ -362,7 +377,10 @@ export default function TheInterface() {
         let result = await streamOnce(baseSystemPrompt)
         let auditResult = null
 
-        if (!result.error && shouldAudit(role, voiceMode)) {
+        // Frugal mode skips the V2 audit pass — auditing means a second
+        // round-trip to Claude per off-spec response, which defeats the
+        // point of "use the cheapest tokens we can."
+        if (!result.error && !isFrugal && shouldAudit(role, voiceMode)) {
           auditResult = await auditResponse({ text: result.text, role, userMessage: text, settings })
           if (!auditResult.passed) {
             const reminder = buildRetryReminder(role, auditResult.reason)
@@ -377,7 +395,11 @@ export default function TheInterface() {
         }
 
         if (result.text) {
-          conversationRef.current = [...conversationRef.current, { role: "assistant", content: result.text }]
+          // Tag with the speaking agent so a later agent picking up the
+          // conversation can tell who said what. Without this prefix the
+          // assistant history is a flat blob and Claude can't tell a
+          // Gemini opinion from a Grok one.
+          conversationRef.current = [...conversationRef.current, { role: "assistant", content: `[${agent.name}]: ${result.text}` }]
           logUsage({ kind: "agent_message", provider: agent.id, model: agent.id, tokensOut: result.text.length / 4 | 0, success: true })
           if (voiceMode && voiceRef.current) {
             await new Promise(r => voiceRef.current.speak(result.text.slice(0, 400), agent.id, r))
@@ -547,9 +569,12 @@ export default function TheInterface() {
           )
           if (turn.type === "claw") {
             const rolePairs = turn.roleAssignments ? Object.entries(turn.roleAssignments) : []
+            const spendLabel = turn.spendMode === 'frugal' ? 'lite' : turn.spendMode === 'premium' ? 'premium' : null
             return (
               <div key={turn.id} className="ai-claw">
-                <span className={`ai-claw-tag ai-claw-tag--${turn.mode}`}>OpenClaw · {turn.mode}</span>
+                <span className={`ai-claw-tag ai-claw-tag--${turn.mode}`}>
+                  OpenClaw · {turn.mode}{spendLabel ? ` · ${spendLabel}` : ''}
+                </span>
                 <p className="ai-claw-text">{turn.reasoning}</p>
                 {turn.plan?.length > 0 && (
                   <span className="ai-claw-plan">
@@ -716,7 +741,7 @@ export default function TheInterface() {
             )
           })}
           {turns.length > 0 && (
-            <button className="ai-chip ai-chip--clear" onClick={() => { clearTurns(); conversationRef.current = []; previousRolesRef.current = {} }}>Clear</button>
+            <button className="ai-chip ai-chip--clear" onClick={() => { clearTurns(); conversationRef.current = []; previousRolesRef.current = {}; previousSpendModeRef.current = null }}>Clear</button>
           )}
         </div>
         {attachments.length > 0 && (
