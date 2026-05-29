@@ -382,30 +382,66 @@ const agentSynth = {
       ? { 'x-supabase-auth': `Bearer ${session.access_token}` }
       : {}
 
+    // One provider call. Returns raw text; throws an Error with .status
+    // on HTTP failure so the retry loop can decide whether to try again.
+    const callOnce = async () => {
+      if (cfg.provider === 'claude') {
+        const res = await fetch(`${PROXY}/claude`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-api-key': cfg.key, ...supaAuth },
+          // 4K fits any outline (slides[] or sections[]) and finishes
+          // well inside Cloudflare's ~100s wall. 8K gens were hitting
+          // 524 timeouts in real testing.
+          body: JSON.stringify({ messages: [{ role: 'user', content: fullPrompt }], max_tokens: 4096 }),
+        })
+        if (!res.ok) { const e = new Error(`claude_${res.status}`); e.status = res.status; throw e }
+        const data = await res.json()
+        return data.content?.[0]?.text || ''
+      } else if (cfg.provider === 'gpt') {
+        const res = await fetch(`${PROXY}/gpt`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.key}`, ...supaAuth },
+          body: JSON.stringify({ messages: [{ role: 'user', content: fullPrompt }], max_tokens: 4096 }),
+        })
+        if (!res.ok) { const e = new Error(`gpt_${res.status}`); e.status = res.status; throw e }
+        return res.text()
+      } else {
+        const res = await fetch(`${PROXY}/gemini`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-api-key': cfg.key, ...supaAuth },
+          body: JSON.stringify({
+            contents: [{ role: 'user', parts: [{ text: fullPrompt }] }],
+            generationConfig: { maxOutputTokens: 4096 },
+          }),
+        })
+        if (!res.ok) { const e = new Error(`gemini_${res.status}`); e.status = res.status; throw e }
+        return res.text()
+      }
+    }
+
+    // Retry transient failures up to 3x with backoff. Cloudflare 524
+    // (timeout), 529 (overloaded), and 5xx upstream blips are usually
+    // self-healing within a few seconds. Hard errors (auth, bad request)
+    // fail fast.
+    const TRANSIENT = new Set([429, 500, 502, 503, 524, 529])
     let raw = ''
-    if (cfg.provider === 'claude') {
-      const res = await fetch(`${PROXY}/claude`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-api-key': cfg.key, ...supaAuth },
-        body: JSON.stringify({ messages: [{ role: 'user', content: fullPrompt }], max_tokens: 8192 }),
-      })
-      if (!res.ok) throw new ToolError('agent_synth', 'bad_response', `claude_${res.status}`)
-      const data = await res.json()
-      raw = data.content?.[0]?.text || ''
-    } else if (cfg.provider === 'gpt') {
-      const res = await fetch(`${PROXY}/gpt`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.key}`, ...supaAuth },
-        body: JSON.stringify({ messages: [{ role: 'user', content: fullPrompt }], max_tokens: 8192 }),
-      })
-      raw = await res.text()
-    } else if (cfg.provider === 'gemini') {
-      const res = await fetch(`${PROXY}/gemini`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-api-key': cfg.key, ...supaAuth },
-        body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: fullPrompt }] }], generationConfig: { maxOutputTokens: 8192 } }),
-      })
-      raw = await res.text()
+    let lastErr = null
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        raw = await callOnce()
+        lastErr = null
+        break
+      } catch (e) {
+        lastErr = e
+        if (!TRANSIENT.has(e.status)) break
+        await new Promise(r => setTimeout(r, 1500 * (attempt + 1)))
+      }
+    }
+    if (lastErr) {
+      const friendly = (lastErr.status === 524 || lastErr.status === 529)
+        ? 'the model timed out — try again'
+        : lastErr.message
+      throw new ToolError('agent_synth', 'bad_response', friendly)
     }
 
     // Robust JSON extraction — finds the first balanced { ... }
