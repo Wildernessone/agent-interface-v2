@@ -696,6 +696,20 @@
   border: 1px solid var(--color-border-primary);
   border-radius: 999px;
 }
+.tool-status-badge--ready {
+  color: #1e7d4e;
+  background: rgba(30, 125, 78, 0.10);
+  border-color: rgba(30, 125, 78, 0.25);
+}
+.tool-status-badge--warn {
+  color: #b15c00;
+  background: rgba(177, 92, 0, 0.10);
+  border-color: rgba(177, 92, 0, 0.25);
+}
+@media (prefers-color-scheme: dark) {
+  .tool-status-badge--ready { color: #5fcf95; background: rgba(95, 207, 149, 0.12); border-color: rgba(95, 207, 149, 0.30); }
+  .tool-status-badge--warn  { color: #f0b265; background: rgba(240, 178, 101, 0.12); border-color: rgba(240, 178, 101, 0.30); }
+}
 
 .storage-folder {
   margin-top: var(--space-3);

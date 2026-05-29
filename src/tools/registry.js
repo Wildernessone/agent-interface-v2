@@ -370,6 +370,16 @@ const agentSynth = {
       ? `\nReturn JSON of this exact shape: {"slides":[{"title":"...", "bullets":["...","..."], "notes":"speaker notes"}, ...]}`
       : outputSchema === 'document'
       ? `\nReturn JSON of this exact shape: {"title":"...", "sections":[{"heading":"...", "paragraphs":["...","..."]}, ...]}`
+      : outputSchema === 'spreadsheet'
+      ? `\nReturn JSON of this exact shape: {"title":"...", "sheets":[{"name":"Sheet1","rows":[["Header A","Header B"],["row1 col1","row1 col2"]]}, ...]}. First row of each sheet is the header.`
+      : outputSchema === 'page'
+      ? `\nReturn JSON of this exact shape: {"title":"...", "theme":"light"|"dark"|"serif", "sections":[{"heading":"...", "body":"paragraph text — use \\n\\n between paragraphs", "items":["optional bullet","..."]}, ...]}`
+      : outputSchema === 'post'
+      ? `\nReturn JSON of this exact shape: {"title":"...", "frontmatter":{"author":"...", "tags":["..."]}, "sections":[{"heading":"...", "body":"...", "items":["..."]}, ...]}`
+      : outputSchema === 'project'
+      ? `\nReturn JSON of this exact shape: {"files":[{"path":"src/index.js","content":"// file contents as a string\\n"}, ...]}. Paths can be nested. Escape newlines in content as \\n.`
+      : outputSchema === 'event'
+      ? `\nReturn JSON of this exact shape: {"summary":"event title","start":"2026-06-01T15:00:00-07:00","end":"2026-06-01T16:00:00-07:00","description":"...","attendees":["email@example.com"]}. Use ISO 8601 with timezone offset, or {"date":"YYYY-MM-DD"} for all-day.`
       : `\nReturn clean JSON only — no markdown fences, no prose around it.`
 
     const fullPrompt = `${prompt}${schemaHint}`
@@ -724,6 +734,358 @@ const gmail = {
   },
 }
 
+// ── xlsxgen — Excel .xlsx browser-side ────────────────────────────
+// Input: { sheets: [{ name, rows: [[cell, cell, ...], ...] }] }
+// First row of each sheet is treated as the header for column widths.
+const xlsxgen = {
+  id: 'xlsxgen',
+  name: 'Spreadsheet (.xlsx)',
+  category: 'document',
+  capability: 'generate an Excel spreadsheet from structured rows (multi-sheet supported)',
+  desc: 'Browser-side .xlsx generation — no API key',
+  keySource: null,
+  status: 'live',
+  hidden: true,
+  async run({ structuredInput, label }) {
+    const XLSX = await import('xlsx')
+    const data = typeof structuredInput === 'string' ? JSON.parse(structuredInput) : structuredInput
+    const sheets = Array.isArray(data?.sheets) ? data.sheets
+      : Array.isArray(data?.rows) ? [{ name: 'Sheet1', rows: data.rows }]
+      : null
+    if (!sheets?.length) throw new ToolError('xlsxgen', 'no_input', 'xlsxgen needs sheets[] or rows[][]')
+
+    const wb = XLSX.utils.book_new()
+    for (const s of sheets) {
+      const ws = XLSX.utils.aoa_to_sheet(s.rows || [])
+      // Auto-width columns based on the longest cell in each column
+      const header = (s.rows || [])[0] || []
+      ws['!cols'] = header.map((_, i) => {
+        let max = 8
+        for (const row of (s.rows || [])) {
+          const v = row?.[i]
+          const len = v == null ? 0 : String(v).length
+          if (len > max) max = Math.min(len, 60)
+        }
+        return { wch: max + 2 }
+      })
+      XLSX.utils.book_append_sheet(wb, ws, (s.name || 'Sheet').slice(0, 31))
+    }
+    const arr = XLSX.write(wb, { type: 'array', bookType: 'xlsx' })
+    const blob = new Blob([arr], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+    const url = URL.createObjectURL(blob)
+    return {
+      type: 'document',
+      url,
+      filename: `${(label || 'spreadsheet').replace(/[^a-z0-9-_ ]/gi, '').trim() || 'spreadsheet'}.xlsx`,
+      tool: 'xlsxgen',
+      meta: { sheetCount: sheets.length, sheetNames: sheets.map(s => s.name).filter(Boolean) },
+    }
+  },
+}
+
+// ── htmlgen — single-page .html landing page browser-side ─────────
+// Input: { title, sections: [{ heading?, body?, items?[] }], theme? }
+// Theme: 'light' (default) | 'dark' | 'serif' — picks tasteful built-in CSS.
+const htmlgen = {
+  id: 'htmlgen',
+  name: 'Landing page (.html)',
+  category: 'document',
+  capability: 'generate a self-contained single-page HTML site with inlined CSS',
+  desc: 'Browser-side .html with inlined styles — no API key',
+  keySource: null,
+  status: 'live',
+  hidden: true,
+  async run({ structuredInput, label }) {
+    const data = typeof structuredInput === 'string' ? JSON.parse(structuredInput) : structuredInput
+    const title = data?.title || label || 'Untitled'
+    const sections = Array.isArray(data?.sections) ? data.sections : []
+    const theme = data?.theme || 'light'
+
+    const themes = {
+      light: { bg: '#ffffff', fg: '#0e0f12', muted: '#5b6470', accent: '#2563eb', font: 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif' },
+      dark:  { bg: '#0e0f12', fg: '#f0f2f5', muted: '#9aa3b0', accent: '#6fa1ff', font: 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif' },
+      serif: { bg: '#faf8f3', fg: '#1b1b1b', muted: '#5e574a', accent: '#a14b2b', font: '"Iowan Old Style", "Palatino Linotype", Georgia, serif' },
+    }
+    const t = themes[theme] || themes.light
+
+    const esc = (s) => String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+
+    const renderSection = (s) => {
+      const heading = s?.heading ? `<h2>${esc(s.heading)}</h2>` : ''
+      const body = s?.body ? `<p>${esc(s.body).replace(/\n\n/g, '</p><p>')}</p>` : ''
+      const items = Array.isArray(s?.items) && s.items.length
+        ? `<ul>${s.items.map(i => `<li>${esc(i)}</li>`).join('')}</ul>`
+        : ''
+      return `<section>${heading}${body}${items}</section>`
+    }
+
+    const css = `
+      *{box-sizing:border-box;margin:0;padding:0}
+      body{font-family:${t.font};background:${t.bg};color:${t.fg};line-height:1.6;padding:64px 24px;max-width:780px;margin:0 auto}
+      h1{font-size:2.6rem;font-weight:700;letter-spacing:-0.02em;margin-bottom:24px}
+      h2{font-size:1.4rem;font-weight:600;margin:48px 0 12px;color:${t.fg}}
+      p{color:${t.muted};margin-bottom:12px;font-size:1.05rem}
+      ul{padding-left:22px;color:${t.muted};margin-bottom:16px}
+      li{margin-bottom:6px}
+      a{color:${t.accent};text-decoration:none}
+      a:hover{text-decoration:underline}
+      section:first-of-type h2{margin-top:32px}
+      .footer{margin-top:64px;padding-top:24px;border-top:1px solid ${t.muted}33;color:${t.muted};font-size:0.85rem}
+    `.trim()
+
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${esc(title)}</title>
+<style>${css}</style>
+</head>
+<body>
+<h1>${esc(title)}</h1>
+${sections.map(renderSection).join('\n')}
+<div class="footer">Built with Agent Interface</div>
+</body>
+</html>`
+
+    const blob = new Blob([html], { type: 'text/html' })
+    const url = URL.createObjectURL(blob)
+    return {
+      type: 'document',
+      url,
+      filename: `${(label || 'page').replace(/[^a-z0-9-_ ]/gi, '').trim() || 'page'}.html`,
+      tool: 'htmlgen',
+      meta: { sectionCount: sections.length, theme },
+    }
+  },
+}
+
+// ── mdgen — markdown blog post / doc browser-side ─────────────────
+// Input: { title, sections: [{ heading, body, items?[] }], frontmatter?: {} }
+// Emits YAML frontmatter + markdown body — drops into any static site.
+const mdgen = {
+  id: 'mdgen',
+  name: 'Markdown post (.md)',
+  category: 'document',
+  capability: 'generate a markdown blog post with YAML frontmatter (drops into any static site)',
+  desc: 'Browser-side .md with frontmatter — no API key',
+  keySource: null,
+  status: 'live',
+  hidden: true,
+  async run({ structuredInput, label }) {
+    const data = typeof structuredInput === 'string' ? JSON.parse(structuredInput) : structuredInput
+    const title = data?.title || label || 'Untitled'
+    const sections = Array.isArray(data?.sections) ? data.sections : []
+    const fm = { title, date: new Date().toISOString().slice(0, 10), ...(data?.frontmatter || {}) }
+
+    const yaml = Object.entries(fm)
+      .map(([k, v]) => `${k}: ${typeof v === 'string' ? `"${v.replace(/"/g, '\\"')}"` : JSON.stringify(v)}`)
+      .join('\n')
+
+    const body = sections.map(s => {
+      const h = s.heading ? `## ${s.heading}\n\n` : ''
+      const b = s.body ? `${s.body}\n\n` : ''
+      const i = Array.isArray(s.items) && s.items.length
+        ? s.items.map(x => `- ${x}`).join('\n') + '\n\n'
+        : ''
+      return `${h}${b}${i}`
+    }).join('').trim()
+
+    const md = `---\n${yaml}\n---\n\n# ${title}\n\n${body}\n`
+    const blob = new Blob([md], { type: 'text/markdown' })
+    const url = URL.createObjectURL(blob)
+    return {
+      type: 'document',
+      url,
+      filename: `${(label || 'post').replace(/[^a-z0-9-_ ]/gi, '').trim() || 'post'}.md`,
+      tool: 'mdgen',
+      meta: { sectionCount: sections.length, wordCount: body.split(/\s+/).filter(Boolean).length },
+    }
+  },
+}
+
+// ── codezip — multi-file code project as .zip browser-side ────────
+// Input: { files: [{ path, content }] }
+// Paths can be nested ('src/index.js'). Empty content allowed.
+const codezip = {
+  id: 'codezip',
+  name: 'Code project (.zip)',
+  category: 'document',
+  capability: 'bundle a multi-file code project into a downloadable .zip (paths can be nested)',
+  desc: 'Browser-side .zip via JSZip — no API key',
+  keySource: null,
+  status: 'live',
+  hidden: true,
+  async run({ structuredInput, label }) {
+    const { default: JSZip } = await import('jszip')
+    const data = typeof structuredInput === 'string' ? JSON.parse(structuredInput) : structuredInput
+    const files = Array.isArray(data?.files) ? data.files : []
+    if (!files.length) throw new ToolError('codezip', 'no_input', 'codezip needs files[]')
+
+    const zip = new JSZip()
+    for (const f of files) {
+      if (!f?.path) continue
+      zip.file(f.path, f.content == null ? '' : String(f.content))
+    }
+    const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } })
+    const url = URL.createObjectURL(blob)
+    return {
+      type: 'document',
+      url,
+      filename: `${(label || 'project').replace(/[^a-z0-9-_ ]/gi, '').trim() || 'project'}.zip`,
+      tool: 'codezip',
+      meta: { fileCount: files.length, paths: files.map(f => f.path).slice(0, 12) },
+    }
+  },
+}
+
+// ── gsheets — create a Google Sheet in the user's Drive ───────────
+// Input: { title, sheets: [{ name, rows: [[]] }] }
+// Reuses the user's Google OAuth token (needs spreadsheets scope —
+// added in StorageTab; users must reconnect Drive after this update).
+// Returns an 'action' so the build card surfaces the link.
+const gsheets = {
+  id: 'gsheets',
+  name: 'Google Sheet',
+  category: 'action',
+  capability: 'create a Google Sheet in the user\'s Drive with multi-sheet rows (returns a shareable link)',
+  desc: 'Uses your Google connection. Reconnect Drive after this update to grant the spreadsheets scope.',
+  keySource: null,
+  status: 'live',
+  hidden: true,
+  async run({ structuredInput, label }) {
+    const { supabase } = await import('../utils/supabase')
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) throw new ToolError('gsheets', 'no_user', 'Not signed in.')
+    const { data: conn } = await supabase.from('storage_connections')
+      .select('access_token').eq('user_id', user.id).eq('provider', 'google_drive').maybeSingle()
+    if (!conn?.access_token) throw new ToolError('gsheets', 'no_token', 'Connect Google Drive first (Settings → Storage).')
+
+    const data = typeof structuredInput === 'string' ? JSON.parse(structuredInput) : structuredInput
+    const title = data?.title || label || 'Untitled spreadsheet'
+    const sheets = Array.isArray(data?.sheets) ? data.sheets
+      : Array.isArray(data?.rows) ? [{ name: 'Sheet1', rows: data.rows }]
+      : null
+    if (!sheets?.length) throw new ToolError('gsheets', 'no_input', 'gsheets needs sheets[] or rows[][]')
+
+    // 1. Create the spreadsheet with all sheets in one call
+    const createRes = await fetch('https://sheets.googleapis.com/v4/spreadsheets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${conn.access_token}` },
+      body: JSON.stringify({
+        properties: { title: title.slice(0, 200) },
+        sheets: sheets.map((s, i) => ({ properties: { title: (s.name || `Sheet${i + 1}`).slice(0, 100), index: i } })),
+      }),
+    })
+    if (!createRes.ok) {
+      const t = await createRes.text().catch(() => '')
+      if (createRes.status === 403 && /insufficient|scope/i.test(t)) {
+        throw new ToolError('gsheets', 'needs_scope', 'Google Sheets needs an additional permission. Disconnect and reconnect Google Drive in Settings → Storage to grant it.')
+      }
+      throw new ToolError('gsheets', 'bad_response', `Sheets returned ${createRes.status}: ${t.slice(0, 200)}`)
+    }
+    const created = await createRes.json()
+    const spreadsheetId = created.spreadsheetId
+
+    // 2. Batch-update values across all sheets
+    const valueRanges = sheets.map((s, i) => ({
+      range: `'${(s.name || `Sheet${i + 1}`).slice(0, 100)}'!A1`,
+      majorDimension: 'ROWS',
+      values: s.rows || [],
+    }))
+    const updateRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchUpdate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${conn.access_token}` },
+      body: JSON.stringify({ valueInputOption: 'USER_ENTERED', data: valueRanges }),
+    })
+    if (!updateRes.ok) {
+      const t = await updateRes.text().catch(() => '')
+      throw new ToolError('gsheets', 'bad_response', `Sheets write returned ${updateRes.status}: ${t.slice(0, 200)}`)
+    }
+
+    return {
+      type: 'action',
+      tool: 'gsheets',
+      summary: `Google Sheet "${title}" created with ${sheets.length} tab${sheets.length === 1 ? '' : 's'}`,
+      link: created.spreadsheetUrl,
+      meta: { spreadsheetId, title, sheetCount: sheets.length, sheetNames: sheets.map(s => s.name).filter(Boolean) },
+    }
+  },
+}
+
+// ── gcal — create a Google Calendar event ─────────────────────────
+// Input: { summary, start, end, description?, location?, attendees?: ['email', ...], calendarId? }
+// start/end accept ISO strings ('2026-06-01T15:00:00-07:00') or
+// { date: 'YYYY-MM-DD' } for all-day events.
+const gcal = {
+  id: 'gcal',
+  name: 'Calendar event',
+  category: 'action',
+  capability: 'create a Google Calendar event with attendees and a description',
+  desc: 'Uses your Google connection. Reconnect Drive after this update to grant the calendar.events scope.',
+  keySource: null,
+  status: 'live',
+  hidden: true,
+  async run({ structuredInput }) {
+    const { supabase } = await import('../utils/supabase')
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) throw new ToolError('gcal', 'no_user', 'Not signed in.')
+    const { data: conn } = await supabase.from('storage_connections')
+      .select('access_token').eq('user_id', user.id).eq('provider', 'google_drive').maybeSingle()
+    if (!conn?.access_token) throw new ToolError('gcal', 'no_token', 'Connect Google Drive first (Settings → Storage).')
+
+    const data = typeof structuredInput === 'string' ? JSON.parse(structuredInput) : structuredInput
+    if (!data?.summary) throw new ToolError('gcal', 'no_summary', 'Calendar event needs a summary (title).')
+    if (!data?.start || !data?.end) throw new ToolError('gcal', 'no_time', 'Calendar event needs start and end times.')
+
+    // Normalize start/end: ISO string → dateTime, {date} → all-day
+    const norm = (t) => {
+      if (typeof t === 'string') return { dateTime: t, timeZone: data.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone }
+      if (t?.date) return { date: t.date }
+      if (t?.dateTime) return { dateTime: t.dateTime, timeZone: t.timeZone || data.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone }
+      return null
+    }
+    const start = norm(data.start), end = norm(data.end)
+    if (!start || !end) throw new ToolError('gcal', 'bad_time', 'Calendar start/end must be ISO strings or {date} objects.')
+
+    const event = {
+      summary: data.summary,
+      start, end,
+      ...(data.description ? { description: data.description } : {}),
+      ...(data.location ? { location: data.location } : {}),
+      ...(Array.isArray(data.attendees) && data.attendees.length
+        ? { attendees: data.attendees.map(e => typeof e === 'string' ? { email: e } : e) }
+        : {}),
+    }
+
+    const calendarId = data.calendarId || 'primary'
+    const res = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?sendUpdates=all`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${conn.access_token}` },
+        body: JSON.stringify(event),
+      }
+    )
+    if (!res.ok) {
+      const t = await res.text().catch(() => '')
+      if (res.status === 403 && /insufficient|scope/i.test(t)) {
+        throw new ToolError('gcal', 'needs_scope', 'Google Calendar needs an additional permission. Disconnect and reconnect Google Drive in Settings → Storage to grant it.')
+      }
+      throw new ToolError('gcal', 'bad_response', `Calendar returned ${res.status}: ${t.slice(0, 200)}`)
+    }
+    const created = await res.json()
+    return {
+      type: 'action',
+      tool: 'gcal',
+      summary: `Calendar event "${data.summary}" scheduled`,
+      link: created.htmlLink,
+      meta: { eventId: created.id, start: created.start, end: created.end, attendees: created.attendees?.length || 0 },
+    }
+  },
+}
+
 // ── narrate_per_slide — ElevenLabs per slide for synced narration ──
 // Produces N audio files (one per slide) plus timing metadata, ready
 // to combine with the slide deck into a synced video later.
@@ -796,11 +1158,11 @@ export const TOOL_REGISTRY = [
   // Search
   perplexity, tavily,
   // Document generation — browser-side, no API key needed
-  pptxgen, docgen, pdfgen,
+  pptxgen, docgen, pdfgen, xlsxgen, htmlgen, mdgen, codezip,
   // Per-slide narration (synced audio for deck builds)
   narratePerSlide,
   // Action layer
-  gmail,
+  gmail, gsheets, gcal,
   // Meta — panel-as-tool for multi-step builds
   agentSynth,
 ]

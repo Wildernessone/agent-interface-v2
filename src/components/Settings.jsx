@@ -147,6 +147,12 @@ export default function Settings({ onClose }) {
                     const on = settings.tools?.[tool.id]?.enabled
                     const usesAgentKey = tool.keySource?.startsWith('agent.')
                     const isStubbed = tool.status === 'needs_proxy_route' || tool.status === 'beta'
+                    // Ready when: enabled AND (uses agent key OR has its own key set)
+                    const hasKey = usesAgentKey
+                      ? !!settings.agents?.gpt?.key
+                      : !!settings.toolKeys?.[tool.id]
+                    const isReady = on && hasKey && !isStubbed
+                    const needsKey = on && !hasKey && !isStubbed
                     return (
                       <section className={`settings-card settings-card--tight${isStubbed ? " settings-card--quiet" : ""}`} key={tool.id}>
                         <div className="settings-row">
@@ -155,6 +161,8 @@ export default function Settings({ onClose }) {
                               {tool.name}
                               {tool.status === 'needs_proxy_route' && <span className="tool-status-badge">Worker route pending</span>}
                               {tool.status === 'beta' && <span className="tool-status-badge">beta</span>}
+                              {isReady && <span className="tool-status-badge tool-status-badge--ready">ready</span>}
+                              {needsKey && <span className="tool-status-badge tool-status-badge--warn">needs key</span>}
                             </div>
                             <div className="settings-row-sub">{tool.desc}</div>
                           </div>

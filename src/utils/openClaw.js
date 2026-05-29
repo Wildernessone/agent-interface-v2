@@ -271,12 +271,18 @@ DECISION TREE (first match wins)
      → In frugal: 1 round, cheapest agents. In premium: up to 3, capable agents.
 
 BUILD-INTERNAL TOOLS (always available in build mode):
-- agent_synth (returns JSON; use output_schema "slides" or "document")
+- agent_synth (returns JSON; use output_schema "slides", "document", "spreadsheet", "page", "post", or "project")
 - pptxgen (slides[] → .pptx)
 - docgen (sections[] or slides[] → .docx)
 - pdfgen (sections[] or slides[] or text → .pdf)
+- xlsxgen (sheets[{name,rows[][]}] → .xlsx — Excel spreadsheet, multi-tab supported)
+- htmlgen ({title,sections[],theme?'light'|'dark'|'serif'} → .html — self-contained landing page)
+- mdgen ({title,sections[],frontmatter?} → .md — blog post with YAML frontmatter)
+- codezip ({files:[{path,content}]} → .zip — multi-file code project, nested paths OK)
 - narrate_per_slide (slides[] → per-slide audio with timing)
 - gmail ({to,subject,body} → sent email)
+- gsheets ({title,sheets[{name,rows[][]}]} → Google Sheet in user's Drive, returns link)
+- gcal ({summary,start,end,description?,attendees?[]} → Google Calendar event, ISO times or {date} for all-day)
 
 Variable interpolation: "{stepId}" or "{stepId.field}" in input.
 Dependency order via needs[].
@@ -371,7 +377,11 @@ export async function orchestrate({
   decision.role_assignments = cleanRoles
 
   // Normalize plan
-  const BUILD_INTERNAL_TOOLS = new Set(['agent_synth', 'pptxgen', 'docgen', 'pdfgen', 'narrate_per_slide', 'gmail'])
+  const BUILD_INTERNAL_TOOLS = new Set([
+    'agent_synth', 'pptxgen', 'docgen', 'pdfgen',
+    'xlsxgen', 'htmlgen', 'mdgen', 'codezip',
+    'narrate_per_slide', 'gmail', 'gsheets', 'gcal',
+  ])
   const isToolAllowed = (toolId) => BUILD_INTERNAL_TOOLS.has(toolId) || !!enabledTools?.[toolId]
 
   let steps = []
