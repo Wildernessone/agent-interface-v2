@@ -1,15 +1,13 @@
 import { ROLE_POOL } from './openClaw'
 import { TOOLS_BY_ID } from '../tools/registry'
 
-export function buildSystemPrompt({ activeAgentIds=[], enabledTools={}, mode="concise", round=1, totalRounds=1, agentId="claude", voiceMode=false, memoryContext="", leadAgent=null, role=null }) {
+export function buildSystemPrompt({ activeAgentIds=[], enabledTools={}, mode="concise", round=1, totalRounds=1, agentId="claude", voiceMode=false, memoryContext="", leadAgent=null, role=null, skills=null }) {
   const AGENT_NAMES = { claude:"Claude (Anthropic)", gpt:"ChatGPT (OpenAI)", gemini:"Gemini (Google)", grok:"Grok (xAI)" }
   const otherAgents = activeAgentIds.filter(id => id !== agentId).map(id => AGENT_NAMES[id] || id)
   const lines = []
   lines.push(`You are ${AGENT_NAMES[agentId] || agentId} in a live multi-agent AI panel.`)
 
   // ROLE ASSIGNMENT — the dispatcher hands you a job for this turn.
-  // Sharp, single-purpose. Resist the urge to be helpful in the generic sense
-  // and stay in role. Roles are the whole point of this panel.
   const roleDef = role && ROLE_POOL[role]
   if (roleDef) {
     lines.push(`\nYOUR ROLE THIS TURN: ${roleDef.name.toUpperCase()}`)
@@ -23,6 +21,27 @@ export function buildSystemPrompt({ activeAgentIds=[], enabledTools={}, mode="co
     lines.push(memoryContext)
     lines.push(`\nUse this context naturally in your responses. Don't announce that you have it — just use it.`)
   }
+
+  // SKILLS — user-curated knowledge dropped into their Drive Skills folder.
+  // shared/ applies to every agent; <agentId>/ applies only to this one.
+  // Each skill's `name` + `content` get inlined; `skipped:true` items are
+  // honored (dropped via the per-agent token cap).
+  if (skills && (skills.shared?.length || skills[agentId]?.length)) {
+    const sharedActive = (skills.shared || []).filter(s => !s.skipped)
+    const agentActive  = (skills[agentId] || []).filter(s => !s.skipped)
+    const all = [...sharedActive, ...agentActive]
+    if (all.length > 0) {
+      lines.push(`\n--- EXPERTISE LOADED FROM YOUR SKILLS FOLDER ---`)
+      lines.push(`The user has dropped these knowledge files into their Drive at Agent Interface/Skills/. Treat them as authoritative context about how they want you to think and what they know. Use the content naturally; don't quote the filenames at them.`)
+      for (const s of all) {
+        lines.push(`\n### ${s.name}`)
+        if (s.description) lines.push(`(${s.description})`)
+        lines.push(s.content)
+      }
+      lines.push(`\n--- END SKILLS ---\n`)
+    }
+  }
+
   if (otherAgents.length > 0) lines.push(`Also on the panel: ${otherAgents.join(", ")}.`)
   // Capability list comes from the registry — single source of truth
   const tools = Object.entries(enabledTools)
@@ -60,7 +79,6 @@ export function buildSystemPrompt({ activeAgentIds=[], enabledTools={}, mode="co
     else lines.push(`\nFinal round — wrap up in 1-2 sentences. Be decisive.`)
   }
 
-  // Document creation mode
   lines.push(`\nIf the user asks you to "write this up", "summarize", "create a document", or "turn this into a plan" — produce a clean structured response with clear headers and bullet points that captures the key insights from the conversation. Make it something they can copy and use directly.`)
   lines.push("\nNever start with your name like [Claude]: or [ChatGPT]:. Just respond directly.")
   lines.push("\nCRITICAL IMAGE RULE: NEVER generate image URLs, markdown images, or use pollinations.ai or any external image service. NEVER write ![...](...) syntax. If an image is needed the tool system handles it automatically. Just describe concepts in text.")
