@@ -374,11 +374,19 @@ const agentSynth = {
 
     const fullPrompt = `${prompt}${schemaHint}`
 
+    // Worker requires the Supabase auth header — same shape the
+    // orchestrator uses. Without it, the Worker returns 401.
+    const { supabase } = await import('../utils/supabase')
+    const { data: { session } } = await supabase.auth.getSession()
+    const supaAuth = session?.access_token
+      ? { 'x-supabase-auth': `Bearer ${session.access_token}` }
+      : {}
+
     let raw = ''
     if (cfg.provider === 'claude') {
       const res = await fetch(`${PROXY}/claude`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-api-key': cfg.key },
+        headers: { 'Content-Type': 'application/json', 'x-api-key': cfg.key, ...supaAuth },
         body: JSON.stringify({ messages: [{ role: 'user', content: fullPrompt }] }),
       })
       if (!res.ok) throw new ToolError('agent_synth', 'bad_response', `claude_${res.status}`)
@@ -387,14 +395,14 @@ const agentSynth = {
     } else if (cfg.provider === 'gpt') {
       const res = await fetch(`${PROXY}/gpt`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.key}` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.key}`, ...supaAuth },
         body: JSON.stringify({ messages: [{ role: 'user', content: fullPrompt }] }),
       })
       raw = await res.text()
     } else if (cfg.provider === 'gemini') {
       const res = await fetch(`${PROXY}/gemini`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-api-key': cfg.key },
+        headers: { 'Content-Type': 'application/json', 'x-api-key': cfg.key, ...supaAuth },
         body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: fullPrompt }] }] }),
       })
       raw = await res.text()
