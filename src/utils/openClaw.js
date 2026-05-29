@@ -3,69 +3,34 @@
  * ================================
  * The compiler at the heart of Agent Interface.
  * Reads the roundtable, decides who talks, what tools fire, and what to build.
- *
- * Design notes for v3:
- *  - JSON extraction is now robust to LLMs adding prose before/after the JSON.
- *  - Prompt is restructured: hard rules first, examples second.
- *  - We surface OpenClaw's reasoning back to the UI so the user can see what it decided.
  */
 
 import { supabase } from './supabase'
+import { pricingTableFor, sortByCost, pricingFor } from './agentPricing'
 
 const PROXY = import.meta.env.VITE_PROXY_URL || "https://claude-proxy.jamesreed.workers.dev"
 
-// ── Role pool ──────────────────────────────────────────────────────
-// Roles are ASSIGNMENTS, not identities. The dispatcher assigns one to
-// each responding agent per turn. The same agent can play different
-// roles on different turns. Roles are sticky — they persist unless the
-// conversation shape changes.
+// ── Role pool ────────────────────────────────────────
 export const ROLE_POOL = {
-  skeptic: {
-    name: "Skeptic",
-    purpose: "Find what's broken. Do not agree with the premise. Only 'no, because' — never 'yes, and'. If you genuinely cannot find a flaw, say so explicitly: 'I can't find a flaw here, and here's why this is unusually solid.' That rare admission is your most useful signal — never fake skepticism, never fake comfort.",
-  },
-  reality_checker: {
-    name: "Reality Checker",
-    purpose: "Surface unstated assumptions and missing context. Ask the questions the user didn't think to ask. What does this plan require that we have not confirmed the user has — money, time, connections, skills, access, audience? No opinions on the idea itself — only flag what's unspoken.",
-  },
-  builder: {
-    name: "Builder",
-    purpose: "Take the idea seriously and figure out how it would actually work on day one with what's in front of us right now. Constructive and concrete. Specific first step, specific tool, specific output. No hand-waving.",
-  },
-  synthesizer: {
-    name: "Synthesizer",
-    purpose: "Write the actual read across what everyone said. Not consensus — real conclusions, including the disagreements that didn't resolve. Example shape: 'Three of us think this is solid. The Skeptic's objection is X, and it wasn't answered. Here's what to do about it.'",
-  },
-  pattern_spotter: {
-    name: "Pattern Spotter",
-    purpose: "Notice the shape underneath. Connect this idea to structures from other domains, prior conversations the user mentioned, or recurring patterns the user might not see. One sharp connection beats five vague ones.",
-  },
-  steel_manner: {
-    name: "Steel-Manner",
-    purpose: "Argue for the idea as strongly as possible. Make the best version of the case before anyone tears it down. Even if you privately disagree, your job is to articulate why this could actually work, taken at its strongest.",
-  },
-  numbers_person: {
-    name: "Numbers Person",
-    purpose: "Get concrete about money, time, and math. Real numbers — costs, hours, conversion rates, break-evens, traffic estimates. If you have to estimate, estimate openly and show the math. No vague 'this could be profitable' — give actual figures.",
-  },
-  translator: {
-    name: "Translator",
-    purpose: "Restate the idea or the discussion in plainer terms. Strip the jargon. Confirm everyone (user + other agents) is using the same words to mean the same things.",
-  },
-  historian: {
-    name: "Historian",
-    purpose: "Pull in what we've discussed before — prior conversations, memory the user has confirmed, decisions they've already made. Bring continuity. Surface a contradiction with something they said earlier if you spot one.",
-  },
+  skeptic: { name: "Skeptic", purpose: "Find what's broken. Do not agree with the premise. Only 'no, because' — never 'yes, and'. If you genuinely cannot find a flaw, say so explicitly: 'I can't find a flaw here, and here's why this is unusually solid.' That rare admission is your most useful signal — never fake skepticism, never fake comfort." },
+  reality_checker: { name: "Reality Checker", purpose: "Surface unstated assumptions and missing context. Ask the questions the user didn't think to ask. What does this plan require that we have not confirmed the user has — money, time, connections, skills, access, audience? No opinions on the idea itself — only flag what's unspoken." },
+  builder: { name: "Builder", purpose: "Take the idea seriously and figure out how it would actually work on day one with what's in front of us right now. Constructive and concrete. Specific first step, specific tool, specific output. No hand-waving." },
+  synthesizer: { name: "Synthesizer", purpose: "Write the actual read across what everyone said. Not consensus — real conclusions, including the disagreements that didn't resolve. Example shape: 'Three of us think this is solid. The Skeptic's objection is X, and it wasn't answered. Here's what to do about it.'" },
+  pattern_spotter: { name: "Pattern Spotter", purpose: "Notice the shape underneath. Connect this idea to structures from other domains, prior conversations the user mentioned, or recurring patterns the user might not see. One sharp connection beats five vague ones." },
+  steel_manner: { name: "Steel-Manner", purpose: "Argue for the idea as strongly as possible. Make the best version of the case before anyone tears it down. Even if you privately disagree, your job is to articulate why this could actually work, taken at its strongest." },
+  numbers_person: { name: "Numbers Person", purpose: "Get concrete about money, time, and math. Real numbers — costs, hours, conversion rates, break-evens, traffic estimates. If you have to estimate, estimate openly and show the math. No vague 'this could be profitable' — give actual figures." },
+  translator: { name: "Translator", purpose: "Restate the idea or the discussion in plainer terms. Strip the jargon. Confirm everyone (user + other agents) is using the same words to mean the same things." },
+  historian: { name: "Historian", purpose: "Pull in what we've discussed before — prior conversations, memory the user has confirmed, decisions they've already made. Bring continuity. Surface a contradiction with something they said earlier if you spot one." },
 }
 
 const ROLE_IDS = Object.keys(ROLE_POOL)
+const SPEND_MODES = ['frugal', 'balanced', 'premium']
 
 async function authHeader() {
   const { data: { session } } = await supabase.auth.getSession()
   return session?.access_token ? { 'x-supabase-auth': `Bearer ${session.access_token}` } : {}
 }
 
-// ── Model selection (Claude preferred, GPT next, Gemini fallback) ─────
 export function selectOrchestrationModel(settings) {
   if (settings?.agents?.claude?.key) return { provider: "claude", key: settings.agents.claude.key }
   if (settings?.agents?.gpt?.key) return { provider: "gpt", key: settings.agents.gpt.key }
@@ -73,17 +38,12 @@ export function selectOrchestrationModel(settings) {
   return null
 }
 
-// ── Robust JSON extraction ────────────────────────────────────────────
-// Finds the first balanced { ... } in the text. Strips markdown fences.
 function extractJson(text) {
   if (!text) return null
   const cleaned = text.replace(/```json\s*/gi, "").replace(/```/g, "").trim()
-  // Find first '{' and walk forward tracking depth to find the matching '}'
   const start = cleaned.indexOf("{")
   if (start === -1) return null
-  let depth = 0
-  let inString = false
-  let escape = false
+  let depth = 0, inString = false, escape = false
   for (let i = start; i < cleaned.length; i++) {
     const c = cleaned[i]
     if (inString) {
@@ -105,7 +65,6 @@ function extractJson(text) {
   return null
 }
 
-// ── Call the orchestrator model ───────────────────────────────────────
 async function callOpenClaw(prompt, modelConfig) {
   if (!modelConfig) return { decision: null, raw: null, error: "no_model" }
 
@@ -116,30 +75,23 @@ async function callOpenClaw(prompt, modelConfig) {
 
   try {
     let raw = ""
-
     if (modelConfig.provider === "claude") {
       const res = await fetch(`${PROXY}/claude`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-api-key": modelConfig.key, ...(await authHeader()) },
-        body: JSON.stringify({
-          messages: [{ role: "user", content: `${system}\n\n${prompt}` }],
-        }),
+        body: JSON.stringify({ messages: [{ role: "user", content: `${system}\n\n${prompt}` }], max_tokens: 2048 }),
       })
       const data = await res.json()
       if (!res.ok || data.error) return { decision: null, raw: data, error: `claude_${res.status}` }
       raw = data.content?.[0]?.text || ""
-    }
-
-    else if (modelConfig.provider === "gpt") {
+    } else if (modelConfig.provider === "gpt") {
       const res = await fetch(`${PROXY}/gpt`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${modelConfig.key}`, ...(await authHeader()) },
         body: JSON.stringify({ messages: [{ role: "user", content: `${system}\n\n${prompt}` }] }),
       })
       raw = await streamToText(res, "gpt")
-    }
-
-    else if (modelConfig.provider === "gemini") {
+    } else if (modelConfig.provider === "gemini") {
       const res = await fetch(`${PROXY}/gemini`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-api-key": modelConfig.key, ...(await authHeader()) },
@@ -147,7 +99,6 @@ async function callOpenClaw(prompt, modelConfig) {
       })
       raw = await streamToText(res, "gemini")
     }
-
     const decision = extractJson(raw)
     return { decision, raw, error: decision ? null : "parse_failed" }
   } catch (e) {
@@ -182,20 +133,10 @@ async function streamToText(res, kind) {
   return full
 }
 
-// ── Build the orchestrator prompt ─────────────────────────────────────
 function buildOrchestratorPrompt({
-  userMessage,
-  agentSummary,
-  toolList,
-  memorySummary,
-  enabledAgents,
-  activeProject,
-  isCorrection,
-  isBuildSignal,
-  hasPriorDiscussion,
-  voiceMode,
-  previousRoleAssignments,
-  routingPerformance,
+  userMessage, agentSummary, toolList, memorySummary, enabledAgents,
+  activeProject, isCorrection, isBuildSignal, hasPriorDiscussion,
+  voiceMode, previousRoleAssignments, routingPerformance, previousSpendMode,
 }) {
   const roleCatalog = Object.entries(ROLE_POOL)
     .map(([id, r]) => `  - "${id}" (${r.name}): ${r.purpose.split('.')[0]}.`)
@@ -205,27 +146,25 @@ function buildOrchestratorPrompt({
     ? Object.entries(previousRoleAssignments).map(([a, r]) => `${a}=${r}`).join(", ")
     : "(none — this is the first turn or roles weren't assigned last turn)"
 
-  // V3a: priors from passive learning. Format as compact lines, sorted by
-  // sample size. Empty block on cold-start so there's zero influence.
   const perfBlock = routingPerformance && routingPerformance.length
-    ? routingPerformance
-        .filter(p => p.agent_id !== '_any_')
-        .slice(0, 12)
-        .map(p => `  - ${p.agent_id} as ${p.role_id}: ${p.total} turns, ${p.positive_pct}% positive`)
-        .join("\n") || "(no actionable signal yet)"
+    ? routingPerformance.filter(p => p.agent_id !== '_any_').slice(0, 12)
+        .map(p => `  - ${p.agent_id} as ${p.role_id}: ${p.total} turns, ${p.positive_pct}% positive`).join("\n") || "(no actionable signal yet)"
     : "(no signal yet — first few sessions, weight tendencies above instead)"
 
-  const requestedRoles = routingPerformance
-    ?.filter(p => p.agent_id === '_any_')
-    .map(p => p.role_id) || []
-  const requestedHint = requestedRoles.length
-    ? `\nThe user has previously asked for these roles explicitly (consider assigning them when relevant): ${requestedRoles.join(", ")}`
-    : ""
+  const requestedRoles = routingPerformance?.filter(p => p.agent_id === '_any_').map(p => p.role_id) || []
+  const requestedHint = requestedRoles.length ? `\nThe user has previously asked for these roles explicitly: ${requestedRoles.join(", ")}` : ""
+
+  // Adaptive pricing context — only shows agents the user has connected.
+  // Sorted cheapest-first so frugal mode picks naturally from the top.
+  const pricingBlock = enabledAgents.length
+    ? pricingTableFor(enabledAgents)
+    : '  (no agents available)'
+  const cheapest = sortByCost(enabledAgents)[0]
+  const mostExpensive = sortByCost(enabledAgents).slice(-1)[0]
 
   return `
 You are the DISPATCHER for a panel of specialist AIs. You are NOT a fifth voice in the rotation.
-Your job: read the user's intent and the prior discussion, decide which specialist(s) should speak,
-assign each one a ROLE for this turn, and decide when the panel has done its job.
+Your job: read the user's intent, decide who speaks, assign roles, and decide what spend mode the conversation is in.
 
 INPUT
 =====
@@ -235,7 +174,10 @@ EXPLICIT BUILD APPROVAL DETECTED: ${isBuildSignal ? "yes" : "no"}
 IS CORRECTION: ${isCorrection}
 VOICE MODE: ${voiceMode}
 
-AGENTS AVAILABLE: ${enabledAgents.join(", ") || "none"}
+AGENTS CONNECTED & PRICING (sorted cheapest-first):
+${pricingBlock}
+${enabledAgents.length > 1 ? `Cheapest: ${cheapest}.  Most expensive: ${mostExpensive}.` : ''}
+
 TOOLS AVAILABLE: ${toolList || "none"}
 ACTIVE PROJECT: ${activeProject?.name || "none"}${activeProject?.description ? ` — ${activeProject.description}` : ""}
 
@@ -245,196 +187,122 @@ ${memorySummary || "none"}
 WHAT AGENTS SAID JUST NOW:
 ${agentSummary || "(nothing yet — first message in this thread)"}
 
-PREVIOUS TURN'S ROLE ASSIGNMENTS:
-${previousAssignmentsLine}
+PREVIOUS TURN'S ROLE ASSIGNMENTS: ${previousAssignmentsLine}
+PREVIOUS TURN'S SPEND MODE: ${previousSpendMode || "(none — first turn)"}
 
-PRIOR ROUTING OUTCOMES FOR THIS USER (rolling 90-day window):
+PRIOR ROUTING OUTCOMES FOR THIS USER (90-day rolling):
 ${perfBlock}${requestedHint}
 
-ROLE POOL (assign one per responding agent):
+ROLE POOL:
 ${roleCatalog}
+
+SPEND MODE
+==========
+Read the user's message + recent conversation for cost vs. quality cues:
+
+FRUGAL — user wants exploratory/cheap thinking. Triggers:
+  "brainstorm", "just thinking", "rough idea", "quick", "save tokens",
+  "affordable", "exploratory", "casual", "no need to overthink".
+  Routing: prefer the CHEAPEST available agents. If only premium agents are
+  connected, pick the cheapest of those. Skills get force-disabled. V2 audit
+  skipped. Single round.
+
+PREMIUM — user wants this done right, cost is not the constraint. Triggers:
+  "build this right", "bulletproof", "make sure it's solid", "for investors",
+  "final version", "production ready", "be thorough", "polish this".
+  Routing: prefer the MOST CAPABLE available agents (usually highest-priced).
+  Skills get force-enabled. V2 audit on every critical role. 2-3 rounds.
+
+BALANCED — default. Anything else.
+  Routing: pick what fits the role best regardless of cost.
+  Skills and audit respect the user's existing per-agent settings.
+
+ADAPTIVE TO WHAT'S CONNECTED — this matters:
+- The user might have only 2 agents connected, or 6. Always reason RELATIVE
+  to what's in the AGENTS CONNECTED list above, not against an absolute scale.
+- If they have only one agent: spend mode is informational, that's the only choice.
+- If they have only premium agents (no budget tier): frugal still means
+  "cheapest of these", not "can't fulfill".
+- If a budget-tier agent (e.g. gemini) is available and user signals frugal,
+  lean on it heavily — it's ~40x cheaper than premium agents.
+
+MODE STICKINESS:
+- Mode persists from previous turn unless user signals a shift.
+- Build approval ("build it") forces minimum balanced.
+- If the message mixes signals ("brainstorm me a bulletproof pitch") —
+  premium wins. Quality signal overrides cost signal in conflict.
 
 ROLE ASSIGNMENT RULES
 =====================
-- Roles are ASSIGNMENTS, not identities. The same agent can play different roles
-  on different turns. The same role can be assigned to whichever agent fits best.
-- Roles are STICKY by default. If an agent had a role last turn and the user is
-  following up on what that role said, keep them in that role. Only reassign when
-  the SHAPE of the conversation shifts (brainstorm → stress-test, debate → synthesis),
-  not when the topic shifts.
-- FRICTION RULE — read carefully. On any multi-agent discuss turn with 2+ agents
-  responding, you MUST include at least one critical role (Skeptic OR Reality
-  Checker) unless one of these explicit exceptions applies:
-    • Voice mode is on (short replies, no time for debate)
-    • The user explicitly asked for supportive / cheerleader mode
-      ("hype me up", "I just need someone to believe in this", "no critique
-      right now", "help me feel good about this")
-    • The conversation has already done a critical pass and the user is
-      now in a clear synthesis or building phase
-  This is non-negotiable on brainstorming questions especially. A panel
-  without a critical voice is consensus theater — the exact failure mode
-  this system exists to prevent. Builder + Numbers Person + Steel-Manner
-  is a WRONG mix because none of them push back. Always pair generative
-  roles with at least one role that finds the flaw or surfaces what's
-  missing. Good mixes for brainstorm: Builder + Skeptic + Pattern Spotter,
-  Builder + Reality Checker, Steel-Manner + Skeptic (defender vs attacker).
-- Pick 2-3 roles per turn from the pool. Not every role needs to appear. Silence
-  from a role is a meaningful signal — "no skeptic was needed" means nothing was
-  broken. Don't force everyone to speak.
-- Match the role to the agent's actual strengths when possible:
-    • claude  → strong at Skeptic, Synthesizer, Translator, Pattern Spotter
-    • gpt     → strong at Builder, Numbers Person, Reality Checker
-    • gemini  → strong at Reality Checker, Historian, Numbers Person
-    • grok    → strong at Skeptic, Steel-Manner, Pattern Spotter, direct contrarian takes
-  These are tendencies, not rules. Override when the moment calls for it.
-- PRIOR ROUTING OUTCOMES are a TIEBREAKER, not an override. If the tendencies
-  above point clearly to one agent for a role, go with them. If two agents are
-  roughly equal candidates and one has stronger prior outcomes for that role
-  with this user, prefer them. Avoid pairings with sustained negative signal
-  unless the conversation specifically calls for it. Sample sizes under 5 are
-  noise — ignore them.
+- Roles are ASSIGNMENTS, not identities. Same agent can play different roles
+  on different turns. Sticky by default — reassign only when the SHAPE of
+  the conversation shifts (brainstorm → stress-test), not the topic.
+- FRICTION RULE: on multi-agent discuss turns with 2+ agents, MUST include
+  at least one critical role (Skeptic OR Reality Checker) unless:
+    • Voice mode is on
+    • User explicitly asked for supportive mode ("hype me up", "no critique")
+    • We already did a critical pass; this turn is synthesis or building
+  Builder + Numbers Person + Steel-Manner is WRONG — no friction. Always
+  pair generative roles with one that finds the flaw.
+- Pick 2-3 roles per turn. Silence from a role is a meaningful signal.
+- Match role to agent strengths (use the strengths field in the pricing
+  table above as a guide — these are tendencies, not rules).
+- PRIOR ROUTING OUTCOMES are a TIEBREAKER, not an override. Sample sizes
+  under 5 are noise.
 
-DECISION TREE (apply in order — first match wins)
-================================================
-1. If TOOLS AVAILABLE includes a search tool AND the user asked a search question
-   (e.g. "search for X", "what's the latest on Y", "find me Z right now"):
-     → mode = "build"
-     → plan = [{tool: <search tool>, prompt: <topic to search>}]
-     → agents_to_respond = []
-     → role_assignments = {}
+DECISION TREE (first match wins)
+================================
+1. If TOOLS AVAILABLE includes a search tool AND user asked a search question:
+     → mode = "build", plan = [{tool: <search>, prompt: <topic>}], agents_to_respond = []
 
-2. If EXPLICIT BUILD APPROVAL DETECTED is yes AND PRIOR AGENT DISCUSSION is yes:
+2. If EXPLICIT BUILD APPROVAL DETECTED yes AND PRIOR AGENT DISCUSSION yes:
      → mode = "build"
      → agents_to_respond = []
-     → role_assignments = {}
-     → Set deliverable = a short name for the whole output (used as the
-       folder name in cloud storage). Example: "Pitch deck — Salt+Pine Series A"
-     → plan = a MULTI-STEP graph of {id, tool, needs[], input, label}
-       steps. Use only tools that appear in TOOLS AVAILABLE plus these
-       internal build-only tools: "agent_synth", "pptxgen", "docgen".
-
-       BUILD-INTERNAL TOOLS (always available, no setup needed):
-       - agent_synth: have the panel produce STRUCTURED CONTENT for
-         downstream steps. Returns JSON. Use output_schema to shape it:
-            "slides"   → {"slides":[{title, bullets[], notes}]}
-            "document" → {"title", "sections":[{heading, paragraphs[]}]}
-       - pptxgen: takes a slides[] structured input, outputs a .pptx file
-       - docgen:  takes sections[] OR slides[], outputs a .docx file
-       - pdfgen:  takes sections[] OR slides[] OR plain text, outputs a .pdf file
-       - narrate_per_slide: takes slides[], produces ONE audio file per
-         slide using ElevenLabs (needs the user's elevenlabs key).
-         Output has files[] with timing data — use this for deck
-         narration instead of plain elevenlabs when the deliverable
-         is a slide deck.
-       - gmail: sends an email. Structured input shape:
-            { "to": "user@example.com", "subject": "...", "body": "..." }
-         Use it as the LAST step of a build to ship the deliverable.
-         The user's Gmail is wired through their existing Google
-         connection — no separate key needed. Recipient should be
-         pulled from the conversation if mentioned, OR you can ask
-         the user for it via a discuss-mode response first.
-
-       VARIABLE INTERPOLATION:
-       In any step's "input" string, you can reference earlier step
-       outputs with {stepId} or {stepId.field}. Examples:
-         input: "Narrate each slide naturally. Slides: {outline}"
-         input: "{outline}"   (passes the raw outline object through)
-
-       DEPENDENCY ORDER:
-       List each step's needs[] — runBuild does topological sort.
-
-       EXAMPLE — pitch deck with narration + speaker notes:
-       {
-         "deliverable": "Pitch deck — Salt+Pine Coffee Series A",
-         "steps": [
-           {
-             "id": "outline", "tool": "agent_synth",
-             "input": "Produce a 6-slide investor deck outline for Salt+Pine Coffee Series A based on the discussion above.",
-             "output_schema": "slides",
-             "label": "Outline"
-           },
-           {
-             "id": "deck", "tool": "pptxgen",
-             "needs": ["outline"],
-             "input": "{outline}",
-             "label": "Pitch deck"
-           },
-           {
-             "id": "narration", "tool": "elevenlabs",
-             "needs": ["outline"],
-             "input": "Read this deck naturally, one slide at a time: {outline}",
-             "label": "Narration"
-           },
-           {
-             "id": "notes", "tool": "docgen",
-             "needs": ["outline"],
-             "input": "{outline}",
-             "label": "Speaker notes"
-           }
-         ]
-       }
-
-       EXAMPLE — single image (still valid as a 1-step graph):
-       {
-         "deliverable": "Logo concept",
-         "steps": [
-           { "id": "logo", "tool": "dalle", "input": "<final image prompt>", "label": "Logo" }
-         ]
-       }
-
-       Match the deliverable structure to what the user actually wants.
-       A song = 1 step. A full marketing campaign = many steps with
-       interpolation between them.
+     → deliverable = short folder-friendly name
+     → plan = multi-step graph using available tools + internal tools
+       (agent_synth, pptxgen, docgen, pdfgen, narrate_per_slide, gmail)
+     → Internal tools always available. See BUILD-INTERNAL TOOLS section below.
 
 3. Otherwise:
-     → mode = "discuss"
-     → plan = []
-     → agents_to_respond = 2-3 agents from AGENTS AVAILABLE based on what the
-       conversation needs right now (read the user message + prior discussion).
-     → role_assignments = an object mapping each agent in agents_to_respond
-       to a role_id from the ROLE POOL. Honor stickiness.
-     → rounds = 1 for simple Q&A, 2 for back-and-forth, 3 only for genuine debate.
-     → Voice mode: response_mode = "concise", rounds = 1, fewer agents.
+     → mode = "discuss", plan = []
+     → agents_to_respond = 2-3 from AGENTS CONNECTED, biased by spend_mode
+     → role_assignments mapping each to a role_id, honoring stickiness
+     → rounds = 1 for simple Q&A, 2 for back-and-forth, 3 for genuine debate
+     → In frugal: 1 round, cheapest agents. In premium: up to 3, capable agents.
 
-OUTPUT (return EXACTLY this JSON shape — no preface, no fence, no trailing text):
+BUILD-INTERNAL TOOLS (always available in build mode):
+- agent_synth (returns JSON; use output_schema "slides" or "document")
+- pptxgen (slides[] → .pptx)
+- docgen (sections[] or slides[] → .docx)
+- pdfgen (sections[] or slides[] or text → .pdf)
+- narrate_per_slide (slides[] → per-slide audio with timing)
+- gmail ({to,subject,body} → sent email)
+
+Variable interpolation: "{stepId}" or "{stepId.field}" in input.
+Dependency order via needs[].
+
+OUTPUT (return EXACTLY this JSON, no preface, no fence):
 {
   "mode": "discuss" | "build",
-  "agents_to_respond": ["claude", "gpt"],
-  "role_assignments": { "claude": "skeptic", "gpt": "builder" },
+  "spend_mode": "frugal" | "balanced" | "premium",
+  "agents_to_respond": ["<agent_id>", ...],
+  "role_assignments": { "<agent_id>": "<role_id>" },
   "rounds": 1,
   "response_mode": "concise" | "balanced" | "detailed",
-  "deliverable": "<short folder-friendly name for the build, or null in discuss mode>",
-  "plan": {
-    "steps": [
-      { "id": "<step-id>", "tool": "<tool_id>", "needs": [], "input": "<prompt or {stepRef}>", "label": "<short label>", "output_schema": "slides" }
-    ]
-  },
-  "correction": {
-    "detected": false,
-    "what_was_wrong": null,
-    "what_user_wants": null,
-    "save_to_memory": false,
-    "memory_entry": null
-  },
+  "deliverable": "<short folder name for build, or null in discuss>",
+  "plan": { "steps": [{ "id": "...", "tool": "...", "needs": [], "input": "...", "label": "...", "output_schema": "slides" }] },
+  "correction": { "detected": false, "what_was_wrong": null, "what_user_wants": null, "save_to_memory": false, "memory_entry": null },
   "voice_response_chars": 300,
-  "reasoning": "one sentence: why this mode and these agents/tools"
+  "reasoning": "one sentence: why this mode, these agents, this spend tier"
 }
 `.trim()
 }
 
-// ── MAIN ORCHESTRATE ──────────────────────────────────────────────────
 export async function orchestrate({
-  userMessage,
-  conversationHistory = [],
-  agentResponses = [],
-  enabledAgents = [],
-  enabledTools = {},
-  memory = [],
-  activeProject = null,
-  previousRoleAssignments = {},
-  routingPerformance = [],
-  settings,
-  voiceMode = false,
+  userMessage, conversationHistory = [], agentResponses = [],
+  enabledAgents = [], enabledTools = {}, memory = [], activeProject = null,
+  previousRoleAssignments = {}, previousSpendMode = null,
+  routingPerformance = [], settings, voiceMode = false,
 }) {
   const modelConfig = selectOrchestrationModel(settings)
 
@@ -442,22 +310,15 @@ export async function orchestrate({
     .map(r => `${r.agent?.toUpperCase()}: ${(r.text || "").slice(0, 400)}`)
     .join("\n\n")
 
-  const toolList = Object.entries(enabledTools)
-    .filter(([, v]) => v)
-    .map(([id]) => id)
-    .join(", ")
-
-  const memorySummary = memory.slice(0, 5)
-    .map(m => `[${m.title}]: ${(m.content || "").slice(0, 150)}`)
-    .join("\n")
+  const toolList = Object.entries(enabledTools).filter(([, v]) => v).map(([id]) => id).join(", ")
+  const memorySummary = memory.slice(0, 5).map(m => `[${m.title}]: ${(m.content || "").slice(0, 150)}`).join("\n")
 
   const correctionPhrases = ["that's not what i meant", "no i wanted", "wrong", "not right", "try again", "that's not", "i said", "i meant", "actually"]
   const isCorrection = correctionPhrases.some(p => userMessage.toLowerCase().includes(p))
 
   const buildSignals = [
-    "build it", "build this", "let's build", "go build",
-    "ship it", "let's ship", "go for it", "let's go",
-    "do it now", "yes do it", "yes build", "yes make it",
+    "build it", "build this", "let's build", "go build", "ship it", "let's ship",
+    "go for it", "let's go", "do it now", "yes do it", "yes build", "yes make it",
     "perfect, build", "great, build", "ok build", "let's make this",
     "go ahead and build", "fire the tools", "make it", "do it",
   ]
@@ -466,18 +327,9 @@ export async function orchestrate({
   const hasPriorDiscussion = agentResponses.length > 0
 
   const prompt = buildOrchestratorPrompt({
-    userMessage,
-    agentSummary,
-    toolList,
-    memorySummary,
-    enabledAgents,
-    activeProject,
-    isCorrection,
-    isBuildSignal,
-    hasPriorDiscussion,
-    voiceMode,
-    previousRoleAssignments,
-    routingPerformance,
+    userMessage, agentSummary, toolList, memorySummary, enabledAgents,
+    activeProject, isCorrection, isBuildSignal, hasPriorDiscussion, voiceMode,
+    previousRoleAssignments, routingPerformance, previousSpendMode,
   })
 
   if (!modelConfig) {
@@ -485,8 +337,6 @@ export async function orchestrate({
   }
 
   const { decision, raw, error } = await callOpenClaw(prompt, modelConfig)
-
-  // Log raw output for debugging (visible in browser console)
   if (raw) console.log("[OpenClaw]", raw.slice(0, 600))
   if (error) console.warn("[OpenClaw error]", error)
 
@@ -494,7 +344,7 @@ export async function orchestrate({
     return { ...defaultDecision(enabledAgents, voiceMode), reasoning: `OpenClaw fallback — ${error || "no decision"}.` }
   }
 
-  // Filter agents_to_respond to enabled agents
+  // Filter agents_to_respond to enabled
   if (Array.isArray(decision.agents_to_respond)) {
     decision.agents_to_respond = decision.agents_to_respond.filter(a => enabledAgents.includes(a))
     if (decision.mode !== "build" && decision.agents_to_respond.length === 0) {
@@ -502,58 +352,48 @@ export async function orchestrate({
     }
   }
 
-  // Sanitize role_assignments: only known roles, only for agents that will actually respond
+  // Validate spend_mode. Build approval forces at least balanced regardless of
+  // what came back from the LLM — you're past brainstorming if you're building.
+  if (!SPEND_MODES.includes(decision.spend_mode)) {
+    decision.spend_mode = previousSpendMode && SPEND_MODES.includes(previousSpendMode) ? previousSpendMode : 'balanced'
+  }
+  if (isBuildSignal && decision.spend_mode === 'frugal') {
+    decision.spend_mode = 'balanced'
+  }
+
+  // Sanitize role_assignments
   const cleanRoles = {}
   if (decision.role_assignments && typeof decision.role_assignments === "object") {
     for (const [agent, role] of Object.entries(decision.role_assignments)) {
-      if (decision.agents_to_respond?.includes(agent) && ROLE_IDS.includes(role)) {
-        cleanRoles[agent] = role
-      }
+      if (decision.agents_to_respond?.includes(agent) && ROLE_IDS.includes(role)) cleanRoles[agent] = role
     }
   }
   decision.role_assignments = cleanRoles
 
-  // Plan: accept either the legacy flat array OR the new graph shape
-  // {deliverable, steps[]}. Normalize to the graph internally.
-  const BUILD_INTERNAL_TOOLS = new Set(['agent_synth', 'pptxgen', 'docgen'])
-  const isToolAllowed = (toolId) =>
-    BUILD_INTERNAL_TOOLS.has(toolId) || !!enabledTools?.[toolId]
+  // Normalize plan
+  const BUILD_INTERNAL_TOOLS = new Set(['agent_synth', 'pptxgen', 'docgen', 'pdfgen', 'narrate_per_slide', 'gmail'])
+  const isToolAllowed = (toolId) => BUILD_INTERNAL_TOOLS.has(toolId) || !!enabledTools?.[toolId]
 
   let steps = []
   let deliverable = decision.deliverable || null
   if (Array.isArray(decision.plan)) {
-    // Legacy flat-array path → wrap as a single-step graph
-    steps = decision.plan
-      .filter(s => s?.tool && isToolAllowed(s.tool))
-      .map((s, i) => ({
-        id: s.id || `step_${i}`,
-        tool: s.tool,
-        input: s.input || s.prompt || '',
-        needs: [],
-        label: s.label || s.tool,
-        output_schema: s.output_schema,
-      }))
+    steps = decision.plan.filter(s => s?.tool && isToolAllowed(s.tool)).map((s, i) => ({
+      id: s.id || `step_${i}`, tool: s.tool,
+      input: s.input || s.prompt || '', needs: [],
+      label: s.label || s.tool, output_schema: s.output_schema,
+    }))
   } else if (decision.plan?.steps && Array.isArray(decision.plan.steps)) {
-    steps = decision.plan.steps
-      .filter(s => s?.id && s?.tool && isToolAllowed(s.tool))
-      .map(s => ({
-        id: s.id,
-        tool: s.tool,
-        input: s.input || s.prompt || '',
-        needs: Array.isArray(s.needs) ? s.needs : [],
-        label: s.label || s.tool,
-        output_schema: s.output_schema,
-      }))
+    steps = decision.plan.steps.filter(s => s?.id && s?.tool && isToolAllowed(s.tool)).map(s => ({
+      id: s.id, tool: s.tool,
+      input: s.input || s.prompt || '', needs: Array.isArray(s.needs) ? s.needs : [],
+      label: s.label || s.tool, output_schema: s.output_schema,
+    }))
     deliverable = decision.plan.deliverable || deliverable
   }
-
-  // Drop needs[] references that point to filtered-out steps
   const validIds = new Set(steps.map(s => s.id))
   steps = steps.map(s => ({ ...s, needs: s.needs.filter(n => validIds.has(n)) }))
-
   decision.plan = { deliverable, steps }
 
-  // Sanity: if mode is "build" but plan is empty after filtering, fall back to discuss
   if (decision.mode === "build" && steps.length === 0) {
     decision.mode = "discuss"
     decision.agents_to_respond = decision.agents_to_respond?.length ? decision.agents_to_respond : enabledAgents
@@ -563,48 +403,39 @@ export async function orchestrate({
   return decision
 }
 
-// ── Fallback decision ─────────────────────────────────────────────────
 function defaultDecision(enabledAgents, voiceMode) {
   return {
     mode: "discuss",
+    spend_mode: 'balanced',
     agents_to_respond: enabledAgents,
-    role_assignments: {},
-    skip_agents: [],
+    role_assignments: {}, skip_agents: [],
     rounds: 1,
     response_mode: voiceMode ? "concise" : "balanced",
-    plan: [],
-    correction: { detected: false },
+    plan: [], correction: { detected: false },
     voice_response_chars: voiceMode ? 200 : 500,
     reasoning: "Default fallback",
   }
 }
 
-// ── Learn from correction ─────────────────────────────────────────────
 export async function processCorrection(decision, settings, saveMemory) {
   if (!decision?.correction?.detected) return
   if (!decision.correction.save_to_memory) return
   if (!decision.correction.memory_entry) return
-
   try {
     await saveMemory(
       `Learned: ${decision.correction.what_was_wrong?.slice(0, 50) || "preference"}`,
-      decision.correction.memory_entry,
-      "learned"
+      decision.correction.memory_entry, "learned"
     )
   } catch {}
 }
 
-// ── Role audit (V2 check-and-rewrite layer) ────────────────────────
-// Roles that are most prone to drifting back to "helpful and additive".
-// Other roles (Builder, Synthesizer, Numbers Person, etc.) don't drift
-// the same way — their failure modes are different and the audit cost
-// isn't justified.
+// ── V2 audit ────────────────────────────────────────────
 const DRIFT_PRONE_ROLES = new Set(['skeptic', 'reality_checker', 'steel_manner'])
 
 const AUDIT_TESTS = {
-  skeptic:         "Did they find an actual flaw? PASS = a real objection, even a small one. FAIL = soft agreement, 'good point but also...', restating the user's idea back, or generic concerns.",
-  reality_checker: "Did they only flag unstated assumptions and missing context? PASS = surfacing what's unspoken (money? time? skills? evidence?). FAIL = giving opinions on the idea itself, or saying 'this is great' / 'this is risky'.",
-  steel_manner:    "Did they make the strongest possible case for the idea? PASS = a real argument FOR. FAIL = hedging, 'on one hand... on the other', or sliding into critique.",
+  skeptic: "Did they find an actual flaw? PASS = a real objection, even a small one. FAIL = soft agreement, 'good point but also...', restating the user's idea back, or generic concerns.",
+  reality_checker: "Did they only flag unstated assumptions and missing context? PASS = surfacing what's unspoken. FAIL = giving opinions on the idea itself.",
+  steel_manner: "Did they make the strongest possible case for the idea? PASS = a real argument FOR. FAIL = hedging, sliding into critique.",
 }
 
 export function shouldAudit(role, voiceMode) {
@@ -612,23 +443,14 @@ export function shouldAudit(role, voiceMode) {
   return DRIFT_PRONE_ROLES.has(role)
 }
 
-/**
- * Audit a specialist's response against its assigned role. Single quick
- * LLM call using the user's orchestration model. Returns:
- *   { passed: bool, reason: string }
- * On any error (timeout, parse fail) we PASS — never block a response
- * because the auditor itself broke.
- */
 export async function auditResponse({ text, role, userMessage, settings }) {
   if (!text || text.length < 20) return { passed: true, reason: "empty" }
   const modelConfig = selectOrchestrationModel(settings)
   if (!modelConfig) return { passed: true, reason: "no_model" }
-
   const roleDef = ROLE_POOL[role]
   if (!roleDef) return { passed: true, reason: "unknown_role" }
 
   const audit = AUDIT_TESTS[role] || "Did they stay in role?"
-
   const prompt = `You are auditing whether a specialist AI stayed in its assigned role on this turn.
 
 ROLE ASSIGNED: ${roleDef.name}
@@ -640,8 +462,7 @@ AGENT'S RESPONSE: "${text.slice(0, 1500)}"
 
 AUDIT TEST FOR THIS ROLE: ${audit}
 
-Return EXACTLY this JSON, no preface, no fence:
-{"passed": true|false, "reason": "<one short sentence>"}`
+Return EXACTLY this JSON: {"passed": true|false, "reason": "<one short sentence>"}`
 
   try {
     let raw = ""
@@ -670,176 +491,83 @@ Return EXACTLY this JSON, no preface, no fence:
       raw = await streamToText(res, "gemini")
     }
     const parsed = extractJson(raw)
-    if (parsed && typeof parsed.passed === "boolean") {
-      return { passed: parsed.passed, reason: parsed.reason || "" }
-    }
+    if (parsed && typeof parsed.passed === "boolean") return { passed: parsed.passed, reason: parsed.reason || "" }
     return { passed: true, reason: "audit_parse_failed" }
-  } catch {
-    return { passed: true, reason: "audit_exception" }
-  }
+  } catch { return { passed: true, reason: "audit_exception" } }
 }
 
-/**
- * Build a hardened system prompt for the retry pass. Stronger anti-drift
- * language, names the specific failure mode, references the audit reason.
- */
 export function buildRetryReminder(role, auditReason) {
   const roleDef = ROLE_POOL[role]
   if (!roleDef) return ""
   return `IMPORTANT — your previous response slipped out of role.
 Audit feedback: ${auditReason || "you drifted toward generic helpfulness"}.
 You were assigned: ${roleDef.name}.
-Your job, restated and not optional: ${roleDef.purpose}
-This time, do the job. ${role === 'skeptic' ? "Find the actual flaw. If you genuinely cannot, say so explicitly and explain why — but do not paper over disagreement." : role === 'reality_checker' ? "Surface only what's unspoken. No opinions on whether the idea is good or bad." : role === 'steel_manner' ? "Make the strongest possible case. No hedging." : ""}`
+Your job, restated: ${roleDef.purpose}
+This time, do the job. ${role === 'skeptic' ? "Find the actual flaw. If you genuinely cannot, say so explicitly and explain why." : role === 'reality_checker' ? "Surface only what's unspoken. No opinions on whether the idea is good or bad." : role === 'steel_manner' ? "Make the strongest possible case. No hedging." : ""}`
 }
 
-// ── Memory inference: surface what OpenClaw is learning ──────────────
-/**
- * Read recent conversation turns and produce candidate memory entries —
- * lightweight observations about the user that, once confirmed, make
- * future agent responses feel personalized. Avoids duplicating anything
- * already in `existingMemories`.
- *
- * Returns { candidates: [{title, content, confidence, evidence}], error }
- */
+// ── Memory inference ────────────────────────────────────────
 export async function inferMemoriesFromConversation({ turns, existingMemories = [], settings }) {
   const modelConfig = selectOrchestrationModel(settings)
   if (!modelConfig) return { candidates: [], error: "no_model_key" }
-
-  const transcript = turns
-    .filter(t => t.text && (t.type === "user" || t.type === "agent"))
-    .slice(-40)
-    .map(t => `${t.type === "user" ? "USER" : `AGENT(${t.agent || "?"})`}: ${t.text.slice(0, 600)}`)
-    .join("\n")
-
+  const transcript = turns.filter(t => t.text && (t.type === "user" || t.type === "agent"))
+    .slice(-40).map(t => `${t.type === "user" ? "USER" : `AGENT(${t.agent || "?"})`}: ${t.text.slice(0, 600)}`).join("\n")
   if (!transcript.trim()) return { candidates: [], error: "empty_conversation" }
+  const existingList = existingMemories.length ? existingMemories.slice(0, 30).map(m => `- ${m.title}: ${m.content?.slice(0, 200)}`).join("\n") : "(none yet)"
+  const system = `You are OpenClaw's memory layer. Read a conversation and identify stable, useful facts about the user.
 
-  const existingList = existingMemories.length
-    ? existingMemories.slice(0, 30).map(m => `- ${m.title}: ${m.content?.slice(0, 200)}`).join("\n")
-    : "(none yet)"
+EXTRACT: durable preferences, profession, projects, communication style. Cite evidence.
+SKIP: one-off curiosity, anything already in EXISTING MEMORIES, sensitive info unless explicitly asked.
 
-  const system = `You are OpenClaw's memory layer. Your job is to read a conversation between a user and AI agents and identify stable, useful facts about the user that would make future responses feel personalized.
-
-EXTRACT memories that are:
-- Durable (preferences, profession, projects, communication style, expertise, recurring topics)
-- Specific enough to be useful ("prefers concise bullet points" not "likes good answers")
-- Inferred from real evidence in the conversation (cite it)
-
-DO NOT extract:
-- One-off questions or transient curiosity
-- Anything already in EXISTING MEMORIES
-- Sensitive info (passwords, financial details, health diagnoses) unless the user explicitly asked you to remember it
-- Anything you'd guess at — only what's actually evidenced
-
-OUTPUT FORMAT — strict JSON, no prose before or after:
-{
-  "candidates": [
-    {
-      "title": "short label (2-5 words)",
-      "content": "one or two sentences capturing the fact",
-      "confidence": "high" | "medium" | "low",
-      "evidence": "brief quote or paraphrase from the conversation"
-    }
-  ]
-}
-
-If nothing meaningful is new, return {"candidates": []}.
-Maximum 6 candidates per pass — quality over quantity.`
-
-  const prompt = `EXISTING MEMORIES (do not duplicate):
-${existingList}
-
-CONVERSATION:
-${transcript}
-
-Extract new memory candidates as JSON.`
-
+OUTPUT JSON: {"candidates":[{"title":"...","content":"...","confidence":"high|medium|low","evidence":"..."}]}
+Max 6 candidates.`
+  const prompt = `EXISTING MEMORIES:\n${existingList}\n\nCONVERSATION:\n${transcript}\n\nExtract new memory candidates as JSON.`
   try {
     let raw = ""
     if (modelConfig.provider === "claude") {
-      const res = await fetch(`${PROXY}/claude`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-api-key": modelConfig.key, ...(await authHeader()) },
-        body: JSON.stringify({ messages: [{ role: "user", content: `${system}\n\n${prompt}` }] }),
-      })
+      const res = await fetch(`${PROXY}/claude`, { method: "POST", headers: { "Content-Type": "application/json", "x-api-key": modelConfig.key, ...(await authHeader()) }, body: JSON.stringify({ messages: [{ role: "user", content: `${system}\n\n${prompt}` }] }) })
       const data = await res.json()
       if (!res.ok || data.error) return { candidates: [], error: `claude_${res.status}` }
       raw = data.content?.[0]?.text || ""
     } else if (modelConfig.provider === "gpt") {
-      const res = await fetch(`${PROXY}/gpt`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${modelConfig.key}`, ...(await authHeader()) },
-        body: JSON.stringify({ messages: [{ role: "user", content: `${system}\n\n${prompt}` }] }),
-      })
+      const res = await fetch(`${PROXY}/gpt`, { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${modelConfig.key}`, ...(await authHeader()) }, body: JSON.stringify({ messages: [{ role: "user", content: `${system}\n\n${prompt}` }] }) })
       raw = await streamToText(res, "gpt")
     } else if (modelConfig.provider === "gemini") {
-      const res = await fetch(`${PROXY}/gemini`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-api-key": modelConfig.key, ...(await authHeader()) },
-        body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: `${system}\n\n${prompt}` }] }] }),
-      })
+      const res = await fetch(`${PROXY}/gemini`, { method: "POST", headers: { "Content-Type": "application/json", "x-api-key": modelConfig.key, ...(await authHeader()) }, body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: `${system}\n\n${prompt}` }] }] }) })
       raw = await streamToText(res, "gemini")
     }
-
     const parsed = extractJson(raw)
-    const candidates = Array.isArray(parsed?.candidates) ? parsed.candidates : []
-    return { candidates, error: null }
-  } catch (e) {
-    return { candidates: [], error: e?.message || "infer_failed" }
-  }
+    return { candidates: Array.isArray(parsed?.candidates) ? parsed.candidates : [], error: null }
+  } catch (e) { return { candidates: [], error: e?.message || "infer_failed" } }
 }
 
-// ── Setup guides ──────────────────────────────────────────────────────
 export const SETUP_GUIDES = {
-  anthropic:    { name:"Claude",          url:"https://console.anthropic.com/api-keys",         keyPrefix:"sk-ant-" },
-  openai:       { name:"ChatGPT",         url:"https://platform.openai.com/api-keys",            keyPrefix:"sk-proj-" },
-  google:       { name:"Gemini",          url:"https://aistudio.google.com/app/apikey",          keyPrefix:"AIza" },
-  xai:          { name:"Grok",            url:"https://console.x.ai",                            keyPrefix:"xai-" },
-  elevenlabs:   { name:"ElevenLabs",      url:"https://elevenlabs.io/app/settings/api-keys",     keyPrefix:null },
-  stability:    { name:"Stability AI",    url:"https://platform.stability.ai/account/keys",      keyPrefix:"sk-" },
-  perplexity:   { name:"Perplexity",      url:"https://www.perplexity.ai/settings/api",          keyPrefix:"pplx-" },
+  anthropic: { name:"Claude", url:"https://console.anthropic.com/api-keys", keyPrefix:"sk-ant-" },
+  openai:    { name:"ChatGPT", url:"https://platform.openai.com/api-keys", keyPrefix:"sk-proj-" },
+  google:    { name:"Gemini", url:"https://aistudio.google.com/app/apikey", keyPrefix:"AIza" },
+  xai:       { name:"Grok", url:"https://console.x.ai", keyPrefix:"xai-" },
+  elevenlabs:{ name:"ElevenLabs", url:"https://elevenlabs.io/app/settings/api-keys", keyPrefix:null },
+  stability: { name:"Stability AI", url:"https://platform.stability.ai/account/keys", keyPrefix:"sk-" },
+  perplexity:{ name:"Perplexity", url:"https://www.perplexity.ai/settings/api", keyPrefix:"pplx-" },
 }
 
-// ── Diagnose errors ───────────────────────────────────────────────────
 export function diagnoseError(agentId, status) {
   const messages = {
-    401: {
-      claude:  { msg: "Your Anthropic key isn't working — looks like it expired or was revoked.", fix: "anthropic" },
-      gpt:     { msg: "Your OpenAI key isn't working — create a fresh one.", fix: "openai" },
-      gemini:  { msg: "Your Google AI key isn't working.", fix: "google" },
-      grok:    { msg: "Your xAI key isn't working — may have been revoked.", fix: "xai" },
-    },
-    429: {
-      claude:  { msg: "Claude is rate limited — wait a moment and try again.", fix: null },
-      gpt:     { msg: "ChatGPT hit its rate limit — try again in a minute.", fix: null },
-      gemini:  { msg: "Gemini's free tier is exhausted. Enable billing to continue.", fix: "google_billing", url: "https://aistudio.google.com/app/plan" },
-      grok:    { msg: "Grok is rate limited — wait a moment.", fix: null },
-    },
-    402: {
-      grok:    { msg: "Your xAI account has no credits. Add credits to use Grok.", fix: "xai" },
-    },
+    401: { claude:{msg:"Your Anthropic key isn't working.",fix:"anthropic"}, gpt:{msg:"Your OpenAI key isn't working.",fix:"openai"}, gemini:{msg:"Your Google AI key isn't working.",fix:"google"}, grok:{msg:"Your xAI key isn't working.",fix:"xai"} },
+    429: { claude:{msg:"Claude is rate limited.",fix:null}, gpt:{msg:"ChatGPT hit its rate limit.",fix:null}, gemini:{msg:"Gemini's free tier is exhausted.",fix:"google_billing",url:"https://aistudio.google.com/app/plan"}, grok:{msg:"Grok is rate limited.",fix:null} },
+    402: { grok:{msg:"Your xAI account has no credits.",fix:"xai"} },
   }
-  return messages[status]?.[agentId] || { msg: `${agentId} returned an error. Check your API key in Settings.`, fix: null }
+  return messages[status]?.[agentId] || { msg: `${agentId} returned an error. Check your API key.`, fix: null }
 }
 
-// ── Proactive notices ─────────────────────────────────────────────────
 export function getProactiveNotices(settings) {
   const notices = []
   const agents = settings?.agents || {}
   const tools = settings?.tools || {}
-
   const connected = Object.values(agents).filter(a => a.key && a.enabled).length
-  if (connected === 0) {
-    notices.push({ priority:"critical", message:"No AI agents connected. Add at least one API key to get started.", fix:"anthropic" })
-  }
-  if (tools.dalle?.enabled && !agents.gpt?.key) {
-    notices.push({ priority:"high", message:"DALL-E is enabled but needs an OpenAI key in Agents → ChatGPT.", fix:"openai" })
-  }
-  if (tools.elevenlabs?.enabled && !tools.elevenlabs?.key) {
-    notices.push({ priority:"medium", message:"ElevenLabs is enabled but needs an API key in Tools → Voice.", fix:"elevenlabs" })
-  }
-  if (tools.perplexity?.enabled && !tools.perplexity?.key) {
-    notices.push({ priority:"medium", message:"Perplexity search is enabled but needs an API key in Tools → Search.", fix:"perplexity" })
-  }
+  if (connected === 0) notices.push({ priority:"critical", message:"No AI agents connected. Add at least one API key to get started.", fix:"anthropic" })
+  if (tools.dalle?.enabled && !agents.gpt?.key) notices.push({ priority:"high", message:"DALL-E is enabled but needs an OpenAI key in Agents → ChatGPT.", fix:"openai" })
+  if (tools.elevenlabs?.enabled && !tools.elevenlabs?.key) notices.push({ priority:"medium", message:"ElevenLabs is enabled but needs an API key in Tools → Voice.", fix:"elevenlabs" })
+  if (tools.perplexity?.enabled && !tools.perplexity?.key) notices.push({ priority:"medium", message:"Perplexity search is enabled but needs an API key in Tools → Search.", fix:"perplexity" })
   return notices.sort((a,b) => ({critical:0,high:1,medium:2,low:3})[a.priority] - ({critical:0,high:1,medium:2,low:3})[b.priority])
 }
