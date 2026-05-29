@@ -285,6 +285,8 @@ BUILD-INTERNAL TOOLS (always available in build mode):
 - gsheets ({title,sheets[{name,rows[][]}]} → Google Sheet in user's Drive, returns link)
 - gcal ({summary,start,end,description?,attendees?[]} → Google Calendar event, ISO times or {date} for all-day)
 - notion ({parentPageId|parentDatabaseId, title, sections:[{heading,body,items?[]}]} → Notion page; requires user's notion token + parent must be shared with their integration)
+- twilio ({to:"+E.164", from:"+E.164", body} → sends an SMS via the user's Twilio account; needs Twilio credentials)
+- stripe ({name, amount, currency?:"usd", description?, after_completion_url?} → Stripe payment link; amount in dollars (49.99) or cents (4999); test mode auto-detected from sk_test_ key)
 
 Variable interpolation: "{stepId}" or "{stepId.field}" in input.
 Dependency order via needs[].
@@ -383,7 +385,7 @@ export async function orchestrate({
     'agent_synth', 'pptxgen', 'docgen', 'pdfgen',
     'xlsxgen', 'htmlgen', 'mdgen', 'codezip',
     'image_per_slide', 'narrate_per_slide',
-    'gmail', 'gsheets', 'gcal', 'notion',
+    'gmail', 'gsheets', 'gcal', 'notion', 'twilio', 'stripe',
   ])
   const isToolAllowed = (toolId) => BUILD_INTERNAL_TOOLS.has(toolId) || !!enabledTools?.[toolId]
 

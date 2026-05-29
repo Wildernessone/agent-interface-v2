@@ -1201,6 +1201,141 @@ const imagePerSlide = {
   },
 }
 
+// ── Twilio SMS — send a text from the user's Twilio number ────────
+// Twilio needs two credentials: Account SID + Auth Token. To avoid
+// a second key field per-tool, users paste them concatenated in the
+// key slot: "AC<account_sid>:<auth_token>". The tool splits and
+// forwards both as Basic auth.
+const twilio = {
+  id: 'twilio',
+  name: 'Twilio SMS',
+  category: 'action',
+  capability: 'send an SMS to a phone number (incl. the user\'s own) — useful for "text the link when done"',
+  desc: 'Sends SMS via your Twilio account. Paste credentials as AC<sid>:<auth_token>.',
+  keySource: 'tool_keys.twilio',
+  keyPrefix: 'AC',
+  docsUrl: 'https://console.twilio.com',
+  setupHint: 'In Twilio Console copy your Account SID (starts with AC...) and Auth Token. Paste them here joined with a colon: "AC123...:authtoken123...". Also set your Twilio phone number in the build input as {from:"+15551234567"}.',
+  status: 'live',
+  async run({ structuredInput, prompt, key, proxy }) {
+    if (!key || !key.includes(':')) {
+      throw new ToolError('twilio', 'missing_key', 'Twilio needs credentials as "AC<sid>:<auth_token>".')
+    }
+    const data = (typeof structuredInput === 'object' && structuredInput) || {}
+    const to = data.to
+    const from = data.from
+    const body = data.body || prompt || ''
+    if (!to) throw new ToolError('twilio', 'no_recipient', 'SMS needs a "to" phone number in E.164 format (e.g. +15551234567).')
+    if (!from) throw new ToolError('twilio', 'no_sender', 'SMS needs a "from" — one of your Twilio numbers in E.164 format.')
+    if (!body.trim()) throw new ToolError('twilio', 'no_body', 'SMS body is empty.')
+
+    const res = await proxy('twilio', { to, from, body }, { 'x-twilio-creds': key })
+    if (!res.ok) {
+      const t = await res.text().catch(() => '')
+      if (res.status === 401) {
+        throw new ToolError('twilio', 'bad_token', 'Twilio rejected your credentials. Re-copy from Console.')
+      }
+      throw new ToolError('twilio', 'bad_response', `Twilio returned ${res.status}: ${t.slice(0, 200)}`)
+    }
+    const json = await res.json()
+    return {
+      type: 'action',
+      tool: 'twilio',
+      summary: `SMS sent to ${to}`,
+      meta: { sid: json.sid, status: json.status, from, to },
+    }
+  },
+}
+
+// ── Stripe Payment Link — create a one-off payment link ───────────
+// Single key (Stripe secret key). No Worker route — Stripe's REST
+// API takes Bearer auth, so we call it directly. Creates a Payment
+// Link with an inline Product + Price so the user doesn't need to
+// pre-create products in their Stripe dashboard.
+const stripe = {
+  id: 'stripe',
+  name: 'Stripe payment link',
+  category: 'action',
+  capability: 'create a Stripe payment link for one-off charges (amount, currency, product name) — returns a shareable checkout URL',
+  desc: 'Uses your Stripe secret key. Creates a one-off Product + Price + Payment Link in one call.',
+  keySource: 'tool_keys.stripe',
+  keyPrefix: 'sk_',
+  docsUrl: 'https://dashboard.stripe.com/apikeys',
+  setupHint: 'Use a TEST key (sk_test_...) until you\'re ready to take real money. Live keys (sk_live_...) charge real cards.',
+  status: 'live',
+  async run({ structuredInput, key }) {
+    if (!key || !key.startsWith('sk_')) {
+      throw new ToolError('stripe', 'missing_key', 'Stripe needs a secret key (starts with sk_).')
+    }
+    const data = (typeof structuredInput === 'object' && structuredInput) || {}
+    const name = data.name || data.product_name || 'Payment'
+    const amount = Number(data.amount)
+    const currency = (data.currency || 'usd').toLowerCase()
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new ToolError('stripe', 'bad_amount', 'Stripe needs an "amount" in dollars (e.g. 49.99) or cents (e.g. 4999). Use one consistently.')
+    }
+    // Accept dollars (49.99) or cents (4999). Integers >= 1000 are
+    // treated as cents; decimals or smaller integers as dollars.
+    const unitAmountCents = Number.isInteger(amount) && amount >= 1000
+      ? amount
+      : Math.round(amount * 100)
+
+    // Stripe wants form-encoded bodies, not JSON.
+    const post = async (path, form) => {
+      const res = await fetch(`https://api.stripe.com/v1/${path}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: form.toString(),
+      })
+      return res
+    }
+
+    const productForm = new URLSearchParams()
+    productForm.set('name', name.slice(0, 250))
+    if (data.description) productForm.set('description', String(data.description).slice(0, 500))
+    const prodRes = await post('products', productForm)
+    if (!prodRes.ok) {
+      const t = await prodRes.text().catch(() => '')
+      if (prodRes.status === 401) throw new ToolError('stripe', 'bad_token', 'Stripe rejected your key.')
+      throw new ToolError('stripe', 'bad_response', `Stripe (product) ${prodRes.status}: ${t.slice(0, 200)}`)
+    }
+    const product = await prodRes.json()
+
+    const priceForm = new URLSearchParams()
+    priceForm.set('product', product.id)
+    priceForm.set('currency', currency)
+    priceForm.set('unit_amount', String(unitAmountCents))
+    const priceRes = await post('prices', priceForm)
+    if (!priceRes.ok) {
+      const t = await priceRes.text().catch(() => '')
+      throw new ToolError('stripe', 'bad_response', `Stripe (price) ${priceRes.status}: ${t.slice(0, 200)}`)
+    }
+    const price = await priceRes.json()
+
+    const linkForm = new URLSearchParams()
+    linkForm.set('line_items[0][price]', price.id)
+    linkForm.set('line_items[0][quantity]', '1')
+    if (data.after_completion_url) {
+      linkForm.set('after_completion[type]', 'redirect')
+      linkForm.set('after_completion[redirect][url]', data.after_completion_url)
+    }
+    const linkRes = await post('payment_links', linkForm)
+    if (!linkRes.ok) {
+      const t = await linkRes.text().catch(() => '')
+      throw new ToolError('stripe', 'bad_response', `Stripe (link) ${linkRes.status}: ${t.slice(0, 200)}`)
+    }
+    const link = await linkRes.json()
+    const isTest = key.startsWith('sk_test_')
+    return {
+      type: 'action',
+      tool: 'stripe',
+      summary: `Stripe payment link created — ${currency.toUpperCase()} ${(unitAmountCents / 100).toFixed(2)}${isTest ? ' (TEST mode)' : ''}`,
+      link: link.url,
+      meta: { paymentLinkId: link.id, productId: product.id, priceId: price.id, amountCents: unitAmountCents, currency, mode: isTest ? 'test' : 'live' },
+    }
+  },
+}
+
 // ── Notion — create a page in a user's Notion workspace ───────────
 // Uses an "Internal Integration" token (no OAuth dance): user goes to
 // notion.com/my-integrations → New integration → copies the token →
@@ -1381,7 +1516,7 @@ export const TOOL_REGISTRY = [
   // Per-slide bundles (synced visuals + narration for deck builds)
   imagePerSlide, narratePerSlide,
   // Action layer
-  gmail, gsheets, gcal, notion,
+  gmail, gsheets, gcal, notion, twilio, stripe,
   // Meta — panel-as-tool for multi-step builds
   agentSynth,
 ]

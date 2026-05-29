@@ -284,6 +284,31 @@ const ROUTES = {
     return new Response(JSON.stringify({ error: 'timeout' }), { status: 504, headers: { 'Content-Type': 'application/json' } })
   },
 
+  twilio: async (req) => {
+    // Twilio uses Basic auth with sid:token. The client sends them as
+    // a single concatenated string via x-twilio-creds because the tool
+    // stores both in one setting slot.
+    const creds = req.headers.get('x-twilio-creds')
+    if (!creds || !creds.includes(':')) return new Response(JSON.stringify({ error: 'bad_creds' }), { status: 400 })
+    const [sid] = creds.split(':')
+    const body = await req.json()
+    if (!body.to || !body.from || !body.body) {
+      return new Response(JSON.stringify({ error: 'missing_fields' }), { status: 400 })
+    }
+    const form = new URLSearchParams()
+    form.set('To', body.to)
+    form.set('From', body.from)
+    form.set('Body', body.body.slice(0, 1600))
+    return fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${btoa(creds)}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: form.toString(),
+    })
+  },
+
   suno: async (req) => {
     const auth = req.headers.get('Authorization')
     if (!auth) return new Response(JSON.stringify({ error: 'missing_provider_key' }), { status: 400 })
