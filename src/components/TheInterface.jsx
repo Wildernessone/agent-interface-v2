@@ -329,11 +329,16 @@ export default function TheInterface() {
           ? agentMemory.slice(0, 8).map(m => `[${m.title}]: ${m.content.slice(0, 300)}`).join("\n")
           : ""
 
+        // Per-agent skills toggle: when false, this agent's prompt won't
+        // include shared/ or its own skill files. Default true so users
+        // who haven't touched the setting get the full benefit.
+        const agentUseSkills = settings.agents[agent.id]?.useSkills !== false
+
         const baseSystemPrompt = buildSystemPrompt({
           activeAgentIds: selected.map(a => a.id),
           enabledTools, mode: activeResponseMode, round: round + 1, totalRounds,
           agentId: agent.id, voiceMode, memoryContext, role,
-          skills,  // user-curated knowledge from Drive/Agent Interface/Skills/
+          skills, useSkills: agentUseSkills,
         })
 
         const streamOnce = (systemPrompt) => new Promise((resolve) => {
