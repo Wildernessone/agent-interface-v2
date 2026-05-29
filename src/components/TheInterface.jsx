@@ -320,6 +320,24 @@ export default function TheInterface() {
     const totalRounds = clawDecision?.rounds || 1
     const activeResponseMode = clawDecision?.response_mode || responseMode
 
+    // Telemetry: log every orchestrate decision so we can see which modes
+    // users land on most. Drives future defaults (e.g. if 70% of turns
+    // land in frugal, we should make frugal the default).
+    logUsage({
+      kind: 'orchestrate',
+      provider: 'openclaw',
+      model: 'openclaw',
+      success: true,
+      metadata: {
+        spend_mode: spendMode,
+        mode: clawDecision?.mode || 'discuss',
+        agent_count: respondingAgents.length,
+        connected_agents: activeAgents.map(a => a.id),
+        rounds: totalRounds,
+        is_build: isBuildMode,
+      },
+    })
+
     if (clawDecision?.correction?.detected && clawDecision?.correction?.save_to_memory) {
       processCorrection(clawDecision, settings, saveMemory)
     }
@@ -570,11 +588,24 @@ export default function TheInterface() {
           if (turn.type === "claw") {
             const rolePairs = turn.roleAssignments ? Object.entries(turn.roleAssignments) : []
             const spendLabel = turn.spendMode === 'frugal' ? 'lite' : turn.spendMode === 'premium' ? 'premium' : null
+            const spendTitle = turn.spendMode === 'frugal'
+              ? 'Saving tokens — cheapest agents, skills off, no audit retry'
+              : turn.spendMode === 'premium'
+              ? 'Max quality — capable agents, skills on, audit retry on'
+              : null
             return (
               <div key={turn.id} className="ai-claw">
-                <span className={`ai-claw-tag ai-claw-tag--${turn.mode}`}>
-                  OpenClaw · {turn.mode}{spendLabel ? ` · ${spendLabel}` : ''}
-                </span>
+                <div className="ai-claw-tag-row">
+                  <span className={`ai-claw-tag ai-claw-tag--${turn.mode}`}>OpenClaw · {turn.mode}</span>
+                  {spendLabel && (
+                    <span
+                      className={`ai-claw-spend ai-claw-spend--${turn.spendMode}`}
+                      title={spendTitle}
+                    >
+                      {spendLabel}
+                    </span>
+                  )}
+                </div>
                 <p className="ai-claw-text">{turn.reasoning}</p>
                 {turn.plan?.length > 0 && (
                   <span className="ai-claw-plan">

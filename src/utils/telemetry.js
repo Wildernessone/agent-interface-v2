@@ -50,7 +50,7 @@ export async function checkTierLimits() {
   }
 }
 
-export async function logUsage({ kind, provider, model, tokensIn = 0, tokensOut = 0, costCents = 0, success = true, errorType = null }) {
+export async function logUsage({ kind, provider, model, tokensIn = 0, tokensOut = 0, costCents = 0, success = true, errorType = null, metadata = null }) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { ok: true }
   const { error } = await supabase.from('usage_events').insert({
@@ -63,6 +63,7 @@ export async function logUsage({ kind, provider, model, tokensIn = 0, tokensOut 
     cost_cents: costCents,
     success,
     error_type: errorType,
+    metadata: metadata || {},
     created_at: new Date().toISOString(),
   })
   if (error) {

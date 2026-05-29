@@ -162,6 +162,129 @@ function emptyResult() {
   return { shared: [], claude: [], gpt: [], gemini: [], grok: [] }
 }
 
+// Starter skills dropped into Skills/shared/ on first setup so users
+// see what good skills look like instead of staring at an empty folder.
+// All three nudge the agents toward useful behavior without locking
+// them into any one workflow — they're examples, not requirements.
+const SEED_SKILLS = [
+  {
+    filename: 'be-direct.md',
+    content: `---
+name: Be Direct
+description: Skip the throat-clearing — lead with the answer
+---
+
+When you respond:
+- Lead with the answer in the first sentence. Save the "great question" stuff.
+- If you're uncertain, say "I'm not sure, but…" — don't hedge with weasel words.
+- When asked for a recommendation, pick one and defend it. Don't list five options unless asked.
+- Cut filler phrases: "It's worth noting that…", "As you may know…", "Importantly…".
+- If a one-line answer fits, give a one-line answer.
+
+The user can ask follow-ups. Don't pre-emptively answer questions they didn't ask.
+`,
+  },
+  {
+    filename: 'panel-etiquette.md',
+    content: `---
+name: Panel Etiquette
+description: How to act when other agents are also in the conversation
+---
+
+In multi-agent panels, the conversation history is tagged like \`[Claude]: …\`
+and \`[Gemini]: …\` so you can tell who said what.
+
+Rules of the room:
+- If another agent already nailed the point, build on it — don't restate it.
+- If you disagree, say so directly: "I'd push back on Gemini's take because…"
+- Reference other agents by name when you reply to them. Makes the thread legible.
+- Don't agree just to be polite. Productive disagreement is the whole point.
+- Don't try to take over. The user picked a panel; play your part.
+`,
+  },
+  {
+    filename: 'project-context.md',
+    content: `---
+name: Project Context
+description: Notes the agents should keep in mind about the user
+---
+
+Replace this file with anything you want every agent to know about you
+or your work — they'll see it on every conversation.
+
+Examples:
+- "I run a small coffee roastery called Salt+Pine. My audience is wholesale buyers."
+- "Default to imperial units. I'm in the US."
+- "I prefer plain text over markdown headers in casual replies."
+- "When you write code, use TypeScript with strict mode. No \`any\`."
+
+The more specific you get here, the less you'll need to re-explain
+yourself every conversation.
+`,
+  },
+]
+
+/**
+ * Upload the SEED_SKILLS into Skills/shared/. Idempotent: skips any
+ * file whose name already exists in that folder, so it's safe to call
+ * if the user has already added their own skills.
+ */
+export async function seedExampleSkills() {
+  try {
+    const token = await getValidDriveToken()
+    if (!token) return { ok: false, reason: 'no_drive' }
+
+    const rootId = await findOrCreateFolder(token, ROOT_FOLDER_NAME)
+    if (!rootId) return { ok: false, reason: 'create_root_failed' }
+    const skillsId = await findOrCreateFolder(token, SKILLS_FOLDER_NAME, rootId)
+    if (!skillsId) return { ok: false, reason: 'create_skills_failed' }
+    const sharedId = await findOrCreateFolder(token, 'shared', skillsId)
+    if (!sharedId) return { ok: false, reason: 'create_shared_failed' }
+
+    const existing = await listMarkdownFiles(token, sharedId)
+    const existingNames = new Set(existing.map(f => (f.name || '').toLowerCase()))
+
+    let added = 0
+    let skipped = 0
+    for (const seed of SEED_SKILLS) {
+      if (existingNames.has(seed.filename.toLowerCase())) { skipped++; continue }
+      const ok = await uploadMarkdown(token, sharedId, seed.filename, seed.content)
+      if (ok) added++
+    }
+    return { ok: true, added, skipped, folderLink: `https://drive.google.com/drive/folders/${sharedId}` }
+  } catch (e) {
+    logError('seedExampleSkills', e)
+    return { ok: false, reason: 'exception' }
+  }
+}
+
+// Multipart upload — needed because Drive's simple POST doesn't take
+// a filename and parent in the same request.
+async function uploadMarkdown(token, parentId, name, content) {
+  const boundary = '-------skills-' + Date.now()
+  const metadata = { name, mimeType: 'text/markdown', parents: [parentId] }
+  const body =
+    `--${boundary}\r\n` +
+    `Content-Type: application/json; charset=UTF-8\r\n\r\n` +
+    JSON.stringify(metadata) + `\r\n` +
+    `--${boundary}\r\n` +
+    `Content-Type: text/markdown\r\n\r\n` +
+    content + `\r\n` +
+    `--${boundary}--`
+  const res = await fetch(
+    'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': `multipart/related; boundary=${boundary}`,
+      },
+      body,
+    }
+  )
+  return res.ok
+}
+
 /**
  * Create Agent Interface/Skills/{shared,claude,gpt,gemini,grok} folder
  * structure in the user's Drive. Idempotent — safe to call repeatedly.

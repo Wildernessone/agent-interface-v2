@@ -670,6 +670,50 @@
   border-color: var(--color-accent);
   background: var(--color-accent-soft);
 }
+.ai-claw-tag-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+/* Spend-mode badge sits next to the mode tag. Visually quieter than the
+   mode tag (it's a modifier, not the headline) but distinctive enough to
+   notice — frugal in green (savings), premium in violet (luxury). */
+.ai-claw-spend {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-family-mono);
+  font-size: 10px;
+  font-weight: var(--font-weight-medium);
+  letter-spacing: var(--letter-spacing-wide);
+  text-transform: uppercase;
+  border: 1px solid transparent;
+  cursor: help;
+}
+.ai-claw-spend--frugal {
+  color: #1e7d4e;
+  background: rgba(30, 125, 78, 0.10);
+  border-color: rgba(30, 125, 78, 0.25);
+}
+.ai-claw-spend--premium {
+  color: #6b3fb8;
+  background: rgba(107, 63, 184, 0.10);
+  border-color: rgba(107, 63, 184, 0.25);
+}
+@media (prefers-color-scheme: dark) {
+  .ai-claw-spend--frugal {
+    color: #5fcf95;
+    background: rgba(95, 207, 149, 0.12);
+    border-color: rgba(95, 207, 149, 0.30);
+  }
+  .ai-claw-spend--premium {
+    color: #b794f4;
+    background: rgba(183, 148, 244, 0.12);
+    border-color: rgba(183, 148, 244, 0.30);
+  }
+}
 .ai-claw-text {
   color: var(--color-text-secondary);
   font-size: var(--font-size-sm);

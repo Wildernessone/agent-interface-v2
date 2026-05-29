@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useStore } from '../store/useStore'
-import { ensureSkillsFolders } from '../utils/skillsLoader'
+import { ensureSkillsFolders, seedExampleSkills } from '../utils/skillsLoader'
 
 const AGENT_LABELS = {
   shared: 'Shared (all agents)',
@@ -14,12 +14,15 @@ export default function SkillsTab() {
   const { skills, loadSkills, settings, updateSetting } = useStore()
   const [setupBusy, setSetupBusy] = useState(false)
   const [setupResult, setSetupResult] = useState(null)
+  const [seedBusy, setSeedBusy] = useState(false)
+  const [seedResult, setSeedResult] = useState(null)
   const loading = skills?.loading
 
   useEffect(() => { loadSkills() }, [])
 
   const handleRefresh = async () => {
     setSetupResult(null)
+    setSeedResult(null)
     await loadSkills()
   }
 
@@ -29,6 +32,15 @@ export default function SkillsTab() {
     const result = await ensureSkillsFolders()
     setSetupResult(result)
     setSetupBusy(false)
+    if (result.ok) await loadSkills()
+  }
+
+  const handleSeed = async () => {
+    setSeedBusy(true)
+    setSeedResult(null)
+    const result = await seedExampleSkills()
+    setSeedResult(result)
+    setSeedBusy(false)
     if (result.ok) await loadSkills()
   }
 
@@ -111,6 +123,24 @@ export default function SkillsTab() {
             3. Come back here and tap Refresh — you'll see it appear below.<br/><br/>
             <strong>Tip:</strong> Claude Skills files from anywhere on the web work as-is. Just drag them into the right folder.
           </p>
+          <div style={{ marginTop: 'var(--space-3)', display: 'flex', alignItems: 'center', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
+            <button className="ai-btn" onClick={handleSeed} disabled={seedBusy || loading}>
+              {seedBusy ? 'Adding…' : 'Add 3 example skills'}
+            </button>
+            <span className="settings-helper" style={{ margin: 0, fontSize: 'var(--font-size-xs)' }}>
+              Drops <code>be-direct.md</code>, <code>panel-etiquette.md</code>, and <code>project-context.md</code> into <code>Skills/shared/</code> to show you the format.
+            </span>
+          </div>
+          {seedResult && (
+            <div className="settings-helper" style={{ marginTop: 'var(--space-3)' }}>
+              {seedResult.ok
+                ? <>Added {seedResult.added} file{seedResult.added === 1 ? '' : 's'}{seedResult.skipped > 0 ? ` (${seedResult.skipped} already existed)` : ''}. <a className="settings-link" href={seedResult.folderLink} target="_blank" rel="noreferrer">Open shared folder ↗</a></>
+                : seedResult.reason === 'no_drive'
+                  ? 'Drive isn\'t connected. Go to Storage and connect first.'
+                  : 'Couldn\'t add example skills. Check Drive permissions and try again.'
+              }
+            </div>
+          )}
         </section>
       )}
 
