@@ -387,7 +387,7 @@ const agentSynth = {
       const res = await fetch(`${PROXY}/claude`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-api-key': cfg.key, ...supaAuth },
-        body: JSON.stringify({ messages: [{ role: 'user', content: fullPrompt }] }),
+        body: JSON.stringify({ messages: [{ role: 'user', content: fullPrompt }], max_tokens: 8192 }),
       })
       if (!res.ok) throw new ToolError('agent_synth', 'bad_response', `claude_${res.status}`)
       const data = await res.json()
@@ -396,14 +396,14 @@ const agentSynth = {
       const res = await fetch(`${PROXY}/gpt`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.key}`, ...supaAuth },
-        body: JSON.stringify({ messages: [{ role: 'user', content: fullPrompt }] }),
+        body: JSON.stringify({ messages: [{ role: 'user', content: fullPrompt }], max_tokens: 8192 }),
       })
       raw = await res.text()
     } else if (cfg.provider === 'gemini') {
       const res = await fetch(`${PROXY}/gemini`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-api-key': cfg.key, ...supaAuth },
-        body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: fullPrompt }] }] }),
+        body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: fullPrompt }] }], generationConfig: { maxOutputTokens: 8192 } }),
       })
       raw = await res.text()
     }
