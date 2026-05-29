@@ -14,15 +14,17 @@ const DEFAULT_SETTINGS = {
     gemini:  { enabled: false, key: '' },
     grok:    { enabled: false, key: '' },
   },
-  // Per-tool enabled flags. Just on/off — the actual key for every
-  // tool lives in toolKeys below.
   tools: {},
-  // Single source of truth for tool API keys, mirroring the
-  // user_api_keys.tool_keys jsonb column. Adding a new tool means
-  // adding one entry to the registry — no changes here.
   toolKeys: {},
   voiceModeEnabled: false,
   agentVoices: {},
+}
+
+const EMPTY_SKILLS = {
+  shared: [], claude: [], gpt: [], gemini: [], grok: [],
+  loadedAt: null,
+  loading: false,
+  error: null,
 }
 
 export const useStore = create((set, get) => ({
@@ -68,7 +70,6 @@ export const useStore = create((set, get) => ({
               gemini:  { enabled: s?.enabled_agents?.gemini?.enabled  ?? false, key: k?.gemini_key  || '' },
               grok:    { enabled: s?.enabled_agents?.grok?.enabled    ?? false, key: k?.grok_key    || '' },
             },
-            // Enabled flags only — keys live in toolKeys
             tools: Object.fromEntries(
               Object.entries(s?.enabled_tools || {}).map(([id, v]) => [id, { enabled: !!v?.enabled }])
             ),
@@ -98,7 +99,6 @@ export const useStore = create((set, get) => ({
           accent: settings.accent,
           font_size: settings.fontSize,
           bubble_style: settings.bubbleStyle,
-
           enabled_agents: {
             claude:  { enabled: settings.agents.claude?.enabled ?? true },
             gpt:     { enabled: settings.agents.gpt?.enabled ?? true },
@@ -113,13 +113,10 @@ export const useStore = create((set, get) => ({
 
         supabase.from('user_api_keys').upsert({
           user_id: user.id,
-          // Agent keys remain as columns — they're the panel members,
-          // a different conceptual category from tools.
           claude_key: settings.agents.claude?.key || '',
           gpt_key:    settings.agents.gpt?.key    || '',
           gemini_key: settings.agents.gemini?.key || '',
           grok_key:   settings.agents.grok?.key   || '',
-          // Every tool key lives in this jsonb. One place. Forever.
           tool_keys:  settings.toolKeys || {},
           updated_at: new Date().toISOString(),
         }, { onConflict: 'user_id' }),
@@ -132,27 +129,55 @@ export const useStore = create((set, get) => ({
     }
   },
 
+  // ── Skills (loaded from Drive) ─────────────────────────────
+  // shared[] is read by every agent. claude[], gpt[], etc. are read
+  // only by the matching agent. Each entry: {name, content, tokenEst, ...}.
+  skills: EMPTY_SKILLS,
+
+  loadSkills: async () => {
+    set(state => ({ skills: { ...state.skills, loading: true, error: null } }))
+    try {
+      const { loadSkillsFromDrive } = await import('../utils/skillsLoader')
+      const result = await loadSkillsFromDrive()
+      if (!result) {
+        // No Drive connection or load failed silently. Keep empty arrays.
+        set({ skills: { ...EMPTY_SKILLS, loadedAt: new Date().toISOString(), error: 'drive_not_connected' } })
+        return
+      }
+      set({
+        skills: {
+          shared: result.shared || [],
+          claude: result.claude || [],
+          gpt:    result.gpt    || [],
+          gemini: result.gemini || [],
+          grok:   result.grok   || [],
+          loadedAt: new Date().toISOString(),
+          loading: false,
+          error: null,
+        },
+      })
+    } catch (e) {
+      logError('loadSkills', e)
+      set(state => ({ skills: { ...state.skills, loading: false, error: e.message || 'unknown' } }))
+    }
+  },
+
   turns: [],
   activeAgentId: null,
   conversationId: null,
 
   addTurn: (turn) => set(state => ({
     turns: [...state.turns, turn],
-    // Only agent turns set activeAgentId — user, claw, and tool turns are not "streaming"
     activeAgentId: turn.type === 'agent' ? turn.id : state.activeAgentId,
   })),
   appendChunk: (id, chunk) => set(state => ({ turns: state.turns.map(t => t.id === id ? { ...t, text: (t.text || '') + chunk } : t) })),
-  // Clear a turn's text and mark it for a retry pass (audit found drift)
   resetTurnForRetry: (id) => set(state => ({
     turns: state.turns.map(t => t.id === id ? { ...t, text: '', reRolled: true } : t),
     activeAgentId: id,
   })),
   finishTurn: () => set({ activeAgentId: null }),
-  addToolTurn: (turn) => set(state => ({ turns: [...state.turns, turn] })), // doesn't set activeAgentId
+  addToolTurn: (turn) => set(state => ({ turns: [...state.turns, turn] })),
   updateToolTurn: (id, patch) => set(state => ({ turns: state.turns.map(t => t.id === id ? { ...t, output: { ...t.output, ...patch } } : t) })),
-  // For build turns, patches merge at the top level. If a patch value is a
-  // function, it gets called with the current value (used for step status
-  // updates where we need to mutate one item in an array).
   updateBuildTurn: (id, patch) => set(state => ({
     turns: state.turns.map(t => {
       if (t.id !== id) return t
@@ -202,7 +227,6 @@ export const useStore = create((set, get) => ({
     } catch(e) { logError("loadConversation", e) }
   },
 
-  // ── Agent Memory ──────────────────────────────────────
   loadMemory: async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser()
@@ -220,10 +244,7 @@ export const useStore = create((set, get) => ({
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return null
       const { data } = await supabase.from("agent_memory").insert({
-        user_id: user.id,
-        title,
-        content,
-        source,
+        user_id: user.id, title, content, source,
         created_at: new Date().toISOString()
       }).select().single()
       return data
@@ -253,7 +274,6 @@ export const useStore = create((set, get) => ({
   setListening: (val) => set({ listening: val }),
   setVoiceStatus: (val) => set({ voiceStatus: val }),
 
-  // ── Projects ─────────────────────────────────────────────
   activeProject: null,
   projects: [],
   setActiveProject: (project) => set({ activeProject: project }),

@@ -1,6 +1,8 @@
 import { supabase } from './supabase'
 import { logError } from './telemetry'
 
+const PROXY = import.meta.env.VITE_PROXY_URL || 'https://claude-proxy.jamesreed.workers.dev'
+
 /**
  * Capture the Google Drive OAuth tokens from the Supabase session and
  * persist them to storage_connections. Called after OAuth callback redirects
@@ -35,35 +37,92 @@ export async function captureDriveTokens() {
   return !error
 }
 
-class DriveAuthExpired extends Error {
-  constructor() {
-    super('drive_auth_expired')
-    this.name = 'DriveAuthExpired'
+/**
+ * Exchange a Google refresh_token for a new access_token via our Worker proxy.
+ * The Worker holds the client_secret server-side (can't ship to the browser).
+ * On success, updates storage_connections with the new token + new expires_at.
+ * Returns the new access_token, or null on failure.
+ */
+async function refreshDriveAccessToken(userId, refreshToken) {
+  if (!refreshToken) return null
+  try {
+    const res = await fetch(`${PROXY}/refresh_google`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    })
+    if (!res.ok) {
+      logError('refreshDriveAccessToken', new Error(`worker_${res.status}`))
+      return null
+    }
+    const data = await res.json()
+    if (!data.access_token) return null
+
+    // Google returns expires_in (seconds). 60s safety buffer.
+    const expiresInSec = (data.expires_in || 3600) - 60
+    const expiresAt = new Date(Date.now() + expiresInSec * 1000).toISOString()
+
+    await supabase.from('storage_connections')
+      .update({
+        access_token: data.access_token,
+        expires_at: expiresAt,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('user_id', userId)
+      .eq('provider', 'google_drive')
+
+    return data.access_token
+  } catch (e) {
+    logError('refreshDriveAccessToken', e)
+    return null
   }
 }
 
+/**
+ * Read the current Drive connection. If the access_token is expired or
+ * close to expiring (< 5 min remaining), refresh it transparently first.
+ * Returns { access_token, root_folder_id } or null if no valid connection.
+ */
 async function getDriveToken() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null
   const { data } = await supabase
     .from('storage_connections')
-    .select('access_token, expires_at, root_folder_id')
+    .select('access_token, refresh_token, expires_at, root_folder_id')
     .eq('user_id', user.id)
     .eq('provider', 'google_drive')
     .maybeSingle()
   if (!data?.access_token) return null
 
-  // Honor expires_at if we have it — refuse to use a token we know is dead.
-  // Older connections saved before this field existed have expires_at: null
-  // and will fall through and let Google's 401 tell us instead.
-  if (data.expires_at && new Date(data.expires_at) < new Date()) {
+  // If expired or about to expire, refresh.
+  const expiresAt = data.expires_at ? new Date(data.expires_at) : null
+  const needsRefresh = !expiresAt || expiresAt < new Date(Date.now() + 5 * 60 * 1000)
+
+  if (needsRefresh && data.refresh_token) {
+    const newToken = await refreshDriveAccessToken(user.id, data.refresh_token)
+    if (newToken) return { ...data, access_token: newToken }
+    // Refresh failed — fall through and try the old token; it may still work
+    // for a moment, or Google's 401 will tell us to reconnect.
+  }
+  if (needsRefresh && !data.refresh_token) {
+    // Old connection from before refresh support — no refresh_token saved.
+    // The user needs to reconnect once to grant us a refresh_token.
     return null
   }
   return data
 }
 
+/**
+ * Public helper for skillsLoader and other modules that need a valid
+ * Drive access_token. Returns the access_token string or null.
+ */
+export async function getValidDriveToken() {
+  const conn = await getDriveToken()
+  return conn?.access_token || null
+}
+
 async function findOrCreateFolder(token, name, parentId = null) {
-  const parentClause = parentId ? ` and '${parentId}' in parents` : ""
+  const parentClause = parentId ? ` and '${parentId}' in parents` : ''
   const q = `name='${name.replace(/'/g, "\\'")}' and mimeType='application/vnd.google-apps.folder' and trashed=false${parentClause}`
   const search = await fetch(
     `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name)`,
@@ -73,11 +132,11 @@ async function findOrCreateFolder(token, name, parentId = null) {
   const data = await search.json()
   if (data.files?.[0]?.id) return data.files[0].id
 
-  const body = { name, mimeType: "application/vnd.google-apps.folder" }
+  const body = { name, mimeType: 'application/vnd.google-apps.folder' }
   if (parentId) body.parents = [parentId]
-  const create = await fetch("https://www.googleapis.com/drive/v3/files", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+  const create = await fetch('https://www.googleapis.com/drive/v3/files', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify(body),
   })
   if (!create.ok) throw new Error(`drive_create_folder_failed_${create.status}`)
@@ -86,7 +145,7 @@ async function findOrCreateFolder(token, name, parentId = null) {
 }
 
 async function ensureRootFolder(token) {
-  return findOrCreateFolder(token, "Agent Interface")
+  return findOrCreateFolder(token, 'Agent Interface')
 }
 
 async function ensureProjectFolder(token, rootId, project) {
@@ -94,12 +153,9 @@ async function ensureProjectFolder(token, rootId, project) {
 
   // Names can be slashed paths for nested build folders, e.g.
   //   "Salt+Pine Coffee Launch/2026-05-26 — Pitch deck"
-  // Walk the segments, find-or-create each, return the leaf.
   const segments = project.name.split('/').map(s => s.trim()).filter(Boolean)
   if (segments.length === 0) return rootId
 
-  // Cache shortcut: if storage_folder_id is set AND this is a single-
-  // segment path, trust the cache. For nested paths we always walk.
   if (segments.length === 1 && project?.storage_folder_id) return project.storage_folder_id
 
   let parent = rootId
@@ -110,7 +166,6 @@ async function ensureProjectFolder(token, rootId, project) {
     parent = id
   }
 
-  // Cache the top-level project folder so future single-segment paths skip the walk
   if (project?.id && topFolderId) {
     try {
       await supabase.from('projects')
@@ -123,21 +178,19 @@ async function ensureProjectFolder(token, rootId, project) {
 }
 
 async function uploadFile(token, parentId, filename, mimeType, body) {
-  // Resumable would be nicer, but multipart is simpler for small/medium files.
-  const boundary = "----agentinterface" + Math.random().toString(36).slice(2)
+  const boundary = '----agentinterface' + Math.random().toString(36).slice(2)
   const metadata = JSON.stringify({ name: filename, parents: [parentId], mimeType })
 
-  // Convert body to base64 if it's a Blob/ArrayBuffer
   let bodyB64
   if (body instanceof Blob) {
     const buf = await body.arrayBuffer()
     bodyB64 = btoa(String.fromCharCode(...new Uint8Array(buf)))
-  } else if (typeof body === "string" && body.startsWith("data:")) {
-    bodyB64 = body.split(",")[1]
-  } else if (typeof body === "string") {
+  } else if (typeof body === 'string' && body.startsWith('data:')) {
+    bodyB64 = body.split(',')[1]
+  } else if (typeof body === 'string') {
     bodyB64 = btoa(unescape(encodeURIComponent(body)))
   } else {
-    throw new Error("unsupported_body_type")
+    throw new Error('unsupported_body_type')
   }
 
   const multipartBody =
@@ -151,10 +204,10 @@ async function uploadFile(token, parentId, filename, mimeType, body) {
     `--${boundary}--`
 
   const res = await fetch(
-    "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink",
+    'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink',
     {
-      method: "POST",
-      headers: { "Content-Type": `multipart/related; boundary=${boundary}`, Authorization: `Bearer ${token}` },
+      method: 'POST',
+      headers: { 'Content-Type': `multipart/related; boundary=${boundary}`, Authorization: `Bearer ${token}` },
       body: multipartBody,
     }
   )
@@ -164,12 +217,6 @@ async function uploadFile(token, parentId, filename, mimeType, body) {
 
 /**
  * Save any tool output to the user's Google Drive.
- * If a project is provided, saves into "Agent Interface > <Project Name>/".
- * Otherwise saves into the flat "Agent Interface" folder.
- * Also writes a row in project_files when a project is provided.
- *
- * @param {{ url?: string, type: string, tool: string, prompt?: string }} output
- * @param {Object} [project] — optional active project row
  */
 export async function saveToDrive(output, project = null) {
   try {
@@ -210,7 +257,6 @@ export async function saveToDrive(output, project = null) {
     const filename = `${Date.now()}-${output.tool}-${safePrompt}.${ext}`
     const file = await uploadFile(token, folderId, filename, mimeType, body)
 
-    // Track the file row in project_files if a project context exists
     if (project?.id) {
       try {
         const { data: { user } } = await supabase.auth.getUser()
@@ -233,10 +279,8 @@ export async function saveToDrive(output, project = null) {
 
     return { id: file.id, webViewLink: file.webViewLink, folderId, folderLink }
   } catch (e) {
-    // 401 from any Drive call means the access token is dead. Wipe it
-    // from the DB so the UI re-prompts for a fresh connection instead of
-    // silently retrying with a token Google will keep rejecting.
     if (/_401$/.test(e.message || '')) {
+      // Token rejected by Google even after refresh — wipe so UI re-prompts
       try {
         const { data: { user } } = await supabase.auth.getUser()
         if (user) {

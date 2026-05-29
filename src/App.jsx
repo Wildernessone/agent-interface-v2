@@ -12,7 +12,7 @@ import './App.css'
 initTelemetry()
 
 export default function App() {
-  const { user, setUser, setSession, loadSettings, settings } = useStore()
+  const { user, setUser, setSession, loadSettings, settings, loadSkills } = useStore()
 
   // Live-apply theme + accent + font + bubble whenever settings change
   useEffect(() => { applyTheme(settings) }, [settings?.themeId, settings?.accent, settings?.fontSize, settings?.bubbleStyle])
@@ -28,6 +28,9 @@ export default function App() {
       if (session) {
         loadSettings()
         if (session.provider_token) captureDriveTokens()
+        // Pull skills from Drive into the store. Runs in the background;
+        // agents pick them up on the next system-prompt build.
+        loadSkills()
       }
     })
 
@@ -39,6 +42,7 @@ export default function App() {
         if (session) {
           loadSettings()
           if (session.provider_token) captureDriveTokens()
+          loadSkills()
         }
       }
     )
