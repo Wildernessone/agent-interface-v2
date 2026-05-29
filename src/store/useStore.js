@@ -9,10 +9,12 @@ const DEFAULT_SETTINGS = {
   bubbleStyle: 'Rounded',
   plan: 'free',
   agents: {
-    claude:  { enabled: true,  key: '' },
-    gpt:     { enabled: true,  key: '' },
-    gemini:  { enabled: false, key: '' },
-    grok:    { enabled: false, key: '' },
+    // useSkills: when true, this agent reads the matching Skills folder + shared/.
+    // When false, skills are skipped for this agent (saves tokens). Defaults true.
+    claude:  { enabled: true,  key: '', useSkills: true },
+    gpt:     { enabled: true,  key: '', useSkills: true },
+    gemini:  { enabled: false, key: '', useSkills: true },
+    grok:    { enabled: false, key: '', useSkills: true },
   },
   tools: {},
   toolKeys: {},
@@ -65,10 +67,26 @@ export const useStore = create((set, get) => ({
             primaryStorageProvider: s?.primary_storage_provider || null,
             plan: s?.plan || state.settings.plan,
             agents: {
-              claude:  { enabled: s?.enabled_agents?.claude?.enabled ?? true,  key: k?.claude_key  || '' },
-              gpt:     { enabled: s?.enabled_agents?.gpt?.enabled     ?? true,  key: k?.gpt_key     || '' },
-              gemini:  { enabled: s?.enabled_agents?.gemini?.enabled  ?? false, key: k?.gemini_key  || '' },
-              grok:    { enabled: s?.enabled_agents?.grok?.enabled    ?? false, key: k?.grok_key    || '' },
+              claude:  {
+                enabled:   s?.enabled_agents?.claude?.enabled   ?? true,
+                useSkills: s?.enabled_agents?.claude?.useSkills ?? true,
+                key:       k?.claude_key || '',
+              },
+              gpt:     {
+                enabled:   s?.enabled_agents?.gpt?.enabled   ?? true,
+                useSkills: s?.enabled_agents?.gpt?.useSkills ?? true,
+                key:       k?.gpt_key || '',
+              },
+              gemini:  {
+                enabled:   s?.enabled_agents?.gemini?.enabled   ?? false,
+                useSkills: s?.enabled_agents?.gemini?.useSkills ?? true,
+                key:       k?.gemini_key || '',
+              },
+              grok:    {
+                enabled:   s?.enabled_agents?.grok?.enabled   ?? false,
+                useSkills: s?.enabled_agents?.grok?.useSkills ?? true,
+                key:       k?.grok_key || '',
+              },
             },
             tools: Object.fromEntries(
               Object.entries(s?.enabled_tools || {}).map(([id, v]) => [id, { enabled: !!v?.enabled }])
@@ -100,10 +118,10 @@ export const useStore = create((set, get) => ({
           font_size: settings.fontSize,
           bubble_style: settings.bubbleStyle,
           enabled_agents: {
-            claude:  { enabled: settings.agents.claude?.enabled ?? true },
-            gpt:     { enabled: settings.agents.gpt?.enabled ?? true },
-            gemini:  { enabled: settings.agents.gemini?.enabled ?? false },
-            grok:    { enabled: settings.agents.grok?.enabled    ?? false },
+            claude:  { enabled: settings.agents.claude?.enabled ?? true,  useSkills: settings.agents.claude?.useSkills ?? true },
+            gpt:     { enabled: settings.agents.gpt?.enabled    ?? true,  useSkills: settings.agents.gpt?.useSkills    ?? true },
+            gemini:  { enabled: settings.agents.gemini?.enabled ?? false, useSkills: settings.agents.gemini?.useSkills ?? true },
+            grok:    { enabled: settings.agents.grok?.enabled   ?? false, useSkills: settings.agents.grok?.useSkills   ?? true },
           },
           enabled_tools: Object.fromEntries(
             Object.entries(settings.tools || {}).map(([id, v]) => [id, { enabled: v.enabled || false }])
@@ -129,9 +147,6 @@ export const useStore = create((set, get) => ({
     }
   },
 
-  // ── Skills (loaded from Drive) ─────────────────────────────
-  // shared[] is read by every agent. claude[], gpt[], etc. are read
-  // only by the matching agent. Each entry: {name, content, tokenEst, ...}.
   skills: EMPTY_SKILLS,
 
   loadSkills: async () => {
@@ -140,7 +155,6 @@ export const useStore = create((set, get) => ({
       const { loadSkillsFromDrive } = await import('../utils/skillsLoader')
       const result = await loadSkillsFromDrive()
       if (!result) {
-        // No Drive connection or load failed silently. Keep empty arrays.
         set({ skills: { ...EMPTY_SKILLS, loadedAt: new Date().toISOString(), error: 'drive_not_connected' } })
         return
       }

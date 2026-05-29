@@ -1,13 +1,12 @@
 import { ROLE_POOL } from './openClaw'
 import { TOOLS_BY_ID } from '../tools/registry'
 
-export function buildSystemPrompt({ activeAgentIds=[], enabledTools={}, mode="concise", round=1, totalRounds=1, agentId="claude", voiceMode=false, memoryContext="", leadAgent=null, role=null, skills=null }) {
+export function buildSystemPrompt({ activeAgentIds=[], enabledTools={}, mode="concise", round=1, totalRounds=1, agentId="claude", voiceMode=false, memoryContext="", leadAgent=null, role=null, skills=null, useSkills=true }) {
   const AGENT_NAMES = { claude:"Claude (Anthropic)", gpt:"ChatGPT (OpenAI)", gemini:"Gemini (Google)", grok:"Grok (xAI)" }
   const otherAgents = activeAgentIds.filter(id => id !== agentId).map(id => AGENT_NAMES[id] || id)
   const lines = []
   lines.push(`You are ${AGENT_NAMES[agentId] || agentId} in a live multi-agent AI panel.`)
 
-  // ROLE ASSIGNMENT — the dispatcher hands you a job for this turn.
   const roleDef = role && ROLE_POOL[role]
   if (roleDef) {
     lines.push(`\nYOUR ROLE THIS TURN: ${roleDef.name.toUpperCase()}`)
@@ -15,18 +14,18 @@ export function buildSystemPrompt({ activeAgentIds=[], enabledTools={}, mode="co
     lines.push(`Stay in role. Do not drift into being a generally-helpful assistant — that's what the panel exists to avoid.`)
   }
 
-  // Inject user memory context
   if (memoryContext) {
     lines.push(`\nWHAT YOU KNOW ABOUT THIS USER AND THEIR BUSINESS:`)
     lines.push(memoryContext)
     lines.push(`\nUse this context naturally in your responses. Don't announce that you have it — just use it.`)
   }
 
-  // SKILLS — user-curated knowledge dropped into their Drive Skills folder.
-  // shared/ applies to every agent; <agentId>/ applies only to this one.
-  // Each skill's `name` + `content` get inlined; `skipped:true` items are
-  // honored (dropped via the per-agent token cap).
-  if (skills && (skills.shared?.length || skills[agentId]?.length)) {
+  // SKILLS — user-curated knowledge from Drive/Agent Interface/Skills/.
+  // shared/ flows to every agent. <agentId>/ flows only to this one.
+  // Per-agent toggle (settings.agents[agentId].useSkills) gates the
+  // whole injection so users can save tokens for agents that don't
+  // need the extra context.
+  if (useSkills && skills && (skills.shared?.length || skills[agentId]?.length)) {
     const sharedActive = (skills.shared || []).filter(s => !s.skipped)
     const agentActive  = (skills[agentId] || []).filter(s => !s.skipped)
     const all = [...sharedActive, ...agentActive]
@@ -43,7 +42,6 @@ export function buildSystemPrompt({ activeAgentIds=[], enabledTools={}, mode="co
   }
 
   if (otherAgents.length > 0) lines.push(`Also on the panel: ${otherAgents.join(", ")}.`)
-  // Capability list comes from the registry — single source of truth
   const tools = Object.entries(enabledTools)
     .filter(([,v]) => v)
     .map(([id]) => TOOLS_BY_ID[id]?.capability)

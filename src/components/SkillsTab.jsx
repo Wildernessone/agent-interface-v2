@@ -11,12 +11,11 @@ const AGENT_LABELS = {
 }
 
 export default function SkillsTab() {
-  const { skills, loadSkills } = useStore()
+  const { skills, loadSkills, settings, updateSetting } = useStore()
   const [setupBusy, setSetupBusy] = useState(false)
   const [setupResult, setSetupResult] = useState(null)
   const loading = skills?.loading
 
-  // Refresh on mount so opening the tab always shows fresh state
   useEffect(() => { loadSkills() }, [])
 
   const handleRefresh = async () => {
@@ -33,6 +32,17 @@ export default function SkillsTab() {
     if (result.ok) await loadSkills()
   }
 
+  // Per-agent toggle: when off, that agent doesn't load shared/ or its own
+  // folder. Saves tokens (and money) for agents that don't need the extra
+  // context. Persisted via the existing enabled_agents jsonb column.
+  const toggleAgentSkills = (agentId) => {
+    const current = settings.agents?.[agentId] || {}
+    updateSetting('agents', {
+      ...settings.agents,
+      [agentId]: { ...current, useSkills: current.useSkills === false ? true : false },
+    })
+  }
+
   const agentOrder = ['shared', 'claude', 'gpt', 'gemini', 'grok']
   const allEmpty = agentOrder.every(k => !skills?.[k]?.length)
 
@@ -42,6 +52,23 @@ export default function SkillsTab() {
         Skills are <code>.md</code> files you drop into your Drive that extend what each agent knows.
         Drop <code>accountant.md</code> into <code>Skills/claude/</code> and Claude will reason like an accountant on every conversation. <code>Skills/shared/</code> applies to all agents. Files auto-load on sign-in.
       </p>
+
+      {/* TOKEN COST WARNING */}
+      <section className="settings-card" style={{ borderLeft: '2px solid var(--color-status-warning)' }}>
+        <div className="settings-row-title">⚡ Skills cost tokens</div>
+        <p className="settings-helper" style={{ marginTop: 'var(--space-2)' }}>
+          Every loaded skill gets prepended to that agent's system prompt on <em>every</em> message. More skills = bigger prompts = more tokens billed to your API key. Rough cost per 10K tokens of skills:
+        </p>
+        <ul style={{ margin: 'var(--space-2) 0 0', paddingLeft: 'var(--space-5)', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>
+          <li>Claude Sonnet — ~$0.03 per message</li>
+          <li>GPT-4o — ~$0.05 per message</li>
+          <li>Gemini Flash — ~$0.0008 per message (nearly free)</li>
+          <li>Grok — ~$0.05 per message</li>
+        </ul>
+        <p className="settings-helper" style={{ marginTop: 'var(--space-3)' }}>
+          <strong>Toggle the “Use skills” switch per agent below</strong> to disable skills for agents that don't need the extra context. Disabled agents read nothing — not shared, not their own folder.
+        </p>
+      </section>
 
       {/* Header actions */}
       <section className="settings-card">
@@ -95,8 +122,14 @@ export default function SkillsTab() {
         const dropped = items.filter(s => s.skipped)
         const totalTokens = active.reduce((sum, s) => sum + (s.tokenEst || 0), 0)
 
+        // Shared section has no per-agent toggle — it flows to whichever
+        // agents have useSkills on. Real agents get a toggle.
+        const isAgent = key !== 'shared'
+        const useSkills = !isAgent || settings.agents?.[key]?.useSkills !== false
+        const isDisabled = isAgent && !useSkills
+
         return (
-          <section className="settings-card" key={key}>
+          <section className={`settings-card${isDisabled ? ' settings-card--quiet' : ''}`} key={key}>
             <div className="settings-row">
               <div>
                 <div className="settings-row-title">
@@ -104,33 +137,47 @@ export default function SkillsTab() {
                   <span className="tool-status-badge" style={{ marginLeft: 'var(--space-3)' }}>
                     {active.length} skill{active.length === 1 ? '' : 's'} · ~{(totalTokens / 1000).toFixed(1)}K tokens
                   </span>
+                  {isDisabled && <span className="tool-status-badge" style={{ marginLeft: 'var(--space-2)' }}>skills off</span>}
                 </div>
-              </div>
-            </div>
-            <ul style={{ listStyle: 'none', padding: 0, margin: 'var(--space-3) 0 0', display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-              {active.map((s, i) => (
-                <li key={i} style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  padding: 'var(--space-2) var(--space-3)',
-                  background: 'var(--color-bg-primary)',
-                  borderRadius: 'var(--radius-sm)',
-                  fontSize: 'var(--font-size-sm)',
-                }}>
-                  <div>
-                    <span style={{ fontWeight: 'var(--font-weight-semibold)' }}>{s.name}</span>
-                    {s.description && <span style={{ color: 'var(--color-text-tertiary)', marginLeft: 'var(--space-2)' }}>— {s.description}</span>}
+                {isAgent && (
+                  <div className="settings-row-sub">
+                    {useSkills
+                      ? `Adds ~${(totalTokens / 1000).toFixed(1)}K tokens to every ${AGENT_LABELS[key]} message.`
+                      : `Skills disabled for ${AGENT_LABELS[key]}. Toggle on to inject this knowledge on every message.`
+                    }
                   </div>
-                  <span style={{ color: 'var(--color-text-tertiary)', fontSize: 'var(--font-size-xs)', fontFamily: 'var(--font-family-mono)' }}>
-                    ~{s.tokenEst} tokens
-                  </span>
-                </li>
-              ))}
-              {dropped.length > 0 && (
-                <li style={{ padding: 'var(--space-2) var(--space-3)', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>
-                  {dropped.length} older file{dropped.length === 1 ? '' : 's'} skipped (token cap reached). Newest files load first.
-                </li>
+                )}
+              </div>
+              {isAgent && (
+                <Toggle value={useSkills} onChange={() => toggleAgentSkills(key)} />
               )}
-            </ul>
+            </div>
+            {useSkills && (
+              <ul style={{ listStyle: 'none', padding: 0, margin: 'var(--space-3) 0 0', display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                {active.map((s, i) => (
+                  <li key={i} style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: 'var(--space-2) var(--space-3)',
+                    background: 'var(--color-bg-primary)',
+                    borderRadius: 'var(--radius-sm)',
+                    fontSize: 'var(--font-size-sm)',
+                  }}>
+                    <div>
+                      <span style={{ fontWeight: 'var(--font-weight-semibold)' }}>{s.name}</span>
+                      {s.description && <span style={{ color: 'var(--color-text-tertiary)', marginLeft: 'var(--space-2)' }}>— {s.description}</span>}
+                    </div>
+                    <span style={{ color: 'var(--color-text-tertiary)', fontSize: 'var(--font-size-xs)', fontFamily: 'var(--font-family-mono)' }}>
+                      ~{s.tokenEst} tokens
+                    </span>
+                  </li>
+                ))}
+                {dropped.length > 0 && (
+                  <li style={{ padding: 'var(--space-2) var(--space-3)', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>
+                    {dropped.length} older file{dropped.length === 1 ? '' : 's'} skipped (token cap reached). Newest files load first.
+                  </li>
+                )}
+              </ul>
+            )}
           </section>
         )
       })}
@@ -153,5 +200,18 @@ When analyzing tax questions, prefer concrete numbers...
 `}</pre>
       </section>
     </div>
+  )
+}
+
+function Toggle({ value, onChange }) {
+  return (
+    <button
+      className={`settings-toggle${value ? ' is-on' : ''}`}
+      onClick={onChange}
+      role="switch"
+      aria-checked={value}
+    >
+      <span className="settings-toggle-thumb"/>
+    </button>
   )
 }
