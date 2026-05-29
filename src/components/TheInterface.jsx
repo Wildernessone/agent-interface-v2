@@ -12,6 +12,7 @@ import { saveToCloud } from '../utils/cloudStorage'
 import { TOOLS_BY_ID, ToolError, readKey } from '../tools/registry'
 import { runBuild } from '../utils/buildExecutor'
 import { friendlyError, buildSummary, extractSlideTitles } from '../utils/buildErrors'
+import { estimateBuildCents, formatCents } from '../utils/buildCost'
 import { ingestFile, formatIngested } from '../utils/fileIngestion'
 import { supabase } from '../utils/supabase'
 import PromptLibrary from './PromptLibrary'
@@ -438,6 +439,7 @@ export default function TheInterface() {
   const executeBuild = async (planToRun) => {
     setToolsWorking(true)
     const buildTurnId = `build-${Date.now()}`
+    const cost = estimateBuildCents(planToRun.steps)
     addToolTurn({
       id: buildTurnId,
       type: 'build',
@@ -446,6 +448,7 @@ export default function TheInterface() {
       files: [],
       errors: [],
       plan: planToRun,  // stored so Retry can re-run the same plan
+      cost,
     })
 
     const result = await runBuild(
@@ -649,6 +652,14 @@ export default function TheInterface() {
               <div key={turn.id} className="ai-turn ai-build-card">
                 <div className="ai-build-header">
                   <div className="ai-build-title">📦 {turn.deliverable}</div>
+                  {turn.cost && (
+                    <div className="ai-build-cost" title="Rough estimate based on each tool's per-call cost. Real billing comes off your API keys.">
+                      Est. cost: <strong>{formatCents(turn.cost.totalCents)}</strong>
+                      {turn.cost.unknownSteps > 0 && (
+                        <span> (+ {turn.cost.unknownSteps} unknown)</span>
+                      )}
+                    </div>
+                  )}
                   {summary && <div className="ai-build-summary">{summary}</div>}
                   {done && turn.folderName && (
                     <div className="ai-build-folder">Saved to: <em>{turn.folderName}</em></div>

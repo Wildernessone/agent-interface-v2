@@ -282,7 +282,7 @@ const suno = {
   id: 'suno',
   name: 'Suno',
   category: 'audio_music',
-  capability: 'generate full songs with vocals',
+  capability: 'generate full songs with vocals (returns duration, tags, lyrics)',
   desc: 'Full songs with vocals from a description',
   keySource: 'tool_keys.suno',
   docsUrl: 'https://suno.com/account',
@@ -293,7 +293,18 @@ const suno = {
     if (!res.ok) throw new ToolError('suno', 'bad_response', await res.text().catch(() => `status ${res.status}`))
     const data = await res.json()
     if (!data.url) throw new ToolError('suno', 'bad_response', 'Suno returned no audio URL.')
-    return { type: 'audio', url: data.url, title: data.title || prompt.slice(0, 60), prompt, tool: 'suno' }
+    return {
+      type: 'audio',
+      url: data.url,
+      title: data.title || prompt.slice(0, 60),
+      prompt,
+      tool: 'suno',
+      meta: {
+        duration: data.duration ?? null,  // seconds — useful for syncing to video
+        tags: data.tags ?? null,
+        lyrics: data.lyrics ?? null,
+      },
+    }
   },
 }
 
@@ -303,18 +314,36 @@ const runway = {
   id: 'runway',
   name: 'Runway Gen-4',
   category: 'video',
-  capability: 'generate short AI videos from text',
-  desc: 'AI video generation, ~5s clips',
+  capability: 'generate short AI videos from text OR animate an existing image (5s or 10s, widescreen/portrait/square)',
+  desc: 'AI video — text-to-video OR image-to-video. Use {image_url: ...} to animate an image.',
   keySource: 'tool_keys.runway',
   docsUrl: 'https://app.runwayml.com/account',
   status: 'live',
-  async run({ prompt, key, proxy }) {
+  async run({ prompt, structuredInput, key, proxy, context }) {
     if (!key) throw new ToolError('runway', 'missing_key', 'Runway needs an API key.')
-    const res = await proxy('runway', { prompt: prompt.slice(0, 900) }, { Authorization: `Bearer ${key}` })
+    const cfg = (typeof structuredInput === 'object' && structuredInput) || {}
+    const body = {
+      prompt: (cfg.prompt || prompt || '').slice(0, 900),
+      duration: cfg.duration === 10 ? 10 : 5,
+      ratio: ['1280:720', '768:1280', '960:960'].includes(cfg.ratio) ? cfg.ratio : '1280:720',
+    }
+    // image_url can come from explicit input or upstream context (e.g.
+    // a DALL-E step that ran first and stashed its url in context).
+    const imageUrl = cfg.image_url || context?.sourceImageUrl
+    if (imageUrl) body.image_url = imageUrl
+
+    const res = await proxy('runway', body, { Authorization: `Bearer ${key}` })
     if (!res.ok) throw new ToolError('runway', 'bad_response', await res.text().catch(() => `status ${res.status}`))
     const data = await res.json()
     if (!data.url) throw new ToolError('runway', 'bad_response', 'Runway returned no video URL.')
-    return { type: 'video', url: data.url, prompt, tool: 'runway', duration: data.duration }
+    return {
+      type: 'video',
+      url: data.url,
+      prompt: body.prompt,
+      tool: 'runway',
+      duration: data.duration,
+      meta: { ratio: body.ratio, mode: imageUrl ? 'image_to_video' : 'text_to_video' },
+    }
   },
 }
 
@@ -1172,6 +1201,109 @@ const imagePerSlide = {
   },
 }
 
+// ── Notion — create a page in a user's Notion workspace ───────────
+// Uses an "Internal Integration" token (no OAuth dance): user goes to
+// notion.com/my-integrations → New integration → copies the token →
+// pastes it in Settings, then shares the parent page/database with the
+// integration in Notion's UI.
+//
+// Input: { parentPageId | parentDatabaseId, title, sections: [{heading, body}] }
+const notion = {
+  id: 'notion',
+  name: 'Notion page',
+  category: 'action',
+  capability: 'create a Notion page in a parent page or database (writes title + sections as headings+paragraphs)',
+  desc: 'Uses an Internal Integration token. Share the parent page with your integration after pasting the token.',
+  keySource: 'tool_keys.notion',
+  keyPrefix: 'ntn_',
+  docsUrl: 'https://www.notion.so/my-integrations',
+  setupHint: 'Create an integration at notion.com/my-integrations, paste the token here, then SHARE the target parent page/database with your integration in Notion (Share menu → invite your integration by name). Otherwise Notion returns "object not found".',
+  status: 'live',
+  async run({ structuredInput, key }) {
+    if (!key) throw new ToolError('notion', 'missing_key', 'Notion needs an Integration token.')
+    const data = typeof structuredInput === 'string' ? JSON.parse(structuredInput) : structuredInput
+    const parentPageId = data?.parentPageId || data?.parent_page_id
+    const parentDatabaseId = data?.parentDatabaseId || data?.parent_database_id
+    if (!parentPageId && !parentDatabaseId) {
+      throw new ToolError('notion', 'no_parent', 'Notion needs parentPageId or parentDatabaseId — copy the ID from the parent page URL.')
+    }
+    const title = data?.title || 'Untitled'
+    const sections = Array.isArray(data?.sections) ? data.sections : []
+
+    const parent = parentDatabaseId
+      ? { database_id: parentDatabaseId }
+      : { page_id: parentPageId }
+
+    // Property shape differs: database has structured "Name" property,
+    // child-page has title. Try database shape if database id given.
+    const properties = parentDatabaseId
+      ? { Name: { title: [{ text: { content: title.slice(0, 200) } }] } }
+      : { title: [{ text: { content: title.slice(0, 200) } }] }
+
+    // Flatten sections into Notion blocks: heading_2 + paragraph(s).
+    // Notion's max is 100 blocks per create; we cap at 90 to leave slack.
+    const blocks = []
+    for (const s of sections) {
+      if (s?.heading) {
+        blocks.push({
+          object: 'block',
+          type: 'heading_2',
+          heading_2: { rich_text: [{ type: 'text', text: { content: String(s.heading).slice(0, 2000) } }] },
+        })
+      }
+      if (s?.body) {
+        // Notion paragraphs cap at 2000 chars per rich_text. Split long bodies.
+        const chunks = String(s.body).match(/[\s\S]{1,1900}/g) || []
+        for (const chunk of chunks) {
+          blocks.push({
+            object: 'block',
+            type: 'paragraph',
+            paragraph: { rich_text: [{ type: 'text', text: { content: chunk } }] },
+          })
+        }
+      }
+      if (Array.isArray(s?.items)) {
+        for (const item of s.items.slice(0, 30)) {
+          blocks.push({
+            object: 'block',
+            type: 'bulleted_list_item',
+            bulleted_list_item: { rich_text: [{ type: 'text', text: { content: String(item).slice(0, 1900) } }] },
+          })
+        }
+      }
+      if (blocks.length >= 90) break
+    }
+
+    const res = await fetch('https://api.notion.com/v1/pages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${key}`,
+        'Notion-Version': '2022-06-28',
+      },
+      body: JSON.stringify({ parent, properties, children: blocks }),
+    })
+    if (!res.ok) {
+      const t = await res.text().catch(() => '')
+      if (res.status === 404) {
+        throw new ToolError('notion', 'no_parent', 'Notion can\'t find that parent — make sure you SHARED the parent page with your integration (Notion → Share menu → invite by integration name).')
+      }
+      if (res.status === 401) {
+        throw new ToolError('notion', 'bad_token', 'Notion rejected the token. Re-copy from notion.com/my-integrations.')
+      }
+      throw new ToolError('notion', 'bad_response', `Notion returned ${res.status}: ${t.slice(0, 200)}`)
+    }
+    const created = await res.json()
+    return {
+      type: 'action',
+      tool: 'notion',
+      summary: `Notion page "${title}" created`,
+      link: created.url,
+      meta: { pageId: created.id, blocksWritten: blocks.length, title },
+    }
+  },
+}
+
 // ── narrate_per_slide — ElevenLabs per slide for synced narration ──
 // Produces N audio files (one per slide) plus timing metadata, ready
 // to combine with the slide deck into a synced video later.
@@ -1249,7 +1381,7 @@ export const TOOL_REGISTRY = [
   // Per-slide bundles (synced visuals + narration for deck builds)
   imagePerSlide, narratePerSlide,
   // Action layer
-  gmail, gsheets, gcal,
+  gmail, gsheets, gcal, notion,
   // Meta — panel-as-tool for multi-step builds
   agentSynth,
 ]

@@ -949,6 +949,17 @@
   justify-content: flex-end;
   margin-top: var(--space-2);
 }
+.ai-build-cost {
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-tertiary);
+  margin-top: 2px;
+  cursor: help;
+}
+.ai-build-cost strong {
+  color: var(--color-text-secondary);
+  font-weight: var(--font-weight-medium);
+}
 .ai-btn--small {
   padding: 4px var(--space-3);
   font-size: var(--font-size-xs);

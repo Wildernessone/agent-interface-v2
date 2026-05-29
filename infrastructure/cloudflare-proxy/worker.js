@@ -250,11 +250,20 @@ const ROUTES = {
     const auth = req.headers.get('Authorization')
     if (!auth) return new Response(JSON.stringify({ error: 'missing_provider_key' }), { status: 400 })
     const body = await req.json()
-    // Start the generation
+    // Start the generation. promptImage makes it real image-to-video;
+    // omitting it keeps text-only behavior. Caller picks duration (5|10)
+    // and ratio (1280:720 widescreen, 768:1280 portrait, 960:960 square).
+    const payload = {
+      promptText: body.prompt,
+      model: 'gen3a_turbo',
+      duration: body.duration === 10 ? 10 : 5,
+      ratio: ['1280:720', '768:1280', '960:960'].includes(body.ratio) ? body.ratio : '1280:720',
+    }
+    if (body.image_url) payload.promptImage = body.image_url
     const start = await fetch('https://api.dev.runwayml.com/v1/image_to_video', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: auth, 'X-Runway-Version': '2024-11-06' },
-      body: JSON.stringify({ promptText: body.prompt, model: 'gen3a_turbo', duration: 5, ratio: '1280:720' }),
+      body: JSON.stringify(payload),
     })
     if (!start.ok) return start
     const job = await start.json()
@@ -298,7 +307,18 @@ const ROUTES = {
       const data = await status.json()
       const track = Array.isArray(data) ? data[0] : data?.data?.[0]
       if (track?.audio_url) {
-        return new Response(JSON.stringify({ url: track.audio_url, title: track.title }), { headers: { 'Content-Type': 'application/json' } })
+        // duration may be float seconds, sometimes ms — normalize to seconds
+        const rawDuration = track.duration ?? track.duration_seconds ?? null
+        const duration = typeof rawDuration === 'number'
+          ? (rawDuration > 600 ? Math.round(rawDuration / 1000) : Math.round(rawDuration))
+          : null
+        return new Response(JSON.stringify({
+          url: track.audio_url,
+          title: track.title,
+          duration,
+          tags: track.tags || null,
+          lyrics: track.lyric || track.lyrics || null,
+        }), { headers: { 'Content-Type': 'application/json' } })
       }
       if (track?.status === 'error') {
         return new Response(JSON.stringify({ error: 'suno_failed' }), { status: 502, headers: { 'Content-Type': 'application/json' } })

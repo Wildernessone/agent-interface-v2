@@ -284,6 +284,7 @@ BUILD-INTERNAL TOOLS (always available in build mode):
 - gmail ({to,subject,body} → sent email)
 - gsheets ({title,sheets[{name,rows[][]}]} → Google Sheet in user's Drive, returns link)
 - gcal ({summary,start,end,description?,attendees?[]} → Google Calendar event, ISO times or {date} for all-day)
+- notion ({parentPageId|parentDatabaseId, title, sections:[{heading,body,items?[]}]} → Notion page; requires user's notion token + parent must be shared with their integration)
 
 Variable interpolation: "{stepId}" or "{stepId.field}" in input.
 Dependency order via needs[].
@@ -382,7 +383,7 @@ export async function orchestrate({
     'agent_synth', 'pptxgen', 'docgen', 'pdfgen',
     'xlsxgen', 'htmlgen', 'mdgen', 'codezip',
     'image_per_slide', 'narrate_per_slide',
-    'gmail', 'gsheets', 'gcal',
+    'gmail', 'gsheets', 'gcal', 'notion',
   ])
   const isToolAllowed = (toolId) => BUILD_INTERNAL_TOOLS.has(toolId) || !!enabledTools?.[toolId]
 
