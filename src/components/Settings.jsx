@@ -217,6 +217,33 @@ export default function Settings({ onClose }) {
           {tab === "voice" && (
             <>
               <p className="settings-intro">Choose distinct ElevenLabs voices for each agent. Add your ElevenLabs key in Tools → Voice first.</p>
+
+              {/* Narrator voice — used by per-slide narration in builds.
+                  Defaults to Rachel; users can pick or paste their own
+                  cloned ElevenLabs voice ID. */}
+              <section className="settings-card">
+                <div className="settings-row">
+                  <div>
+                    <div className="settings-row-title">Narrator voice</div>
+                    <div className="settings-row-sub">Used when builds narrate slides or generate standalone audio. Paste your own cloned voice ID for personalized narration.</div>
+                  </div>
+                  <select
+                    className="settings-select"
+                    value={settings.narratorVoiceId || '21m00Tcm4TlvDq8ikWAM'}
+                    onChange={(e) => updateSetting("narratorVoiceId", e.target.value)}
+                  >
+                    {ELEVENLABS_VOICES.map(voice => (<option key={voice.id} value={voice.id}>{voice.name}</option>))}
+                  </select>
+                </div>
+                <label className="settings-label" style={{ marginTop: 'var(--space-3)' }}>Or paste a custom voice ID (cloned voices)</label>
+                <input
+                  className="settings-input"
+                  placeholder="e.g. abc123xyz... (from ElevenLabs Voice Library)"
+                  value={settings.narratorVoiceId && !ELEVENLABS_VOICES.find(v => v.id === settings.narratorVoiceId) ? settings.narratorVoiceId : ''}
+                  onChange={(e) => updateSetting("narratorVoiceId", e.target.value.trim() || '21m00Tcm4TlvDq8ikWAM')}
+                />
+              </section>
+
               {AGENTS.map(agent => {
                 const currentVoiceId = settings.agentVoices?.[agent.id]?.elevenLabsId || ELEVENLABS_VOICES.find(v => v.recommended === agent.id)?.id || ELEVENLABS_VOICES[0].id
                 return (

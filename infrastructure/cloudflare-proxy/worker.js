@@ -182,6 +182,8 @@ const ROUTES = {
     const auth = req.headers.get('Authorization')
     if (!auth) return new Response(JSON.stringify({ error: 'missing_provider_key' }), { status: 400 })
     const body = await req.json()
+    const ALLOWED_SIZES = new Set(['1024x1024', '1536x1024', '1024x1536'])
+    const ALLOWED_QUALITIES = new Set(['high', 'medium', 'low'])
     return fetch('https://api.openai.com/v1/images/generations', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: auth },
@@ -189,8 +191,8 @@ const ROUTES = {
         model: 'gpt-image-1',
         prompt: body.prompt,
         n: 1,
-        size: '1024x1024',
-        quality: 'high',
+        size: ALLOWED_SIZES.has(body.size) ? body.size : '1024x1024',
+        quality: ALLOWED_QUALITIES.has(body.quality) ? body.quality : 'high',
       }),
     })
   },

@@ -429,39 +429,46 @@ export default function TheInterface() {
     const plan = clawDecision?.plan
     const steps = plan?.steps || []
     if (steps.length > 0) {
-      setToolsWorking(true)
-      const buildTurnId = `build-${Date.now()}`
-      addToolTurn({
-        id: buildTurnId,
-        type: 'build',
-        deliverable: plan.deliverable || 'Build',
-        steps: steps.map(s => ({ id: s.id, label: s.label, tool: s.tool, status: 'pending' })),
-        files: [],
-        errors: [],
-      })
-
-      const result = await runBuild(
-        { deliverable: plan.deliverable, steps },
-        { settings, project: activeProject, proxy: proxyFetch },
-        (stepId, status, reason) => {
-          updateBuildTurn(buildTurnId, {
-            steps: (s) => (s || []).map(x => x.id === stepId ? { ...x, status, reason } : x),
-          })
-        }
-      )
-
-      updateBuildTurn(buildTurnId, {
-        files: result.files,
-        errors: result.errors,
-        folderName: result.folderName,
-        folderLink: result.folderLink,
-        folderProvider: result.folderProvider,
-      })
-      result.files.forEach(f => logUsage({ kind: 'tool_call', provider: f.output?.tool || 'build', success: true }))
-      result.errors.forEach(e => logUsage({ kind: 'tool_call', provider: e.stepId, success: false, errorType: 'build_step' }))
-
-      setToolsWorking(false)
+      await executeBuild({ deliverable: plan.deliverable, steps })
     }
+  }
+
+  // Pulled out so the build retry button can call the same path. The
+  // retry stores the original plan on the build turn and re-runs it.
+  const executeBuild = async (planToRun) => {
+    setToolsWorking(true)
+    const buildTurnId = `build-${Date.now()}`
+    addToolTurn({
+      id: buildTurnId,
+      type: 'build',
+      deliverable: planToRun.deliverable || 'Build',
+      steps: planToRun.steps.map(s => ({ id: s.id, label: s.label, tool: s.tool, status: 'pending' })),
+      files: [],
+      errors: [],
+      plan: planToRun,  // stored so Retry can re-run the same plan
+    })
+
+    const result = await runBuild(
+      planToRun,
+      { settings, project: activeProject, proxy: proxyFetch },
+      (stepId, status, reason) => {
+        updateBuildTurn(buildTurnId, {
+          steps: (s) => (s || []).map(x => x.id === stepId ? { ...x, status, reason } : x),
+        })
+      }
+    )
+
+    updateBuildTurn(buildTurnId, {
+      files: result.files,
+      errors: result.errors,
+      folderName: result.folderName,
+      folderLink: result.folderLink,
+      folderProvider: result.folderProvider,
+    })
+    result.files.forEach(f => logUsage({ kind: 'tool_call', provider: f.output?.tool || 'build', success: true }))
+    result.errors.forEach(e => logUsage({ kind: 'tool_call', provider: e.stepId, success: false, errorType: 'build_step' }))
+
+    setToolsWorking(false)
   }
 
   const toggleTarget = (id) => {
@@ -677,6 +684,18 @@ export default function TheInterface() {
                         Open folder ↗
                       </a>
                     )}
+                  </div>
+                )}
+                {done && turn.plan && (turn.errors?.length > 0 || turn.files?.length > 0) && (
+                  <div className="ai-build-actions">
+                    <button
+                      className="ai-btn ai-btn--small"
+                      onClick={() => executeBuild(turn.plan)}
+                      disabled={busy}
+                      title="Re-run this exact build plan"
+                    >
+                      ↻ Retry build
+                    </button>
                   </div>
                 )}
               </div>

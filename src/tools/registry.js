@@ -62,26 +62,51 @@ export function readKey(settings, keySource) {
 
 // ── Image generation ──────────────────────────────────────────────
 
+// Valid DALL-E (gpt-image-1) sizes. Friendly aliases let the dispatcher
+// say "square" / "wide" / "tall" / "social" without remembering pixels.
+const DALLE_SIZES = {
+  square:    '1024x1024',
+  wide:      '1536x1024',  // landscape — slide covers, banners
+  tall:      '1024x1536',  // portrait — phone wallpapers, IG stories
+  social:    '1024x1024',  // IG post
+  story:     '1024x1536',
+  banner:    '1536x1024',
+  '1024x1024': '1024x1024',
+  '1536x1024': '1536x1024',
+  '1024x1536': '1024x1536',
+}
+function normalizeDalleSize(size) {
+  if (!size) return '1024x1024'
+  return DALLE_SIZES[String(size).toLowerCase()] || '1024x1024'
+}
+
 const dalle = {
   id: 'dalle',
   name: 'DALL-E 3',
   category: 'image',
-  capability: 'generate images from text prompts',
-  desc: 'OpenAI image generation (uses your OpenAI key)',
+  capability: 'generate images from text prompts (sizes: square, wide, tall — for slide covers, banners, social posts)',
+  desc: 'OpenAI image generation (uses your OpenAI key). Sizes: square (1:1), wide (3:2), tall (2:3).',
   keySource: 'agent.gpt',
   docsUrl: 'https://platform.openai.com/api-keys',
   status: 'live',
-  async run({ prompt, key, proxy }) {
+  async run({ prompt, structuredInput, key, proxy }) {
     if (!key) throw new ToolError('dalle', 'missing_key', 'DALL-E uses your OpenAI key — add it in Settings → Agents → ChatGPT.')
-    const res = await proxy('dalle', { prompt: prompt.slice(0, 900) }, { Authorization: `Bearer ${key}` })
+    // Size can come from structuredInput or be inferred from a prompt keyword.
+    // Quality: 'high' (default), 'medium', 'low' — passed through to gpt-image-1.
+    const cfg = (typeof structuredInput === 'object' && structuredInput) || {}
+    const size = normalizeDalleSize(cfg.size || cfg.aspect_ratio)
+    const quality = ['high', 'medium', 'low'].includes(cfg.quality) ? cfg.quality : 'high'
+    const realPrompt = (cfg.prompt || prompt || '').slice(0, 900)
+
+    const res = await proxy('dalle', { prompt: realPrompt, size, quality }, { Authorization: `Bearer ${key}` })
     if (!res.ok) throw new ToolError('dalle', 'bad_response', await res.text().catch(() => `status ${res.status}`))
     const data = await res.json()
     if (data.error) throw new ToolError('dalle', 'bad_response', data.error?.message || 'DALL-E error')
     const b64 = data.data?.[0]?.b64_json
     const url = data.data?.[0]?.url
-    if (b64) return { type: 'image', url: `data:image/png;base64,${b64}`, prompt, tool: 'dalle' }
-    if (url) return { type: 'image', url, prompt, tool: 'dalle' }
-    throw new ToolError('dalle', 'bad_response', 'DALL-E returned no image.')
+    const out = b64 ? `data:image/png;base64,${b64}` : url
+    if (!out) throw new ToolError('dalle', 'bad_response', 'DALL-E returned no image.')
+    return { type: 'image', url: out, prompt: realPrompt, tool: 'dalle', meta: { size, quality } }
   },
 }
 
@@ -235,10 +260,15 @@ const elevenlabs = {
   keySource: 'tool_keys.elevenlabs',
   docsUrl: 'https://elevenlabs.io/app/settings/api-keys',
   status: 'live',
-  async run({ prompt, key, proxy }) {
+  async run({ prompt, structuredInput, key, proxy, settings }) {
     if (!key) throw new ToolError('elevenlabs', 'missing_key', 'ElevenLabs needs an API key.')
-    const voiceId = '21m00Tcm4TlvDq8ikWAM'
-    const res = await proxy('elevenlabs', { text: prompt.slice(0, 2500), voice_id: voiceId }, { 'x-api-key': key })
+    // Voice priority: explicit input.voice_id → user's narrator voice setting
+    // → Rachel fallback. Lets builds say "narrate in my cloned voice" without
+    // any plumbing.
+    const cfg = typeof structuredInput === 'object' && structuredInput ? structuredInput : {}
+    const voiceId = cfg.voice_id || settings?.narratorVoiceId || '21m00Tcm4TlvDq8ikWAM'
+    const text = cfg.text || prompt || ''
+    const res = await proxy('elevenlabs', { text: text.slice(0, 2500), voice_id: voiceId }, { 'x-api-key': key })
     if (!res.ok) throw new ToolError('elevenlabs', 'bad_response', await res.text().catch(() => `status ${res.status}`))
     const data = await res.json()
     if (!data.audio) throw new ToolError('elevenlabs', 'bad_response', 'ElevenLabs returned no audio.')
@@ -1086,6 +1116,62 @@ const gcal = {
   },
 }
 
+// ── image_per_slide — DALL-E per slide for synced visuals ─────────
+// Same pattern as narrate_per_slide: takes slides[] and produces N
+// images (one per slide). Saves a bundle so downstream steps can sync
+// them with pptxgen or video tools.
+//
+// Input: { slides: [{title, prompt?}], style?, size? }
+//   - If a slide has its own 'prompt', use it.
+//   - Otherwise derive from title + global 'style' hint.
+//   - size: 'square'|'wide'|'tall' (default 'wide' for slide covers)
+const imagePerSlide = {
+  id: 'image_per_slide',
+  name: 'Per-slide images',
+  category: 'image',
+  capability: 'generate one image per slide — N images in a bundle, ready to sync with a deck',
+  desc: 'Uses your OpenAI key. Returns N images saved together in the build folder.',
+  keySource: 'agent.gpt',
+  status: 'live',
+  hidden: true,
+  async run({ structuredInput, key, proxy }) {
+    if (!key) throw new ToolError('image_per_slide', 'missing_key', 'image_per_slide uses your OpenAI key.')
+    const data = typeof structuredInput === 'string' ? JSON.parse(structuredInput) : structuredInput
+    const slides = Array.isArray(data?.slides) ? data.slides : []
+    if (slides.length === 0) throw new ToolError('image_per_slide', 'no_slides', 'No slides to illustrate.')
+
+    const style = data?.style || 'clean, modern, editorial photography'
+    const size = normalizeDalleSize(data?.size || 'wide')
+
+    const files = []
+    for (let i = 0; i < slides.length; i++) {
+      const s = slides[i]
+      const promptText = (s.prompt || `${s.title || 'cover image'}. Style: ${style}`).slice(0, 900)
+      try {
+        const res = await proxy('dalle', { prompt: promptText, size, quality: 'high' }, { Authorization: `Bearer ${key}` })
+        if (!res.ok) { files.push({ error: `dalle_${res.status}`, filename: `slide-${i + 1}.png` }); continue }
+        const json = await res.json()
+        const b64 = json.data?.[0]?.b64_json
+        const url = json.data?.[0]?.url
+        const final = b64 ? `data:image/png;base64,${b64}` : url
+        if (!final) { files.push({ error: 'no_image', filename: `slide-${i + 1}.png` }); continue }
+        files.push({ url: final, filename: `slide-${String(i + 1).padStart(2, '0')}.png`, prompt: promptText })
+      } catch (e) {
+        files.push({ error: e.message || 'unknown', filename: `slide-${i + 1}.png` })
+      }
+    }
+    const successful = files.filter(f => !f.error).length
+    if (successful === 0) throw new ToolError('image_per_slide', 'bad_response', 'No images generated.')
+
+    return {
+      type: 'image_bundle',
+      tool: 'image_per_slide',
+      files,
+      meta: { slideCount: slides.length, successful, failed: slides.length - successful, size, style },
+    }
+  },
+}
+
 // ── narrate_per_slide — ElevenLabs per slide for synced narration ──
 // Produces N audio files (one per slide) plus timing metadata, ready
 // to combine with the slide deck into a synced video later.
@@ -1098,13 +1184,14 @@ const narratePerSlide = {
   keySource: 'tool_keys.elevenlabs',
   status: 'live',
   hidden: true,
-  async run({ structuredInput, key, proxy }) {
+  async run({ structuredInput, key, proxy, settings }) {
     if (!key) throw new ToolError('narrate_per_slide', 'missing_key', 'ElevenLabs needs an API key.')
     const data = typeof structuredInput === 'string' ? JSON.parse(structuredInput) : structuredInput
     const slides = data?.slides || []
     if (slides.length === 0) throw new ToolError('narrate_per_slide', 'no_slides', 'No slides to narrate.')
 
-    const voiceId = '21m00Tcm4TlvDq8ikWAM' // Rachel
+    // Voice priority: explicit input → user's narrator voice setting → Rachel
+    const voiceId = data?.voice_id || settings?.narratorVoiceId || '21m00Tcm4TlvDq8ikWAM'
     const files = []
     let cumulativeSec = 0
     for (let i = 0; i < slides.length; i++) {
@@ -1159,8 +1246,8 @@ export const TOOL_REGISTRY = [
   perplexity, tavily,
   // Document generation — browser-side, no API key needed
   pptxgen, docgen, pdfgen, xlsxgen, htmlgen, mdgen, codezip,
-  // Per-slide narration (synced audio for deck builds)
-  narratePerSlide,
+  // Per-slide bundles (synced visuals + narration for deck builds)
+  imagePerSlide, narratePerSlide,
   // Action layer
   gmail, gsheets, gcal,
   // Meta — panel-as-tool for multi-step builds

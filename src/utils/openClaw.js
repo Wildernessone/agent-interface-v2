@@ -279,6 +279,7 @@ BUILD-INTERNAL TOOLS (always available in build mode):
 - htmlgen ({title,sections[],theme?'light'|'dark'|'serif'} → .html — self-contained landing page)
 - mdgen ({title,sections[],frontmatter?} → .md — blog post with YAML frontmatter)
 - codezip ({files:[{path,content}]} → .zip — multi-file code project, nested paths OK)
+- image_per_slide ({slides[{title,prompt?}], style?, size?'square'|'wide'|'tall'} → one image per slide as a bundle)
 - narrate_per_slide (slides[] → per-slide audio with timing)
 - gmail ({to,subject,body} → sent email)
 - gsheets ({title,sheets[{name,rows[][]}]} → Google Sheet in user's Drive, returns link)
@@ -380,7 +381,8 @@ export async function orchestrate({
   const BUILD_INTERNAL_TOOLS = new Set([
     'agent_synth', 'pptxgen', 'docgen', 'pdfgen',
     'xlsxgen', 'htmlgen', 'mdgen', 'codezip',
-    'narrate_per_slide', 'gmail', 'gsheets', 'gcal',
+    'image_per_slide', 'narrate_per_slide',
+    'gmail', 'gsheets', 'gcal',
   ])
   const isToolAllowed = (toolId) => BUILD_INTERNAL_TOOLS.has(toolId) || !!enabledTools?.[toolId]
 

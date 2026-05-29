@@ -944,6 +944,16 @@
   background: var(--color-accent);
   color: var(--color-bg-primary);
 }
+.ai-build-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--space-2);
+}
+.ai-btn--small {
+  padding: 4px var(--space-3);
+  font-size: var(--font-size-xs);
+  font-family: var(--font-family-mono);
+}
 @keyframes ai-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }

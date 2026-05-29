@@ -198,14 +198,17 @@ export async function runBuild(plan, ctx, onStep = () => {}) {
       }
 
       // Bundle outputs (per-slide narration, image series, etc.) — save each
-      // child as its own file, all into the same build folder.
-      if (output && output.type === 'audio_bundle' && Array.isArray(output.files)) {
+      // child as its own file, all into the same build folder. The bundle
+      // type ({audio,image,document}_bundle) tells us what to save each
+      // child as; the rest of the loop is identical.
+      const bundleType = output?.type?.endsWith('_bundle') ? output.type.replace('_bundle', '') : null
+      if (bundleType && Array.isArray(output.files)) {
         const savedLinks = []
         let anySaved = false
         for (const child of output.files) {
           if (child.error) continue
           const saved = await saveToCloud({
-            type: 'audio',
+            type: bundleType,
             url: child.url,
             filename: child.filename,
             tool: output.tool,
