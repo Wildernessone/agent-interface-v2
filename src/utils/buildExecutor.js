@@ -113,6 +113,10 @@ export async function runBuild(plan, ctx, onStep = () => {}) {
   const files = []
   const errors = []
   const folderName = buildFolderName(plan.deliverable)
+  // Captured from the first successful save — points the user at the
+  // actual folder, not a file inside it.
+  let folderLink = null
+  let folderProvider = null
 
   // Virtual project for storage that nests under the active project.
   // If there's no active project, it nests directly under the root.
@@ -124,7 +128,7 @@ export async function runBuild(plan, ctx, onStep = () => {}) {
   try {
     ordered = topoSort(plan.steps || [])
   } catch (e) {
-    return { deliverable: plan.deliverable, folderName, files: [], errors: [{ stepId: '_plan', error: e.message }], stepOutputs }
+    return { deliverable: plan.deliverable, folderName, files: [], errors: [{ stepId: '_plan', error: e.message }], stepOutputs, folderLink: null }
   }
 
   for (const step of ordered) {
@@ -165,24 +169,39 @@ export async function runBuild(plan, ctx, onStep = () => {}) {
           ...output,
           prompt: step.label || output.prompt || step.id,
         }, buildProject)
+
+        // Silent save failure was a real bug — if the cloud save didn't
+        // land, the step is NOT done. Mark it failed with a clear reason
+        // so the user sees the issue instead of a misleading checkmark.
+        if (!saved) {
+          errors.push({ stepId: step.id, error: 'save_failed' })
+          onStep(step.id, 'failed', 'save_failed')
+          continue
+        }
+
         files.push({
           stepId: step.id,
           label: step.label || step.id,
           output,
-          savedLink: saved?.webViewLink || null,
-          savedProvider: saved?.provider || null,
+          savedLink: saved.webViewLink || null,
+          savedProvider: saved.provider || null,
         })
+        // First successful save tells us where the build folder lives —
+        // capture for the folder link UI.
+        if (!folderLink && saved.folderLink) {
+          folderLink = saved.folderLink
+          folderProvider = saved.provider
+        }
         // Merge savedLink back into the cached output so downstream steps
         // can reference {step.savedLink} in their interpolated input.
-        if (saved) {
-          stepOutputs[step.id] = { ...output, savedLink: saved.webViewLink, savedProvider: saved.provider }
-        }
+        stepOutputs[step.id] = { ...output, savedLink: saved.webViewLink, savedProvider: saved.provider }
       }
 
       // Bundle outputs (per-slide narration, image series, etc.) — save each
       // child as its own file, all into the same build folder.
       if (output && output.type === 'audio_bundle' && Array.isArray(output.files)) {
         const savedLinks = []
+        let anySaved = false
         for (const child of output.files) {
           if (child.error) continue
           const saved = await saveToCloud({
@@ -192,14 +211,26 @@ export async function runBuild(plan, ctx, onStep = () => {}) {
             tool: output.tool,
             prompt: `${step.label || step.id} — ${child.filename}`,
           }, buildProject)
+          if (saved) {
+            anySaved = true
+            if (!folderLink && saved.folderLink) {
+              folderLink = saved.folderLink
+              folderProvider = saved.provider
+            }
+          }
           savedLinks.push(saved?.webViewLink || null)
+        }
+        if (!anySaved) {
+          errors.push({ stepId: step.id, error: 'save_failed' })
+          onStep(step.id, 'failed', 'save_failed')
+          continue
         }
         files.push({
           stepId: step.id,
           label: `${step.label || step.id} (${output.files.length} files)`,
           output,
           savedLinks,
-          savedProvider: savedLinks[0] ? 'multiple' : null,
+          savedProvider: 'multiple',
         })
         stepOutputs[step.id] = { ...output, savedLinks }
       }
@@ -247,5 +278,7 @@ export async function runBuild(plan, ctx, onStep = () => {}) {
     files,
     errors,
     stepOutputs,
+    folderLink,
+    folderProvider,
   }
 }

@@ -291,6 +291,9 @@ export async function saveToDropbox(output, project = null) {
 
     const folderPath = buildProjectPath(project)
     await ensureNestedFolders(token, folderPath)
+    // Folder link for the build card. Dropbox web URLs are stable for
+    // path-based access — we just URI-encode the leading segments.
+    const folderLink = 'https://www.dropbox.com/home' + folderPath.split('/').map(encodeURIComponent).join('/')
 
     const safePrompt = (output.prompt || output.tool || 'output').replace(/[^a-z0-9-_ ]/gi, '').slice(0, 60).trim() || 'output'
     const filename = `${Date.now()}-${output.tool}-${safePrompt}.${ext}`
@@ -319,7 +322,7 @@ export async function saveToDropbox(output, project = null) {
       }
     }
 
-    return { id: meta.id, webViewLink: link }
+    return { id: meta.id, webViewLink: link, folderPath, folderLink }
   } catch (e) {
     logError('saveToDropbox', e, { tool: output?.tool, type: output?.type })
     return null

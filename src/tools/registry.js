@@ -484,7 +484,10 @@ const pptxgen = {
       url,
       filename: `${(label || 'deck').replace(/[^a-z0-9-_ ]/gi, '').trim() || 'deck'}.pptx`,
       tool: 'pptxgen',
-      meta: { slideCount: slides.length },
+      meta: {
+        slideCount: slides.length,
+        slideTitles: slides.map(s => s.title || 'Untitled slide').slice(0, 12),
+      },
     }
   },
 }

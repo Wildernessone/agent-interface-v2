@@ -11,6 +11,7 @@ import { logUsage, logError, checkTierLimits } from '../utils/telemetry'
 import { saveToCloud } from '../utils/cloudStorage'
 import { TOOLS_BY_ID, ToolError, readKey } from '../tools/registry'
 import { runBuild } from '../utils/buildExecutor'
+import { friendlyError, buildSummary, extractSlideTitles } from '../utils/buildErrors'
 import { ingestFile, formatIngested } from '../utils/fileIngestion'
 import { supabase } from '../utils/supabase'
 import PromptLibrary from './PromptLibrary'
@@ -425,6 +426,8 @@ export default function TheInterface() {
         files: result.files,
         errors: result.errors,
         folderName: result.folderName,
+        folderLink: result.folderLink,
+        folderProvider: result.folderProvider,
       })
       result.files.forEach(f => logUsage({ kind: 'tool_call', provider: f.output?.tool || 'build', success: true }))
       result.errors.forEach(e => logUsage({ kind: 'tool_call', provider: e.stepId, success: false, errorType: 'build_step' }))
@@ -593,11 +596,17 @@ export default function TheInterface() {
           )
           if (turn.type === "build") {
             const done = turn.steps?.every(s => s.status === 'done' || s.status === 'failed')
-            const folderHref = turn.files?.find(f => f.savedLink)?.savedLink
+            // Prefer the dedicated folder link (set by the executor on
+            // first successful save). Fall back to the first file link
+            // so older builds still have something clickable.
+            const folderHref = turn.folderLink || turn.files?.find(f => f.savedLink)?.savedLink
+            const summary = done ? buildSummary({ deliverable: turn.deliverable, files: turn.files, errors: turn.errors }) : null
+            const slideTitles = done ? extractSlideTitles(turn.files) : []
             return (
               <div key={turn.id} className="ai-turn ai-build-card">
                 <div className="ai-build-header">
                   <div className="ai-build-title">📦 {turn.deliverable}</div>
+                  {summary && <div className="ai-build-summary">{summary}</div>}
                   {done && turn.folderName && (
                     <div className="ai-build-folder">Saved to: <em>{turn.folderName}</em></div>
                   )}
@@ -610,16 +619,26 @@ export default function TheInterface() {
                       </span>
                       <span className="ai-build-step-label">{s.label}</span>
                       <span className="ai-build-step-tool">{s.tool}</span>
-                      {s.status === 'failed' && s.reason && <span className="ai-build-step-reason">{s.reason}</span>}
+                      {s.status === 'failed' && s.reason && (
+                        <span className="ai-build-step-reason">{friendlyError(s.reason)}</span>
+                      )}
                     </li>
                   ))}
                 </ul>
+                {slideTitles.length > 0 && (
+                  <div className="ai-build-slides">
+                    <div className="ai-build-slides-label">Slides</div>
+                    <ol className="ai-build-slides-list">
+                      {slideTitles.map((t, i) => <li key={i}>{t}</li>)}
+                    </ol>
+                  </div>
+                )}
                 {done && turn.files?.length > 0 && (
                   <div className="ai-build-files">
-                    {turn.files.length} file{turn.files.length === 1 ? '' : 's'} bundled
+                    <span>{turn.files.length} file{turn.files.length === 1 ? '' : 's'} bundled</span>
                     {folderHref && (
                       <a className="ai-build-folder-link" href={folderHref} target="_blank" rel="noreferrer">
-                        Open ↗
+                        Open folder ↗
                       </a>
                     )}
                   </div>

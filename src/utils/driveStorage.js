@@ -18,11 +18,16 @@ export async function captureDriveTokens() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null
 
+  // Google access tokens last 1 hour. Save expires_at with a 60-second
+  // safety buffer so we treat them as expired just before they actually do.
+  const expiresAt = new Date(Date.now() + 3540 * 1000).toISOString()
+
   const { error } = await supabase.from('storage_connections').upsert({
     user_id: user.id,
     provider: 'google_drive',
     access_token: accessToken,
     refresh_token: refreshToken || null,
+    expires_at: expiresAt,
     updated_at: new Date().toISOString(),
   }, { onConflict: 'user_id,provider' })
 
@@ -30,15 +35,30 @@ export async function captureDriveTokens() {
   return !error
 }
 
+class DriveAuthExpired extends Error {
+  constructor() {
+    super('drive_auth_expired')
+    this.name = 'DriveAuthExpired'
+  }
+}
+
 async function getDriveToken() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null
   const { data } = await supabase
     .from('storage_connections')
-    .select('access_token, root_folder_id')
+    .select('access_token, expires_at, root_folder_id')
     .eq('user_id', user.id)
     .eq('provider', 'google_drive')
     .maybeSingle()
+  if (!data?.access_token) return null
+
+  // Honor expires_at if we have it — refuse to use a token we know is dead.
+  // Older connections saved before this field existed have expires_at: null
+  // and will fall through and let Google's 401 tell us instead.
+  if (data.expires_at && new Date(data.expires_at) < new Date()) {
+    return null
+  }
   return data
 }
 
@@ -184,6 +204,7 @@ export async function saveToDrive(output, project = null) {
 
     const rootId = await ensureRootFolder(token)
     const folderId = project ? await ensureProjectFolder(token, rootId, project) : rootId
+    const folderLink = `https://drive.google.com/drive/folders/${folderId}`
 
     const safePrompt = (output.prompt || output.tool || 'output').replace(/[^a-z0-9-_ ]/gi, '').slice(0, 60).trim() || 'output'
     const filename = `${Date.now()}-${output.tool}-${safePrompt}.${ext}`
@@ -210,8 +231,23 @@ export async function saveToDrive(output, project = null) {
       }
     }
 
-    return { id: file.id, webViewLink: file.webViewLink }
+    return { id: file.id, webViewLink: file.webViewLink, folderId, folderLink }
   } catch (e) {
+    // 401 from any Drive call means the access token is dead. Wipe it
+    // from the DB so the UI re-prompts for a fresh connection instead of
+    // silently retrying with a token Google will keep rejecting.
+    if (/_401$/.test(e.message || '')) {
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user) {
+          await supabase.from('storage_connections')
+            .delete()
+            .eq('user_id', user.id)
+            .eq('provider', 'google_drive')
+        }
+      } catch {}
+      e.driveAuthExpired = true
+    }
     logError('saveToDrive', e, { tool: output?.tool, type: output?.type })
     return null
   }
