@@ -151,10 +151,12 @@ async function streamGrok(key, messages, onChunk, onDone, onError) {
 }
 
 export default function TheInterface() {
-  const { settings, turns, activeAgentId, voiceMode, addTurn, addToolTurn, updateToolTurn, updateBuildTurn, appendChunk, finishTurn, addErrorTurn, addToolErrorTurn, clearTurns, setVoiceMode, saveConversation, conversationId, loadMemory, saveMemory, resetTurnForRetry, activeProject, projects, loadProjects, createProject, setActiveProject } = useStore()
+  // skills is the per-agent knowledge loaded from Drive at sign-in.
+  // We thread it into buildSystemPrompt so every agent call picks up
+  // whatever the user has dropped into Drive/Agent Interface/Skills/.
+  const { settings, turns, activeAgentId, voiceMode, addTurn, addToolTurn, updateToolTurn, updateBuildTurn, appendChunk, finishTurn, addErrorTurn, addToolErrorTurn, clearTurns, setVoiceMode, saveConversation, conversationId, loadMemory, saveMemory, resetTurnForRetry, activeProject, projects, loadProjects, createProject, setActiveProject, skills } = useStore()
   
   const handleVoiceToggle = () => {
-    // Recreate VoiceEngine with latest settings when toggling on
     if (!voiceMode) {
       voiceRef.current = new VoiceEngine(settings)
     } else {
@@ -164,7 +166,7 @@ export default function TheInterface() {
     setVoiceMode(!voiceMode)
   }
   const [input, setInput] = useState("")
-  const [attachments, setAttachments] = useState([]) // ingested files awaiting send
+  const [attachments, setAttachments] = useState([])
   const [ingesting, setIngesting] = useState(false)
   const fileInputRef = useRef(null)
   const [targets, setTargets] = useState(["all"])
@@ -182,13 +184,9 @@ export default function TheInterface() {
   const scrollRef = useRef(null)
   const voiceRef = useRef(null)
   const conversationRef = useRef([])
-  // Last turn's role assignments — fed into OpenClaw so roles stay sticky
-  // unless the conversation shape shifts.
   const previousRolesRef = useRef({})
 
   const activeAgents = AGENTS.filter(a => settings.agents[a.id]?.enabled && settings.agents[a.id]?.key)
-  // Respect the user's toggles. DALL-E doesn't need its own key — it uses
-  // the existing OpenAI key — but the user still decides whether it's on.
   const enabledTools = Object.fromEntries(Object.entries(settings.tools || {}).filter(([,v]) => v.enabled))
   const busy = !!activeAgentId || toolsWorking
   const canSend = !busy && (input.trim() || listening)
@@ -205,7 +203,6 @@ export default function TheInterface() {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
   }, [turns])
 
-  // V3a: listen for V2 audit failures and log them as learning signals
   useEffect(() => {
     const handler = (e) => {
       const { agent, role } = e.detail || {}
@@ -244,9 +241,6 @@ export default function TheInterface() {
       return
     }
 
-    // Prepend ingested file content as conversation context. The user
-    // sees their original message in the UI; the agents see the file
-    // content + message.
     const ingestedPrefix = attachments.map(formatIngested).join('')
     const messageForAgents = ingestedPrefix + (text || 'Discuss the attached file(s).')
     const displayText = text || `[Attached ${attachments.length} file${attachments.length === 1 ? '' : 's'}]`
@@ -257,19 +251,16 @@ export default function TheInterface() {
     addTurn({ id: userTurnId, type: "user", text: displayText, attachments: attachedNames })
     conversationRef.current = [...conversationRef.current, { role: "user", content: messageForAgents }]
 
-    // V3a: harvest learning signal from this user message about the prior turn's roles
     const signals = detectSignalsFromUserMessage(text, previousRolesRef.current)
     if (signals.length) logSignals(signals, conversationId)
 
     const selected = targets.includes("all") ? activeAgents : activeAgents.filter(a => targets.includes(a.id))
 
-    // Collect recent agent messages so OpenClaw can see prior discussion
     const recentAgentResponses = turns
       .filter(t => t.type === "agent" && t.text)
       .slice(-8)
       .map(t => ({ agent: t.agent, text: t.text }))
 
-    // V3a: pull aggregated routing performance to feed the dispatcher as priors
     const routingPerformance = await getRecentRolePerformance(90)
 
     let clawDecision = null
@@ -293,12 +284,10 @@ export default function TheInterface() {
       return
     }
 
-    // Remember role assignments for next turn's stickiness check
     if (clawDecision?.role_assignments && Object.keys(clawDecision.role_assignments).length) {
       previousRolesRef.current = clawDecision.role_assignments
     }
 
-    // Surface OpenClaw's decision in the thread so the user sees what it's doing
     if (clawDecision?.reasoning || clawDecision?.mode) {
       addTurn({
         id: `claw-${Date.now()}`,
@@ -344,9 +333,9 @@ export default function TheInterface() {
           activeAgentIds: selected.map(a => a.id),
           enabledTools, mode: activeResponseMode, round: round + 1, totalRounds,
           agentId: agent.id, voiceMode, memoryContext, role,
+          skills,  // user-curated knowledge from Drive/Agent Interface/Skills/
         })
 
-        // Run one stream pass. Returns the full streamed text (or "" on error).
         const streamOnce = (systemPrompt) => new Promise((resolve) => {
           const messages = [{ role: "user", content: systemPrompt }, ...conversationRef.current]
           let fullText = ""
@@ -365,28 +354,23 @@ export default function TheInterface() {
           else if (agent.id === "grok") streamGrok(key, messages, onChunk, onDone, onError)
         })
 
-        // First pass
         let result = await streamOnce(baseSystemPrompt)
         let auditResult = null
 
-        // V2 check-and-rewrite: only audit drift-prone roles, only outside voice mode
         if (!result.error && shouldAudit(role, voiceMode)) {
           auditResult = await auditResponse({ text: result.text, role, userMessage: text, settings })
           if (!auditResult.passed) {
-            // One retry with a hardened reminder appended to the system prompt
             const reminder = buildRetryReminder(role, auditResult.reason)
             const hardened = `${baseSystemPrompt}\n\n${reminder}`
             resetTurnForRetry(id)
             const retry = await streamOnce(hardened)
             if (!retry.error) result = retry
-            // Log so V3 can use audit fails as a learning signal
             window.dispatchEvent(new CustomEvent('openclaw:audit_fail', {
               detail: { agent: agent.id, role, reason: auditResult.reason }
             }))
           }
         }
 
-        // Commit to history + voice + usage
         if (result.text) {
           conversationRef.current = [...conversationRef.current, { role: "assistant", content: result.text }]
           logUsage({ kind: "agent_message", provider: agent.id, model: agent.id, tokensOut: result.text.length / 4 | 0, success: true })
@@ -397,7 +381,6 @@ export default function TheInterface() {
       }
     }
 
-    // OpenClaw build plan — runBuild handles dependencies + bundling
     const plan = clawDecision?.plan
     const steps = plan?.steps || []
     if (steps.length > 0) {
@@ -461,13 +444,10 @@ export default function TheInterface() {
     )
   }
 
-
-  // Rams: single accent. Theme accent overrides for users who customized.
   const accent = settings.accent || "var(--color-accent)"
 
   return (
     <div className="ai-app">
-      {/* ───────── Header ───────── */}
       <header className="ai-header">
         <div className="ai-brand">
           <Logo/>
@@ -515,7 +495,6 @@ export default function TheInterface() {
         </nav>
       </header>
 
-      {/* ───────── Setup notices ───────── */}
       {setupNotices.length > 0 && (
         <div className="ai-notice">
           {setupNotices.slice(0,1).map((n, i) => (
@@ -527,7 +506,6 @@ export default function TheInterface() {
         </div>
       )}
 
-      {/* ───────── Thread ───────── */}
       <main ref={scrollRef} className="ai-thread">
         {turns.length === 0 && activeAgents.length === 0 && !skippedOnboarding && (
           <OnboardingPanel onSkip={() => setSkippedOnboarding(true)} />
@@ -596,9 +574,6 @@ export default function TheInterface() {
           )
           if (turn.type === "build") {
             const done = turn.steps?.every(s => s.status === 'done' || s.status === 'failed')
-            // Prefer the dedicated folder link (set by the executor on
-            // first successful save). Fall back to the first file link
-            // so older builds still have something clickable.
             const folderHref = turn.folderLink || turn.files?.find(f => f.savedLink)?.savedLink
             const summary = done ? buildSummary({ deliverable: turn.deliverable, files: turn.files, errors: turn.errors }) : null
             const slideTitles = done ? extractSlideTitles(turn.files) : []
@@ -717,7 +692,6 @@ export default function TheInterface() {
         })}
       </main>
 
-      {/* ───────── Composer ───────── */}
       <footer className="ai-composer">
         <div className="ai-targets">
           <span className="ai-targets-label">To</span>
@@ -822,8 +796,6 @@ export default function TheInterface() {
 }
 
 function Logo({ size = 32 }) {
-  // 5-pointed orbit mark — agents around the OpenClaw core.
-  // Restored & lightly polished: cleaner lines, design-token colors, consistent dot sizing.
   const points = [0, 72, 144, 216, 288]
   const r1 = 9.5, r2 = 12
   const dotColors = [
@@ -863,8 +835,6 @@ function IconButton({ children, onClick, title, active }) {
     </button>
   )
 }
-
-// toolError() removed — runners throw ToolError from the registry now.
 
 async function proxyFetch(path, body, extraHeaders = {}) {
   return fetch(`${PROXY}/${path}`, {
