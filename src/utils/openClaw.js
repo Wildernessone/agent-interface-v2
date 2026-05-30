@@ -255,7 +255,32 @@ DECISION TREE (first match wins)
 1. If TOOLS AVAILABLE includes a search tool AND user asked a search question:
      → mode = "build", plan = [{tool: <search>, prompt: <topic>}], agents_to_respond = []
 
-2. If EXPLICIT BUILD APPROVAL DETECTED yes AND PRIOR AGENT DISCUSSION yes:
+2. If the user DIRECTLY and SPECIFICALLY asks you to produce a concrete artifact
+   that a BUILD-INTERNAL TOOL can generate — e.g. "make me a spreadsheet of …",
+   "put this in a spreadsheet", "write a doc that …", "build a deck on …",
+   "create a PDF of …", "turn this into a .xlsx/.docx/.pptx" — AND the request
+   already has enough detail to act on WITHOUT a clarifying question:
+     → mode = "build"  (this fires even with NO prior discussion — a clear
+       deliverable request does not need a roundtable first)
+     → agents_to_respond = []
+     → deliverable = short folder-friendly name
+     → plan = the matching generator, almost always fed by an agent_synth step.
+       For tabular data → xlsxgen (use gsheets instead only if the user explicitly
+       said "Google Sheet"). Canonical shape:
+         { "steps": [
+           { "id": "s1", "tool": "agent_synth", "needs": [], "output_schema": "spreadsheet",
+             "input": "<exactly what to tabulate, with the columns/rows the user asked for>",
+             "label": "Draft the data" },
+           { "id": "s2", "tool": "xlsxgen", "needs": ["s1"], "input": "{s1}",
+             "label": "Build the .xlsx" }
+         ] }
+       Mirror this for other artifacts: agent_synth(output_schema "document") → docgen,
+       "slides" → pptxgen, "page" → htmlgen, "post" → mdgen, "project" → codezip.
+     → If the ask is vague or exploratory ("help me think about what columns to use",
+       "should I even make a spreadsheet?") do NOT build — fall through to discuss.
+       Only build when both the deliverable AND its contents are clear.
+
+3. If EXPLICIT BUILD APPROVAL DETECTED yes AND PRIOR AGENT DISCUSSION yes:
      → mode = "build"
      → agents_to_respond = []
      → deliverable = short folder-friendly name
@@ -263,7 +288,7 @@ DECISION TREE (first match wins)
        (agent_synth, pptxgen, docgen, pdfgen, narrate_per_slide, gmail)
      → Internal tools always available. See BUILD-INTERNAL TOOLS section below.
 
-3. Otherwise:
+4. Otherwise:
      → mode = "discuss", plan = []
      → agents_to_respond = 2-3 from AGENTS CONNECTED, biased by spend_mode
      → role_assignments mapping each to a role_id, honoring stickiness
@@ -458,12 +483,22 @@ export function shouldAudit(role, voiceMode) {
   return DRIFT_PRONE_ROLES.has(role)
 }
 
+// Returns { passed, reason, audited }.
+//   audited=true  → the verdict is real (an audit model actually judged the text).
+//   audited=false → the audit could not run (no model, infra error, unparseable
+//                   reply). In that case we DELIBERATELY fail OPEN (passed:true).
+// Why fail open: the only consumer (TheInterface) reacts to passed:false by
+// re-prompting the agent with a "you drifted out of role" reminder. Failing
+// closed on our own infra error would fire a spurious extra API call AND feed
+// the agent a false accusation it drifted — making the output worse, not safer.
+// So on failure we let the original response stand, but surface it via `audited`
+// + a logged warning instead of masquerading as a clean pass.
 export async function auditResponse({ text, role, userMessage, settings }) {
-  if (!text || text.length < 20) return { passed: true, reason: "empty" }
+  if (!text || text.length < 20) return { passed: true, reason: "empty", audited: false }
   const modelConfig = selectOrchestrationModel(settings)
-  if (!modelConfig) return { passed: true, reason: "no_model" }
+  if (!modelConfig) return { passed: true, reason: "no_model", audited: false }
   const roleDef = ROLE_POOL[role]
-  if (!roleDef) return { passed: true, reason: "unknown_role" }
+  if (!roleDef) return { passed: true, reason: "unknown_role", audited: false }
 
   const audit = AUDIT_TESTS[role] || "Did they stay in role?"
   const prompt = `You are auditing whether a specialist AI stayed in its assigned role on this turn.
@@ -488,7 +523,10 @@ Return EXACTLY this JSON: {"passed": true|false, "reason": "<one short sentence>
         body: JSON.stringify({ messages: [{ role: "user", content: prompt }] }),
       })
       const data = await res.json()
-      if (!res.ok || data.error) return { passed: true, reason: "audit_error" }
+      if (!res.ok || data.error) {
+        console.warn("[OpenClaw audit] claude audit call failed — failing open", res.status, data?.error)
+        return { passed: true, reason: `audit_error_claude_${res.status}`, audited: false }
+      }
       raw = data.content?.[0]?.text || ""
     } else if (modelConfig.provider === "gpt") {
       const res = await fetch(`${PROXY}/gpt`, {
@@ -506,9 +544,15 @@ Return EXACTLY this JSON: {"passed": true|false, "reason": "<one short sentence>
       raw = await streamToText(res, "gemini")
     }
     const parsed = extractJson(raw)
-    if (parsed && typeof parsed.passed === "boolean") return { passed: parsed.passed, reason: parsed.reason || "" }
-    return { passed: true, reason: "audit_parse_failed" }
-  } catch { return { passed: true, reason: "audit_exception" } }
+    if (parsed && typeof parsed.passed === "boolean") {
+      return { passed: parsed.passed, reason: parsed.reason || "", audited: true }
+    }
+    console.warn("[OpenClaw audit] could not parse audit verdict — failing open", raw?.slice(0, 200))
+    return { passed: true, reason: "audit_parse_failed", audited: false }
+  } catch (e) {
+    console.warn("[OpenClaw audit] audit threw — failing open", e?.message)
+    return { passed: true, reason: "audit_exception", audited: false }
+  }
 }
 
 export function buildRetryReminder(role, auditReason) {
