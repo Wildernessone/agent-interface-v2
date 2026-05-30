@@ -264,6 +264,16 @@
   margin: 0 0 var(--space-5);
 }
 
+.settings-search { margin-bottom: var(--space-5); }
+
+.tool-info {
+  margin-left: var(--space-2);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-tertiary);
+  cursor: help;
+}
+.tool-info:hover { color: var(--color-text-secondary); }
+
 .settings-group { margin-bottom: var(--space-6); }
 .settings-group-label {
   font-size: var(--font-size-xs);
