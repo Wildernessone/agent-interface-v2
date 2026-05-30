@@ -309,6 +309,45 @@ const ROUTES = {
     })
   },
 
+  // remove.bg accepts an image URL directly and returns a PNG with the
+  // background stripped. Forward the binary response straight through.
+  removebg: async (req) => {
+    const apiKey = req.headers.get('x-api-key')
+    if (!apiKey) return new Response(JSON.stringify({ error: 'missing_provider_key' }), { status: 400 })
+    const body = await req.json()
+    if (!body.image_url) return new Response(JSON.stringify({ error: 'missing_image_url' }), { status: 400 })
+    const form = new URLSearchParams()
+    form.set('image_url', body.image_url)
+    form.set('size', body.size || 'auto')
+    return fetch('https://api.remove.bg/v1.0/removebg', {
+      method: 'POST',
+      headers: { 'X-Api-Key': apiKey, 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: form.toString(),
+    })
+  },
+
+  // Clipdrop has no URL input — it wants the image as multipart image_file —
+  // so fetch the source first, then upload. Defaults to background removal
+  // (its other ops need an explicit operation + per-op params; add later via
+  // a body.op switch). NOTE: Clipdrop is migrating under Jasper; this endpoint
+  // may change or be retired.
+  clipdrop: async (req) => {
+    const apiKey = req.headers.get('x-api-key')
+    if (!apiKey) return new Response(JSON.stringify({ error: 'missing_provider_key' }), { status: 400 })
+    const body = await req.json()
+    if (!body.source_url) return new Response(JSON.stringify({ error: 'missing_source_url' }), { status: 400 })
+    const img = await fetch(body.source_url)
+    if (!img.ok) return new Response(JSON.stringify({ error: 'source_fetch_failed' }), { status: 502, headers: { 'Content-Type': 'application/json' } })
+    const imgBuf = await img.arrayBuffer()
+    const form = new FormData()
+    form.append('image_file', new Blob([imgBuf], { type: img.headers.get('Content-Type') || 'image/png' }), 'image.png')
+    return fetch('https://clipdrop-api.co/remove-background/v1', {
+      method: 'POST',
+      headers: { 'x-api-key': apiKey },
+      body: form,
+    })
+  },
+
   suno: async (req) => {
     const auth = req.headers.get('Authorization')
     if (!auth) return new Response(JSON.stringify({ error: 'missing_provider_key' }), { status: 400 })

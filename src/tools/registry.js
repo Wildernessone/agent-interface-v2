@@ -235,8 +235,8 @@ const removebg = {
     seeText: 'Open the API Key section, create a key, and copy it.',
     note: '50 free API calls/month; the key can be re-issued anytime.',
   },
-  setupHint: 'Free tier ~50 images/month. Needs a Worker proxy route — coming soon.',
-  status: 'needs_proxy_route',  // CORS is inconsistent for browser-direct calls
+  setupHint: 'Free tier ~50 images/month. Generate or upload an image first, then run this on it.',
+  status: 'live',
   async run({ prompt, key, context, proxy }) {
     if (!key) throw new ToolError('removebg', 'missing_key', 'Remove.bg needs an API key.')
     const sourceUrl = context?.sourceImageUrl
@@ -262,8 +262,8 @@ const clipdrop = {
     seeText: "On your account page click 'Reveal API Key' to copy it.",
     note: '⚠ Clipdrop is moving under Jasper — the standalone API may be deprecated; verify before relying on it.',
   },
-  setupHint: 'Needs a Worker proxy route — coming soon.',
-  status: 'needs_proxy_route',
+  setupHint: 'Runs background removal on a source image. Other Clipdrop ops (upscale, cleanup) coming later. Note: Clipdrop is migrating under Jasper.',
+  status: 'live',
   async run({ prompt, key, context, proxy }) {
     if (!key) throw new ToolError('clipdrop', 'missing_key', 'Clipdrop needs an API key.')
     const sourceUrl = context?.sourceImageUrl
