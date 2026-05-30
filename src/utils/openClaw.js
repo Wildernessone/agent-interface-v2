@@ -106,6 +106,62 @@ async function callOpenClaw(prompt, modelConfig) {
   }
 }
 
+// Freeform in-app help assistant. Unlike orchestrate()/callOpenClaw() this
+// returns natural-language prose, not JSON. The caller passes a `knowledge`
+// string (built from the tool registry + agent setup, so it's always current).
+// It MUST NOT invent URLs — the UI renders verified Sign up / Get key / Billing
+// buttons under the answer — so the prompt tells it to refer to those buttons.
+export async function askHelp({ question, history = [], knowledge = "", settings }) {
+  const modelConfig = selectOrchestrationModel(settings)
+  if (!modelConfig) return { text: "", error: "no_model" }
+
+  const system = [
+    "You are the in-app help assistant for Agent Interface, a multi-agent AI studio.",
+    "Answer the user's question clearly and concisely — a few short steps, not an essay.",
+    "Use ONLY the knowledge below. If it isn't covered, say so briefly and suggest where in the app to look.",
+    "IMPORTANT: never write out URLs or links. The app shows verified 'Sign up / Get key / Billing' buttons directly under your answer, so refer to those (e.g. \"tap Get key below\") instead of pasting any link.",
+    "",
+    "=== KNOWLEDGE ===",
+    knowledge,
+  ].join("\n")
+
+  const convo = history.map(m => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`).join("\n")
+  const prompt = `${convo ? convo + "\n" : ""}User: ${question}\nAssistant:`
+
+  try {
+    let raw = ""
+    if (modelConfig.provider === "claude") {
+      const res = await fetch(`${PROXY}/claude`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-api-key": modelConfig.key, ...(await authHeader()) },
+        body: JSON.stringify({ messages: [{ role: "user", content: `${system}\n\n${prompt}` }], max_tokens: 1024 }),
+      })
+      const data = await res.json()
+      if (!res.ok || data.error) return { text: "", error: `claude_${res.status}` }
+      raw = data.content?.[0]?.text || ""
+    } else if (modelConfig.provider === "gpt") {
+      const res = await fetch(`${PROXY}/gpt`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${modelConfig.key}`, ...(await authHeader()) },
+        body: JSON.stringify({ messages: [{ role: "user", content: `${system}\n\n${prompt}` }] }),
+      })
+      if (!res.ok) return { text: "", error: `gpt_${res.status}` }
+      raw = await streamToText(res, "gpt")
+    } else if (modelConfig.provider === "gemini") {
+      const res = await fetch(`${PROXY}/gemini`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-api-key": modelConfig.key, ...(await authHeader()) },
+        body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: `${system}\n\n${prompt}` }] }] }),
+      })
+      if (!res.ok) return { text: "", error: `gemini_${res.status}` }
+      raw = await streamToText(res, "gemini")
+    }
+    return { text: raw.trim(), error: raw.trim() ? null : "empty" }
+  } catch (e) {
+    return { text: "", error: e.message }
+  }
+}
+
 async function streamToText(res, kind) {
   const reader = res.body.getReader()
   const dec = new TextDecoder()
