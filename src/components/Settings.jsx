@@ -242,7 +242,7 @@ export default function Settings({ onClose }) {
             </>
           )}
 
-          {tab === "skills" && <SkillsTab/>}
+          {tab === "skills" && <SkillsTab onGoToStorage={() => setTab('storage')} />}
 
           {tab === "voice" && (
             <>

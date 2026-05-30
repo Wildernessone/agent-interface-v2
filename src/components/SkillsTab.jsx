@@ -10,13 +10,17 @@ const AGENT_LABELS = {
   grok:   'Grok',
 }
 
-export default function SkillsTab() {
+export default function SkillsTab({ onGoToStorage }) {
   const { skills, loadSkills, settings, updateSetting } = useStore()
   const [setupBusy, setSetupBusy] = useState(false)
   const [setupResult, setSetupResult] = useState(null)
   const [seedBusy, setSeedBusy] = useState(false)
   const [seedResult, setSeedResult] = useState(null)
   const loading = skills?.loading
+  // Skills live in the user's Drive, so every action here needs a Drive
+  // connection. Without one the buttons can only no-op — surface that plainly
+  // and give a one-tap path to connect instead of letting them look broken.
+  const driveDisconnected = skills?.error === 'drive_not_connected'
 
   useEffect(() => { loadSkills() }, [])
 
@@ -65,6 +69,25 @@ export default function SkillsTab() {
         Drop <code>accountant.md</code> into <code>Skills/claude/</code> and Claude will reason like an accountant on every conversation. <code>Skills/shared/</code> applies to all agents. Files auto-load on sign-in.
       </p>
 
+      {/* Drive gate: skills require a Google Drive connection. Make it obvious
+          and offer a one-tap jump to the Storage tab to connect. */}
+      {driveDisconnected && (
+        <section className="settings-card" style={{ borderLeft: '2px solid var(--color-status-warning)' }}>
+          <div className="settings-row-title">Connect Google Drive to use Skills</div>
+          <p className="settings-helper" style={{ marginTop: 'var(--space-2)' }}>
+            Skills are <code>.md</code> files stored in your Drive, so the buttons below need a Drive
+            connection first. It's one tap — then come back here to add and load skills.
+          </p>
+          <button
+            className="ai-btn ai-btn--primary"
+            style={{ marginTop: 'var(--space-3)' }}
+            onClick={() => (onGoToStorage ? onGoToStorage() : null)}
+          >
+            Connect Google Drive →
+          </button>
+        </section>
+      )}
+
       {/* TOKEN COST WARNING */}
       <section className="settings-card" style={{ borderLeft: '2px solid var(--color-status-warning)' }}>
         <div className="settings-row-title">⚡ Skills cost tokens</div>
@@ -97,7 +120,7 @@ export default function SkillsTab() {
             <button className="ai-btn" onClick={handleRefresh} disabled={loading}>
               {loading ? 'Refreshing…' : 'Refresh'}
             </button>
-            <button className="ai-btn ai-btn--primary" onClick={handleSetup} disabled={setupBusy || loading}>
+            <button className="ai-btn ai-btn--primary" onClick={handleSetup} disabled={setupBusy || loading || driveDisconnected}>
               {setupBusy ? 'Setting up…' : 'Set up Skills folders'}
             </button>
           </div>
@@ -124,7 +147,7 @@ export default function SkillsTab() {
             <strong>Tip:</strong> Claude Skills files from anywhere on the web work as-is. Just drag them into the right folder.
           </p>
           <div style={{ marginTop: 'var(--space-3)', display: 'flex', alignItems: 'center', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
-            <button className="ai-btn" onClick={handleSeed} disabled={seedBusy || loading}>
+            <button className="ai-btn" onClick={handleSeed} disabled={seedBusy || loading || driveDisconnected}>
               {seedBusy ? 'Adding…' : 'Add 3 example skills'}
             </button>
             <span className="settings-helper" style={{ margin: 0, fontSize: 'var(--font-size-xs)' }}>
