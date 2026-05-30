@@ -51,10 +51,13 @@ export const useStore = create((set, get) => ({
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
 
-      const [{ data: s }, { data: k }] = await Promise.all([
+      const [{ data: s }, { data: keyRows }] = await Promise.all([
         supabase.from('user_settings').select('*').eq('user_id', user.id).single(),
-        supabase.from('user_api_keys').select('*').eq('user_id', user.id).single(),
+        // Keys are encrypted at rest; the SECURITY DEFINER RPC decrypts and
+        // returns only the caller's own keys. Returns a set, so take the row.
+        supabase.rpc('get_user_api_keys'),
       ])
+      const k = Array.isArray(keyRows) ? keyRows[0] : keyRows
 
       if (s || k) {
         set(state => ({
@@ -129,15 +132,16 @@ export const useStore = create((set, get) => ({
           updated_at: new Date().toISOString(),
         }, { onConflict: 'user_id' }),
 
-        supabase.from('user_api_keys').upsert({
-          user_id: user.id,
-          claude_key: settings.agents.claude?.key || '',
-          gpt_key:    settings.agents.gpt?.key    || '',
-          gemini_key: settings.agents.gemini?.key || '',
-          grok_key:   settings.agents.grok?.key   || '',
-          tool_keys:  settings.toolKeys || {},
-          updated_at: new Date().toISOString(),
-        }, { onConflict: 'user_id' }),
+        // Encrypt-at-rest: the RPC encrypts each key with the Vault-held master
+        // key and upserts the caller's row. user_id is taken from auth.uid()
+        // inside the function, never passed from the client.
+        supabase.rpc('set_user_api_keys', {
+          p_claude:    settings.agents.claude?.key || '',
+          p_gpt:       settings.agents.gpt?.key    || '',
+          p_gemini:    settings.agents.gemini?.key || '',
+          p_grok:      settings.agents.grok?.key   || '',
+          p_tool_keys: settings.toolKeys || {},
+        }),
       ])
 
       if (e1) logError("saveSettings.userSettings", e1)
