@@ -185,6 +185,7 @@ export default function Settings({ onClose }) {
                           <div>
                             <div className="settings-row-title">
                               {tool.name}
+                              <InfoTip text={tool.capability || tool.desc} />
                               {tool.status === 'needs_proxy_route' && <span className="tool-status-badge">Worker route pending</span>}
                               {tool.status === 'beta' && <span className="tool-status-badge">beta</span>}
                               {isReady && <span className="tool-status-badge tool-status-badge--ready">ready</span>}
@@ -212,7 +213,7 @@ export default function Settings({ onClose }) {
                     <section className="settings-card settings-card--tight settings-card--quiet" key={tool.id}>
                       <div className="settings-row">
                         <div>
-                          <div className="settings-row-title">{tool.name}<span className="tool-status-badge">coming soon</span></div>
+                          <div className="settings-row-title">{tool.name}<InfoTip text={tool.capability || tool.desc} /><span className="tool-status-badge">coming soon</span></div>
                           <div className="settings-row-sub">{tool.desc}</div>
                         </div>
                       </div>
@@ -227,7 +228,7 @@ export default function Settings({ onClose }) {
                     <section className="settings-card settings-card--tight settings-card--quiet" key={tool.id}>
                       <div className="settings-row">
                         <div>
-                          <div className="settings-row-title">{tool.name}<span className="tool-status-badge">coming soon</span></div>
+                          <div className="settings-row-title">{tool.name}<InfoTip text={tool.capability || tool.desc} /><span className="tool-status-badge">coming soon</span></div>
                           <div className="settings-row-sub">{tool.desc}</div>
                         </div>
                       </div>
@@ -399,6 +400,14 @@ export default function Settings({ onClose }) {
       </div>
     </div>
   )
+}
+
+// Small "ⓘ" affordance whose native tooltip explains what a tool does. Native
+// title is used deliberately: a CSS tooltip would clip inside the scrollable
+// settings body, whereas title never clips and is keyboard/screen-reader friendly.
+function InfoTip({ text }) {
+  if (!text) return null
+  return <span className="tool-info" title={text} aria-label={text}>ⓘ</span>
 }
 
 function Toggle({ value, onChange }) {
