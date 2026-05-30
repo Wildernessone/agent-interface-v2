@@ -406,4 +406,70 @@ const ROUTES = {
     }
     return new Response(JSON.stringify({ error: 'timeout' }), { status: 504, headers: { 'Content-Type': 'application/json' } })
   },
+
+  // ── Reddit (OAuth2 PKCE, installed app — no client secret) ────────
+  // These three exist because Reddit's endpoints don't allow browser CORS.
+  // The worker only forwards; client_id is public and arrives in the body.
+  reddit_token: async (req) => {
+    const body = await req.json()
+    if (!body.client_id || !body.code || !body.code_verifier || !body.redirect_uri) {
+      return new Response(JSON.stringify({ error: 'missing_fields' }), { status: 400 })
+    }
+    const form = new URLSearchParams({
+      grant_type: 'authorization_code',
+      code: body.code,
+      redirect_uri: body.redirect_uri,
+      code_verifier: body.code_verifier,
+    })
+    return fetch('https://www.reddit.com/api/v1/access_token', {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${btoa(body.client_id + ':')}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'User-Agent': 'agent-interface/1.0',
+      },
+      body: form.toString(),
+    })
+  },
+
+  reddit_refresh: async (req) => {
+    const body = await req.json()
+    if (!body.client_id || !body.refresh_token) {
+      return new Response(JSON.stringify({ error: 'missing_fields' }), { status: 400 })
+    }
+    const form = new URLSearchParams({ grant_type: 'refresh_token', refresh_token: body.refresh_token })
+    return fetch('https://www.reddit.com/api/v1/access_token', {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${btoa(body.client_id + ':')}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'User-Agent': 'agent-interface/1.0',
+      },
+      body: form.toString(),
+    })
+  },
+
+  reddit_submit: async (req) => {
+    const auth = req.headers.get('Authorization') // Bearer <reddit access token>
+    if (!auth) return new Response(JSON.stringify({ error: 'missing_provider_key' }), { status: 400 })
+    const body = await req.json()
+    if (!body.sr || !body.title) return new Response(JSON.stringify({ error: 'missing_fields' }), { status: 400 })
+    const form = new URLSearchParams({
+      sr: body.sr,
+      title: String(body.title).slice(0, 300),
+      api_type: 'json',
+      kind: body.url ? 'link' : 'self',
+    })
+    if (body.url) form.set('url', body.url)
+    else form.set('text', String(body.text || '').slice(0, 40000))
+    return fetch('https://oauth.reddit.com/api/submit', {
+      method: 'POST',
+      headers: {
+        Authorization: auth,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'User-Agent': 'agent-interface/1.0',
+      },
+      body: form.toString(),
+    })
+  },
 }

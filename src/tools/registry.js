@@ -1556,6 +1556,38 @@ const narratePerSlide = {
   },
 }
 
+// ── Reddit — submit a post to a subreddit (OAuth via Storage tab) ─
+const redditPost = {
+  id: 'reddit_post',
+  name: 'Reddit',
+  category: 'action',
+  capability: 'submit a post to a subreddit (subreddit + title + body text, or a link) via the user\'s connected Reddit account',
+  desc: 'Post to a subreddit using your connected Reddit account (connect in Settings → Storage)',
+  keySource: null,  // OAuth token from storage_connections (provider=reddit)
+  status: 'live',
+  hidden: true,  // surfaces via build plans; you connect Reddit in Storage, not here
+  async run({ structuredInput, prompt, proxy }) {
+    const { getValidRedditToken } = await import('../utils/redditAuth')
+    const token = await getValidRedditToken()
+    if (!token) throw new ToolError('reddit_post', 'no_token', 'Connect Reddit first (Settings → Storage → Connect Reddit).')
+    const input = (typeof structuredInput === 'object' && structuredInput) || {}
+    const sr = String(input.subreddit || input.sr || '').replace(/^\/?r\//i, '').trim()
+    if (!sr) throw new ToolError('reddit_post', 'no_subreddit', 'Which subreddit? e.g. {subreddit:"test", title:"…", body:"…"}.')
+    const title = String(input.title || '').slice(0, 300)
+    if (!title) throw new ToolError('reddit_post', 'no_title', 'A Reddit post needs a title.')
+    const res = await proxy(
+      'reddit_submit',
+      { sr, title, text: input.body || input.text || prompt || '', url: input.url || null },
+      { Authorization: `Bearer ${token}` }
+    )
+    if (!res.ok) throw new ToolError('reddit_post', 'bad_response', await res.text().catch(() => `status ${res.status}`))
+    const data = await res.json()
+    const errs = data?.json?.errors
+    if (errs && errs.length) throw new ToolError('reddit_post', 'reddit_error', errs.map(e => e.join(' ')).join('; '))
+    return { type: 'action', summary: `Posted to r/${sr}`, link: data?.json?.data?.url || null, tool: 'reddit_post' }
+  },
+}
+
 // ── Mastodon — post a status to the user's instance ───────────────
 // Token is per-instance, so the key bundles both: "https://instance|TOKEN"
 // (same single-slot pattern as Twilio's "sid:token").
@@ -1609,6 +1641,8 @@ export const TOOL_REGISTRY = [
   imagePerSlide, narratePerSlide,
   // Action layer
   gmail, gsheets, gcal, notion, twilio, stripe, mastodon,
+  // Social
+  redditPost,
   // Meta — panel-as-tool for multi-step builds
   agentSynth,
 ]
