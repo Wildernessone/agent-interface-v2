@@ -348,6 +348,22 @@ const ROUTES = {
     })
   },
 
+  // Mastodon: post a status to the caller's instance. The instance base URL
+  // comes in the body (it's per-user); the bearer token is in Authorization.
+  mastodon: async (req) => {
+    const auth = req.headers.get('Authorization')
+    if (!auth) return new Response(JSON.stringify({ error: 'missing_provider_key' }), { status: 400 })
+    const body = await req.json()
+    if (!body.instance || !body.status) return new Response(JSON.stringify({ error: 'missing_fields' }), { status: 400 })
+    let base
+    try { base = new URL(body.instance).origin } catch { return new Response(JSON.stringify({ error: 'bad_instance' }), { status: 400 }) }
+    return fetch(`${base}/api/v1/statuses`, {
+      method: 'POST',
+      headers: { Authorization: auth, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: String(body.status).slice(0, 500) }),
+    })
+  },
+
   suno: async (req) => {
     const auth = req.headers.get('Authorization')
     if (!auth) return new Response(JSON.stringify({ error: 'missing_provider_key' }), { status: 400 })
