@@ -235,8 +235,8 @@ const removebg = {
     seeText: 'Open the API Key section, create a key, and copy it.',
     note: '50 free API calls/month; the key can be re-issued anytime.',
   },
-  setupHint: 'Free tier ~50 images/month. Needs a Worker proxy route — coming soon.',
-  status: 'needs_proxy_route',  // CORS is inconsistent for browser-direct calls
+  setupHint: 'Free tier ~50 images/month. Generate or upload an image first, then run this on it.',
+  status: 'live',
   async run({ prompt, key, context, proxy }) {
     if (!key) throw new ToolError('removebg', 'missing_key', 'Remove.bg needs an API key.')
     const sourceUrl = context?.sourceImageUrl
@@ -262,8 +262,8 @@ const clipdrop = {
     seeText: "On your account page click 'Reveal API Key' to copy it.",
     note: '⚠ Clipdrop is moving under Jasper — the standalone API may be deprecated; verify before relying on it.',
   },
-  setupHint: 'Needs a Worker proxy route — coming soon.',
-  status: 'needs_proxy_route',
+  setupHint: 'Runs background removal on a source image. Other Clipdrop ops (upscale, cleanup) coming later. Note: Clipdrop is migrating under Jasper.',
+  status: 'live',
   async run({ prompt, key, context, proxy }) {
     if (!key) throw new ToolError('clipdrop', 'missing_key', 'Clipdrop needs an API key.')
     const sourceUrl = context?.sourceImageUrl
@@ -1556,6 +1556,40 @@ const narratePerSlide = {
   },
 }
 
+// ── Mastodon — post a status to the user's instance ───────────────
+// Token is per-instance, so the key bundles both: "https://instance|TOKEN"
+// (same single-slot pattern as Twilio's "sid:token").
+const mastodon = {
+  id: 'mastodon',
+  name: 'Mastodon',
+  category: 'action',
+  capability: 'post a status (toot) to your Mastodon account — give it the text to publish',
+  desc: 'Publish a post to your Mastodon instance',
+  keySource: 'tool_keys.mastodon',
+  keyPrefix: 'https://instance|token',
+  setup: {
+    signupUrl: 'https://joinmastodon.org/servers',
+    seeText: 'On your instance: Preferences → Development → New application → create, then copy the access token.',
+    note: 'Paste it here as "https://your.instance|ACCESS_TOKEN" — the token is tied to that instance.',
+  },
+  setupHint: 'Format: https://mastodon.social|your_access_token (instance URL, a pipe, then the token).',
+  status: 'live',
+  async run({ prompt, structuredInput, key, proxy }) {
+    if (!key || !key.includes('|')) {
+      throw new ToolError('mastodon', 'missing_key', 'Mastodon needs "https://instance|token". Create a token in your instance: Preferences → Development → New application.')
+    }
+    const sep = key.indexOf('|')
+    const instance = key.slice(0, sep).trim().replace(/\/+$/, '')
+    const token = key.slice(sep + 1).trim()
+    const text = ((typeof structuredInput === 'object' && structuredInput?.text) || prompt || '').slice(0, 500)
+    if (!text) throw new ToolError('mastodon', 'no_text', 'Nothing to post — give me the text for the status.')
+    const res = await proxy('mastodon', { instance, status: text }, { Authorization: `Bearer ${token}` })
+    if (!res.ok) throw new ToolError('mastodon', 'bad_response', await res.text().catch(() => `status ${res.status}`))
+    const data = await res.json()
+    return { type: 'action', summary: 'Posted to Mastodon', link: data.url || data.uri || null, tool: 'mastodon' }
+  },
+}
+
 // ── The registry ──────────────────────────────────────────────────
 
 export const TOOL_REGISTRY = [
@@ -1574,7 +1608,7 @@ export const TOOL_REGISTRY = [
   // Per-slide bundles (synced visuals + narration for deck builds)
   imagePerSlide, narratePerSlide,
   // Action layer
-  gmail, gsheets, gcal, notion, twilio, stripe,
+  gmail, gsheets, gcal, notion, twilio, stripe, mastodon,
   // Meta — panel-as-tool for multi-step builds
   agentSynth,
 ]
