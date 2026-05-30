@@ -30,6 +30,19 @@ const AGENTS = [
 
 const PROXY = import.meta.env.VITE_PROXY_URL || "https://claude-proxy.jamesreed.workers.dev"
 
+// We prefix each agent's message in the shared history with "[Name]: " so the
+// other agents can tell who said what. Agents sometimes imitate that format in
+// their OWN reply — occasionally copying the wrong name (e.g. ChatGPT emitting
+// "[Grok]: ..."). Strip any leading speaker tag(s) from a model's own output so
+// it never displays or gets saved; the real tag is added separately when we
+// push the message into conversationRef.
+const SPEAKER_TAG_RE = /^\s*\[[^\]\n]{1,24}\]:[ \t]*/
+function stripLeadingSpeakerTag(text) {
+  let out = text
+  while (SPEAKER_TAG_RE.test(out)) out = out.replace(SPEAKER_TAG_RE, '')
+  return out
+}
+
 async function authHeader() {
   const { data: { session } } = await supabase.auth.getSession()
   return session?.access_token ? { 'x-supabase-auth': `Bearer ${session.access_token}` } : {}
@@ -155,7 +168,7 @@ export default function TheInterface() {
   // skills is the per-agent knowledge loaded from Drive at sign-in.
   // We thread it into buildSystemPrompt so every agent call picks up
   // whatever the user has dropped into Drive/Agent Interface/Skills/.
-  const { settings, turns, activeAgentId, voiceMode, addTurn, addToolTurn, updateToolTurn, updateBuildTurn, appendChunk, finishTurn, addErrorTurn, addToolErrorTurn, clearTurns, setVoiceMode, saveConversation, conversationId, loadMemory, saveMemory, resetTurnForRetry, activeProject, projects, loadProjects, createProject, setActiveProject, skills } = useStore()
+  const { settings, turns, activeAgentId, voiceMode, addTurn, addToolTurn, updateToolTurn, updateBuildTurn, setTurnText, finishTurn, addErrorTurn, addToolErrorTurn, clearTurns, setVoiceMode, saveConversation, conversationId, loadMemory, saveMemory, resetTurnForRetry, activeProject, projects, loadProjects, createProject, setActiveProject, skills } = useStore()
   
   const handleVoiceToggle = () => {
     if (!voiceMode) {
@@ -185,6 +198,11 @@ export default function TheInterface() {
   const scrollRef = useRef(null)
   const voiceRef = useRef(null)
   const conversationRef = useRef([])
+  // Synchronous re-entrancy guard for sendMessage. `busy` (derived from
+  // activeAgentId) only flips true once the first agent turn is added — i.e.
+  // AFTER the checkTierLimits/orchestrate awaits — so a second trigger in that
+  // window would otherwise slip past the `busy` check and double everything.
+  const sendingRef = useRef(false)
   const previousRolesRef = useRef({})
   // Stick the last spend_mode across turns so a frugal brainstorm stays
   // frugal until the user signals otherwise (build it, "use the best", etc).
@@ -236,7 +254,12 @@ export default function TheInterface() {
 
   const sendMessage = async (overrideText) => {
     const text = (overrideText || input).trim()
-    if ((!text && attachments.length === 0) || busy) return
+    // sendingRef closes the async gap before `busy` turns true. Every exit
+    // path below MUST reset it (see the resets before each early return and at
+    // the end), otherwise sending locks up permanently.
+    if ((!text && attachments.length === 0) || busy || sendingRef.current) return
+    sendingRef.current = true
+    try {
     if (!overrideText) setInput("")
 
     const limit = await checkTierLimits()
@@ -378,8 +401,11 @@ export default function TheInterface() {
         const streamOnce = (systemPrompt) => new Promise((resolve) => {
           const messages = [{ role: "user", content: systemPrompt }, ...conversationRef.current]
           let fullText = ""
-          const onChunk = (c) => { fullText += c; appendChunk(id, c) }
-          const onDone = () => { finishTurn(); resolve({ text: fullText, error: null }) }
+          // Strip any leading "[Name]:" the model echoes back so it never
+          // reaches the screen; re-sanitize the whole turn each chunk since the
+          // tag can straddle a chunk boundary.
+          const onChunk = (c) => { fullText += c; setTurnText(id, stripLeadingSpeakerTag(fullText)) }
+          const onDone = () => { finishTurn(); resolve({ text: stripLeadingSpeakerTag(fullText), error: null }) }
           const onError = (status, msg) => {
             const errorType = classifyError(status, msg)
             addErrorTurn(agent.id, errorType)
@@ -459,6 +485,9 @@ export default function TheInterface() {
     const steps = plan?.steps || []
     if (steps.length > 0) {
       await executeBuild({ deliverable: plan.deliverable, steps })
+    }
+    } finally {
+      sendingRef.current = false
     }
   }
 
