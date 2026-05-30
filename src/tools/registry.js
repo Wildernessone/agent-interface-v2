@@ -17,7 +17,11 @@
  *     desc:       'Black Forest Labs',       // UI subtitle
  *     keySource:  'tool_keys.flux',          // where the user's key lives
  *     keyPrefix:  'fal-',                    // optional, for help text
- *     docsUrl:    'https://fal.ai',          // "where to get a key" link
+ *     setup: {                               // deep-links rendered as chips in Settings
+ *       signupUrl, getKeyUrl, billingUrl, docsUrl,  // any subset
+ *       seeText:  'what you see on the key page',    // optional
+ *       note:     'gotcha, e.g. needs prepaid credits',
+ *     },
  *     setupHint:  null,                      // optional inline help
  *     status:     'live',                    // 'live'|'beta'|'needs_proxy_route'|'coming_soon'
  *     run:        async ({prompt, key, settings, proxy}) => output
@@ -87,7 +91,6 @@ const dalle = {
   capability: 'generate images from text prompts (sizes: square, wide, tall — for slide covers, banners, social posts)',
   desc: 'OpenAI image generation (uses your OpenAI key). Sizes: square (1:1), wide (3:2), tall (2:3).',
   keySource: 'agent.gpt',
-  docsUrl: 'https://platform.openai.com/api-keys',
   status: 'live',
   async run({ prompt, structuredInput, key, proxy }) {
     if (!key) throw new ToolError('dalle', 'missing_key', 'DALL-E uses your OpenAI key — add it in Settings → Agents → ChatGPT.')
@@ -118,7 +121,11 @@ const stability = {
   desc: 'Stability AI — versatile, strong on artistic styles',
   keySource: 'tool_keys.stability',
   keyPrefix: 'sk-',
-  docsUrl: 'https://platform.stability.ai/account/keys',
+  setup: {
+    signupUrl: 'https://platform.stability.ai/', getKeyUrl: 'https://platform.stability.ai/account/keys', billingUrl: 'https://platform.stability.ai/account/credits',
+    seeText: "Opens on your API Keys — click '+' to generate and copy a key.",
+    note: '25 free credits on signup; buy more to keep generating.',
+  },
   status: 'live',
   async run({ prompt, key, proxy }) {
     if (!key) throw new ToolError('stability', 'missing_key', 'Stable Diffusion needs an API key.')
@@ -138,7 +145,11 @@ const ideogram = {
   desc: 'Best when the image needs words baked in',
   keySource: 'tool_keys.ideogram',
   keyPrefix: 'ideo-',
-  docsUrl: 'https://ideogram.ai/manage-api',
+  setup: {
+    signupUrl: 'https://ideogram.ai/', getKeyUrl: 'https://ideogram.ai/manage-api', billingUrl: 'https://ideogram.ai/manage-api',
+    seeText: 'Add a payment method, then create a key on the Manage API page.',
+    note: 'Requires a minimum $10 top-up before you can create a key.',
+  },
   status: 'live',
   async run({ prompt, key, proxy }) {
     if (!key) throw new ToolError('ideogram', 'missing_key', 'Ideogram needs an API key.')
@@ -159,7 +170,11 @@ const flux = {
   capability: 'photorealistic image generation (top-tier quality)',
   desc: 'Black Forest Labs Flux 1.1 Pro via fal.ai — current photorealism leader',
   keySource: 'tool_keys.flux',
-  docsUrl: 'https://fal.ai/dashboard/keys',
+  setup: {
+    signupUrl: 'https://fal.ai/login', getKeyUrl: 'https://fal.ai/dashboard/keys', billingUrl: 'https://fal.ai/dashboard/billing',
+    seeText: "Click 'Add key', name it, and copy it immediately.",
+    note: 'Key is shown only once; add a payment method for paid models.',
+  },
   setupHint: 'Sign up at fal.ai and paste your "key" (starts with "fal-"). $5 free credit on signup.',
   status: 'live',
   async run({ prompt, key }) {
@@ -184,7 +199,11 @@ const recraft = {
   capability: 'logos, icons, vector graphics, brand assets',
   desc: 'Where DALL-E falls apart — clean vectors and brand work',
   keySource: 'tool_keys.recraft',
-  docsUrl: 'https://www.recraft.ai/profile/api',
+  setup: {
+    signupUrl: 'https://www.recraft.ai/', getKeyUrl: 'https://www.recraft.ai/profile/api', billingUrl: 'https://www.recraft.ai/profile/api',
+    seeText: "Click 'Generate' to create the API key.",
+    note: "The Generate button is disabled until you buy API units.",
+  },
   setupHint: 'Sign up at recraft.ai, go to Profile → API to generate a key.',
   status: 'live',
   async run({ prompt, key }) {
@@ -211,7 +230,11 @@ const removebg = {
   capability: 'remove the background from any image, returning a clean PNG',
   desc: 'One-purpose tool — background removal that just works',
   keySource: 'tool_keys.removebg',
-  docsUrl: 'https://www.remove.bg/dashboard',
+  setup: {
+    signupUrl: 'https://www.remove.bg/users/sign_up', getKeyUrl: 'https://www.remove.bg/dashboard#api-key', billingUrl: 'https://www.remove.bg/pricing',
+    seeText: 'Open the API Key section, create a key, and copy it.',
+    note: '50 free API calls/month; the key can be re-issued anytime.',
+  },
   setupHint: 'Free tier ~50 images/month. Needs a Worker proxy route — coming soon.',
   status: 'needs_proxy_route',  // CORS is inconsistent for browser-direct calls
   async run({ prompt, key, context, proxy }) {
@@ -234,7 +257,11 @@ const clipdrop = {
   capability: 'cleanup, uncrop, relight, remove text, upscale — image polish toolkit',
   desc: 'The polish layer between "generated" and "ready to ship"',
   keySource: 'tool_keys.clipdrop',
-  docsUrl: 'https://clipdrop.co/apis',
+  setup: {
+    signupUrl: 'https://clipdrop.co/apis', getKeyUrl: 'https://clipdrop.co/apis/account', billingUrl: 'https://clipdrop.co/apis/account',
+    seeText: "On your account page click 'Reveal API Key' to copy it.",
+    note: '⚠ Clipdrop is moving under Jasper — the standalone API may be deprecated; verify before relying on it.',
+  },
   setupHint: 'Needs a Worker proxy route — coming soon.',
   status: 'needs_proxy_route',
   async run({ prompt, key, context, proxy }) {
@@ -258,7 +285,11 @@ const elevenlabs = {
   capability: 'synthesize realistic AI voices',
   desc: 'Premium AI voice synthesis — best-in-class quality',
   keySource: 'tool_keys.elevenlabs',
-  docsUrl: 'https://elevenlabs.io/app/settings/api-keys',
+  setup: {
+    signupUrl: 'https://elevenlabs.io/sign-up', getKeyUrl: 'https://elevenlabs.io/app/settings/api-keys', billingUrl: 'https://elevenlabs.io/app/settings/billing',
+    seeText: "Click '+ Create Key', set permissions, and copy it.",
+    note: 'Free tier available; the key is shown only once.',
+  },
   status: 'live',
   async run({ prompt, structuredInput, key, proxy, settings }) {
     if (!key) throw new ToolError('elevenlabs', 'missing_key', 'ElevenLabs needs an API key.')
@@ -285,7 +316,10 @@ const suno = {
   capability: 'generate full songs with vocals (returns duration, tags, lyrics)',
   desc: 'Full songs with vocals from a description',
   keySource: 'tool_keys.suno',
-  docsUrl: 'https://suno.com/account',
+  setup: {
+    signupUrl: 'https://suno.com/', billingUrl: 'https://suno.com/account',
+    note: '⚠ Suno has no official public API or self-serve key page — API access is partner-beta / Premier-tier only. Any third-party key is unofficial.',
+  },
   status: 'live',
   async run({ prompt, key, proxy }) {
     if (!key) throw new ToolError('suno', 'missing_key', 'Suno needs an API key.')
@@ -317,7 +351,11 @@ const runway = {
   capability: 'generate short AI videos from text OR animate an existing image (5s or 10s, widescreen/portrait/square)',
   desc: 'AI video — text-to-video OR image-to-video. Use {image_url: ...} to animate an image.',
   keySource: 'tool_keys.runway',
-  docsUrl: 'https://app.runwayml.com/account',
+  setup: {
+    signupUrl: 'https://dev.runwayml.com/', getKeyUrl: 'https://dev.runwayml.com/', billingUrl: 'https://dev.runwayml.com/',
+    seeText: "Create an org, open 'API Keys', create a key, and copy the key_… value.",
+    note: '⚠ Use the developer portal dev.runwayml.com — NOT app.runwayml.com. API credits are separate from the web app and need a $10 min top-up.',
+  },
   status: 'live',
   async run({ prompt, structuredInput, key, proxy, context }) {
     if (!key) throw new ToolError('runway', 'missing_key', 'Runway needs an API key.')
@@ -357,7 +395,11 @@ const perplexity = {
   desc: 'Real-time web search with answers',
   keySource: 'tool_keys.perplexity',
   keyPrefix: 'pplx-',
-  docsUrl: 'https://www.perplexity.ai/settings/api',
+  setup: {
+    signupUrl: 'https://www.perplexity.ai/settings/api', getKeyUrl: 'https://www.perplexity.ai/account/api/keys', billingUrl: 'https://www.perplexity.ai/account/api/billing',
+    seeText: 'Add credits, then generate a key and copy it.',
+    note: 'Keys stop working at $0 balance — enable auto-reload.',
+  },
   status: 'live',
   async run({ prompt, key }) {
     if (!key) throw new ToolError('perplexity', 'missing_key', 'Perplexity needs an API key.')
@@ -382,7 +424,11 @@ const tavily = {
   desc: 'Cleaner results, better for agentic loops',
   keySource: 'tool_keys.tavily',
   keyPrefix: 'tvly-',
-  docsUrl: 'https://app.tavily.com/home',
+  setup: {
+    signupUrl: 'https://app.tavily.com/home', getKeyUrl: 'https://app.tavily.com/home', billingUrl: 'https://app.tavily.com/account/plan',
+    seeText: 'Your tvly-… key is shown in the API Keys section.',
+    note: '1,000 free requests/month; no payment required to start.',
+  },
   status: 'live',
   async run({ prompt, key }) {
     if (!key) throw new ToolError('tavily', 'missing_key', 'Tavily needs an API key.')
@@ -1214,7 +1260,11 @@ const twilio = {
   desc: 'Sends SMS via your Twilio account. Paste credentials as AC<sid>:<auth_token>.',
   keySource: 'tool_keys.twilio',
   keyPrefix: 'AC',
-  docsUrl: 'https://console.twilio.com',
+  setup: {
+    signupUrl: 'https://www.twilio.com/try-twilio', getKeyUrl: 'https://console.twilio.com/us1/account/keys-credentials/api-keys', billingUrl: 'https://console.twilio.com/us1/billing/manage-billing/billing-overview',
+    seeText: 'Copy your Account SID + Auth Token from the console, or create an API key.',
+    note: 'Add funds before sending; prefer an API key over the raw Auth Token in production.',
+  },
   setupHint: 'In Twilio Console copy your Account SID (starts with AC...) and Auth Token. Paste them here joined with a colon: "AC123...:authtoken123...". Also set your Twilio phone number in the build input as {from:"+15551234567"}.',
   status: 'live',
   async run({ structuredInput, prompt, key, proxy }) {
@@ -1260,7 +1310,11 @@ const stripe = {
   desc: 'Uses your Stripe secret key. Creates a one-off Product + Price + Payment Link in one call.',
   keySource: 'tool_keys.stripe',
   keyPrefix: 'sk_',
-  docsUrl: 'https://dashboard.stripe.com/apikeys',
+  setup: {
+    signupUrl: 'https://dashboard.stripe.com/register', getKeyUrl: 'https://dashboard.stripe.com/apikeys', billingUrl: 'https://dashboard.stripe.com/settings/billing',
+    seeText: 'Copy the Publishable (pk_…) and reveal the Secret (sk_…) key; toggle test/live at the top.',
+    note: 'No prepaid credits needed; the live-mode secret key is shown only once.',
+  },
   setupHint: 'Use a TEST key (sk_test_...) until you\'re ready to take real money. Live keys (sk_live_...) charge real cards.',
   status: 'live',
   async run({ structuredInput, key }) {
@@ -1351,7 +1405,11 @@ const notion = {
   desc: 'Uses an Internal Integration token. Share the parent page with your integration after pasting the token.',
   keySource: 'tool_keys.notion',
   keyPrefix: 'ntn_',
-  docsUrl: 'https://www.notion.so/my-integrations',
+  setup: {
+    signupUrl: 'https://www.notion.so/signup', getKeyUrl: 'https://www.notion.so/my-integrations',
+    seeText: "Click '+ New integration', choose Internal, then copy the Internal Integration Token.",
+    note: 'Free — but you must separately share each target page/database with the integration.',
+  },
   setupHint: 'Create an integration at notion.com/my-integrations, paste the token here, then SHARE the target parent page/database with your integration in Notion (Share menu → invite your integration by name). Otherwise Notion returns "object not found".',
   status: 'live',
   async run({ structuredInput, key }) {

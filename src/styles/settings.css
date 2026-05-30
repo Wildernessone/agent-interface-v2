@@ -216,6 +216,47 @@
   line-height: var(--line-height-normal);
 }
 
+/* Provider setup deep-links (Sign up / Get key / Billing / Docs chips) */
+.setup-links { margin-top: var(--space-3); }
+.setup-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.setup-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full, 999px);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: border-color .12s, color .12s;
+}
+.setup-chip:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+.setup-chip--primary {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+.setup-see {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-tertiary);
+  margin-top: var(--space-2);
+  line-height: var(--line-height-normal);
+}
+.setup-note {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-tertiary);
+  margin-top: var(--space-2);
+  line-height: var(--line-height-normal);
+  opacity: .85;
+}
+
 .settings-intro {
   font-size: var(--font-size-sm);
   color: var(--color-text-secondary);
