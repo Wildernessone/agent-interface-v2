@@ -189,6 +189,8 @@ export const useStore = create((set, get) => ({
     activeAgentId: turn.type === 'agent' ? turn.id : state.activeAgentId,
   })),
   appendChunk: (id, chunk) => set(state => ({ turns: state.turns.map(t => t.id === id ? { ...t, text: (t.text || '') + chunk } : t) })),
+  // Replace a turn's text outright (used to display sanitized streamed output).
+  setTurnText: (id, text) => set(state => ({ turns: state.turns.map(t => t.id === id ? { ...t, text } : t) })),
   resetTurnForRetry: (id) => set(state => ({
     turns: state.turns.map(t => t.id === id ? { ...t, text: '', reRolled: true } : t),
     activeAgentId: id,
