@@ -8,6 +8,10 @@ import { TOOL_REGISTRY, ROADMAP_TOOLS, CATEGORY_LABELS } from '../tools/registry
 import { AGENT_SETUP } from '../config/agentSetup'
 import SetupLinks from './SetupLinks'
 
+// ElevenLabs setup links, pulled from the tool registry so the Voice tab stays
+// in sync with the Tools tab (one verified source).
+const ELEVENLABS_SETUP = TOOL_REGISTRY.find(t => t.id === 'elevenlabs')?.setup
+
 const AGENTS = [
   { id:"claude",  name:"Claude",  provider:"Anthropic", color:"var(--color-agent-claude)", avatar:"C",  placeholder:"sk-ant-api03-..." },
   { id:"gpt",     name:"ChatGPT", provider:"OpenAI",    color:"var(--color-agent-gpt)",    avatar:"G",  placeholder:"sk-proj-..." },
@@ -218,7 +222,19 @@ export default function Settings({ onClose }) {
 
           {tab === "voice" && (
             <>
-              <p className="settings-intro">Choose distinct ElevenLabs voices for each agent. Add your ElevenLabs key in Tools → Voice first.</p>
+              <p className="settings-intro">Choose distinct ElevenLabs voices for each agent. ElevenLabs powers the high-quality voices — without a key the app falls back to your browser voice.</p>
+
+              <section className="settings-card settings-card--tight">
+                <label className="settings-label">ElevenLabs API key</label>
+                <input
+                  className="settings-input"
+                  type="password"
+                  placeholder={settings.toolKeys?.elevenlabs ? "key saved" : "paste key"}
+                  value={settings.toolKeys?.elevenlabs || ""}
+                  onChange={e => updateToolKey("elevenlabs", e.target.value)}
+                />
+                <SetupLinks setup={ELEVENLABS_SETUP} />
+              </section>
 
               {/* Narrator voice — used by per-slide narration in builds.
                   Defaults to Rachel; users can pick or paste their own
