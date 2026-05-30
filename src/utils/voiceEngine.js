@@ -177,13 +177,14 @@ export class VoiceEngine {
         u.pitch = cfg.pitch
         u.rate = cfg.rate
         u.volume = 1.0
-        // Chrome bug: long speech silently pauses. Pump pause→resume to keep it alive.
-        const keepAlive = setInterval(() => {
-          if (this.synth.speaking && !this.synth.paused) { this.synth.pause(); this.synth.resume() }
-        }, 9000)
-        // Rate-aware safety timeout (~14 chars/sec at rate 1.0) if onend never fires.
+        // Chrome silently stops speechSynthesis after ~15s of continuous speech.
+        // CAP keeps every utterance well under that bound, so we don't need a
+        // pause→resume keep-alive pump (which would also risk resuming after a
+        // stop) — short utterances simply never hit the cutoff.
+        // Rate-aware safety timeout (~14 chars/sec at rate 1.0) still covers the
+        // case where onend never fires at all.
         const estMs = (chunk.length / (14 * (cfg.rate || 1))) * 1000 * 1.6 + 1200
-        const finish = () => { clearInterval(keepAlive); clearTimeout(timeout); resolve() }
+        const finish = () => { clearTimeout(timeout); resolve() }
         const timeout = setTimeout(finish, estMs)
         u.onend = finish
         u.onerror = finish

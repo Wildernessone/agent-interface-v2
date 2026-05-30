@@ -430,7 +430,13 @@ export default function TheInterface() {
           //                a hardened retry. The original fail reason is kept as
           //                audit_reason, but we do NOT emit audit_passed: the text
           //                being logged is the retry, which was not itself audited.
-          const auditMeta = !auditResult
+          //   "errored"  — the model errored on this turn (so the audit block was
+          //                skipped) yet still produced partial text. Kept distinct
+          //                from "not_run" so an audit gap isn't mistaken for a
+          //                deliberate frugal/voice skip.
+          const auditMeta = result.error
+            ? { audit_state: "errored" }
+            : !auditResult
             ? { audit_state: "not_run" }
             : retried
               ? { audit_state: "retried", audit_reason: auditResult.reason }
