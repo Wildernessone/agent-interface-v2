@@ -70,6 +70,7 @@ export default function Settings({ onClose }) {
   const { settings, updateSetting } = useStore()
   const [tab, setTab] = useState("agents")
   const [showKey, setShowKey] = useState({})
+  const [toolQuery, setToolQuery] = useState("")
 
   const userEmail = useStore.getState().user?.email
 
@@ -96,6 +97,19 @@ export default function Settings({ onClose }) {
     (acc[t.category] = acc[t.category] || []).push(t)
     return acc
   }, {})
+
+  // Tools tab search: match against name, description, id, and category label.
+  const toolMatch = (t) => {
+    const q = toolQuery.trim().toLowerCase()
+    if (!q) return true
+    return `${t.name} ${t.desc || ''} ${t.id} ${CATEGORY_LABELS[t.category] || t.category}`.toLowerCase().includes(q)
+  }
+  const liveInCat = (cat) => visibleTools.filter(t => t.category === cat && toolMatch(t))
+  const roadInCat = (cat) => (roadmapByCategory[cat] || []).filter(toolMatch)
+  const orphanRoadmapCats = Object.keys(roadmapByCategory).filter(cat => !toolCategories.includes(cat))
+  const anyToolMatch =
+    toolCategories.some(c => liveInCat(c).length || roadInCat(c).length) ||
+    orphanRoadmapCats.some(c => roadInCat(c).length)
 
   return (
     <div className="settings-backdrop" onClick={e => e.target === e.currentTarget && onClose()}>
@@ -146,10 +160,16 @@ export default function Settings({ onClose }) {
 
           {tab === "tools" && (
             <>
-              {toolCategories.map(cat => (
+              <input
+                className="settings-input settings-search"
+                placeholder="Search tools — name, provider, or category…"
+                value={toolQuery}
+                onChange={e => setToolQuery(e.target.value)}
+              />
+              {toolCategories.filter(cat => liveInCat(cat).length || roadInCat(cat).length).map(cat => (
                 <div key={cat} className="settings-group">
                   <div className="settings-group-label">{CATEGORY_LABELS[cat] || cat}</div>
-                  {visibleTools.filter(t => t.category === cat).map(tool => {
+                  {liveInCat(cat).map(tool => {
                     const on = settings.tools?.[tool.id]?.enabled
                     const usesAgentKey = tool.keySource?.startsWith('agent.')
                     const isStubbed = tool.status === 'needs_proxy_route' || tool.status === 'beta'
@@ -188,7 +208,7 @@ export default function Settings({ onClose }) {
                       </section>
                     )
                   })}
-                  {roadmapByCategory[cat]?.map(tool => (
+                  {roadInCat(cat).map(tool => (
                     <section className="settings-card settings-card--tight settings-card--quiet" key={tool.id}>
                       <div className="settings-row">
                         <div>
@@ -200,10 +220,10 @@ export default function Settings({ onClose }) {
                   ))}
                 </div>
               ))}
-              {Object.entries(roadmapByCategory).filter(([cat]) => !toolCategories.includes(cat)).map(([cat, tools]) => (
+              {orphanRoadmapCats.filter(cat => roadInCat(cat).length).map(cat => (
                 <div key={cat} className="settings-group">
                   <div className="settings-group-label">{CATEGORY_LABELS[cat] || cat}</div>
-                  {tools.map(tool => (
+                  {roadInCat(cat).map(tool => (
                     <section className="settings-card settings-card--tight settings-card--quiet" key={tool.id}>
                       <div className="settings-row">
                         <div>
@@ -215,6 +235,9 @@ export default function Settings({ onClose }) {
                   ))}
                 </div>
               ))}
+              {!anyToolMatch && (
+                <div className="settings-helper">No tools match “{toolQuery.trim()}”.</div>
+              )}
             </>
           )}
 

@@ -264,6 +264,8 @@
   margin: 0 0 var(--space-5);
 }
 
+.settings-search { margin-bottom: var(--space-5); }
+
 .settings-group { margin-bottom: var(--space-6); }
 .settings-group-label {
   font-size: var(--font-size-xs);
