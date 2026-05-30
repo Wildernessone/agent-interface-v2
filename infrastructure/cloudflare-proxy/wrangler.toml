@@ -8,5 +8,5 @@ binding = "RATE_LIMIT_KV"
 id = "1be093ccf88c4c8fb1d4164d419621c5"
 
 [vars]
-SUPABASE_URL = "https://jcmkoooivghwrgezxode.supabase.co"
+SUPABASE_URL = "https://oqbpuspnmznqxgkmyzyb.supabase.co"
 ALLOWED_ORIGINS = "https://agent-interface-v2.pages.dev"
