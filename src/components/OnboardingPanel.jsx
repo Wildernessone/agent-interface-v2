@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { useStore } from '../store/useStore'
+import { AGENT_SETUP } from '../config/agentSetup'
+import SetupLinks from './SetupLinks'
 
 const PROVIDERS = [
   {
@@ -146,9 +148,8 @@ function ProviderCard({ provider, featured, open, onToggle, keyInput, onKeyInput
           <p className="onboarding-card-why">{provider.why}</p>
           <ol className="onboarding-steps">
             <li>
-              <a href={provider.docsUrl} target="_blank" rel="noreferrer" className="onboarding-step-link">
-                Get your {provider.provider} API key ↗
-              </a>
+              Get your {provider.provider} API key:
+              <SetupLinks setup={AGENT_SETUP[provider.id]} />
             </li>
             <li>Paste it below — keys save automatically.</li>
           </ol>

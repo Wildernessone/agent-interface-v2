@@ -5,12 +5,14 @@ import SkillsTab from './SkillsTab'
 import { supabase } from '../utils/supabase'
 import { useStore } from '../store/useStore'
 import { TOOL_REGISTRY, ROADMAP_TOOLS, CATEGORY_LABELS } from '../tools/registry'
+import { AGENT_SETUP } from '../config/agentSetup'
+import SetupLinks from './SetupLinks'
 
 const AGENTS = [
-  { id:"claude",  name:"Claude",  provider:"Anthropic", color:"var(--color-agent-claude)", avatar:"C",  placeholder:"sk-ant-api03-...", docsUrl:"https://console.anthropic.com/" },
-  { id:"gpt",     name:"ChatGPT", provider:"OpenAI",    color:"var(--color-agent-gpt)",    avatar:"G",  placeholder:"sk-proj-...",      docsUrl:"https://platform.openai.com/api-keys" },
-  { id:"gemini",  name:"Gemini",  provider:"Google",    color:"var(--color-agent-gemini)", avatar:"X",  placeholder:"AIza...",          docsUrl:"https://aistudio.google.com/app/apikey" },
-  { id:"grok",    name:"Grok",    provider:"xAI",       color:"var(--color-agent-grok)",   avatar:"GR", placeholder:"xai-...",          docsUrl:"https://console.x.ai/" },
+  { id:"claude",  name:"Claude",  provider:"Anthropic", color:"var(--color-agent-claude)", avatar:"C",  placeholder:"sk-ant-api03-..." },
+  { id:"gpt",     name:"ChatGPT", provider:"OpenAI",    color:"var(--color-agent-gpt)",    avatar:"G",  placeholder:"sk-proj-..." },
+  { id:"gemini",  name:"Gemini",  provider:"Google",    color:"var(--color-agent-gemini)", avatar:"X",  placeholder:"AIza..." },
+  { id:"grok",    name:"Grok",    provider:"xAI",       color:"var(--color-agent-grok)",   avatar:"GR", placeholder:"xai-..." },
 ]
 
 const ELEVENLABS_VOICES = [
@@ -134,7 +136,7 @@ export default function Settings({ onClose }) {
                 <input className="settings-input" type={showKey[agent.id] ? "text" : "password"} placeholder={agent.placeholder} value={settings.agents[agent.id]?.key || ""} onChange={e => updateAgent(agent.id, "key", e.target.value)}/>
                 <button className="settings-input-toggle" onClick={() => setShowKey(p => ({ ...p, [agent.id]: !p[agent.id] }))}>{showKey[agent.id] ? "hide" : "show"}</button>
               </div>
-              <a className="settings-link" href={agent.docsUrl} target="_blank" rel="noreferrer">Get API key ↗</a>
+              <SetupLinks setup={AGENT_SETUP[agent.id]} />
             </section>
           ))}
 
@@ -172,7 +174,7 @@ export default function Settings({ onClose }) {
                           <>
                             <label className="settings-label">API key</label>
                             <input className="settings-input" type="password" placeholder={tool.keyPrefix ? `${tool.keyPrefix}...` : "paste key"} value={settings.toolKeys?.[tool.id] || ""} onChange={e => updateToolKey(tool.id, e.target.value)}/>
-                            {tool.docsUrl && (<a className="settings-link" href={tool.docsUrl} target="_blank" rel="noreferrer">Get API key ↗</a>)}
+                            <SetupLinks setup={tool.setup} />
                             {tool.setupHint && (<div className="settings-helper">{tool.setupHint}</div>)}
                           </>
                         )}
