@@ -395,6 +395,7 @@ export default function TheInterface() {
 
         let result = await streamOnce(baseSystemPrompt)
         let auditResult = null
+        let retried = false
 
         // Frugal mode skips the V2 audit pass — auditing means a second
         // round-trip to Claude per off-spec response, which defeats the
@@ -406,7 +407,7 @@ export default function TheInterface() {
             const hardened = `${baseSystemPrompt}\n\n${reminder}`
             resetTurnForRetry(id)
             const retry = await streamOnce(hardened)
-            if (!retry.error) result = retry
+            if (!retry.error) { result = retry; retried = true }
             window.dispatchEvent(new CustomEvent('openclaw:audit_fail', {
               detail: { agent: agent.id, role, reason: auditResult.reason }
             }))
@@ -425,11 +426,17 @@ export default function TheInterface() {
           //   "verified" — an audit model actually judged it (auditResult.audited)
           //   "skipped"  — audit was attempted but couldn't run (no model / API
           //                error / unparseable) → failed open, response unverified
+          //   "retried"  — the first response failed the audit and we swapped in
+          //                a hardened retry. The original fail reason is kept as
+          //                audit_reason, but we do NOT emit audit_passed: the text
+          //                being logged is the retry, which was not itself audited.
           const auditMeta = !auditResult
             ? { audit_state: "not_run" }
-            : auditResult.audited
-              ? { audit_state: "verified", audit_passed: auditResult.passed, audit_reason: auditResult.reason }
-              : { audit_state: "skipped", audit_reason: auditResult.reason }
+            : retried
+              ? { audit_state: "retried", audit_reason: auditResult.reason }
+              : auditResult.audited
+                ? { audit_state: "verified", audit_passed: auditResult.passed, audit_reason: auditResult.reason }
+                : { audit_state: "skipped", audit_reason: auditResult.reason }
           logUsage({
             kind: "agent_message", provider: agent.id, model: agent.id,
             tokensOut: result.text.length / 4 | 0, success: true,
