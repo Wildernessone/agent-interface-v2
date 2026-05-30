@@ -130,7 +130,17 @@ export class VoiceEngine {
       grok:    { names:["Alex","Google UK English Male"],  pitch:0.88, rate:1.05, volume:1.0 },
     }
     const cfg = BROWSER_VOICES[agentId] || BROWSER_VOICES.claude
-    const voices = this.synth.getVoices()
+    // Voices load asynchronously — getVoices() can be empty on the first call.
+    // Wait briefly for onvoiceschanged before giving up on voice selection.
+    let voices = this.synth.getVoices()
+    if (!voices.length) {
+      voices = await new Promise(resolve => {
+        let settled = false
+        const done = () => { if (settled) return; settled = true; resolve(this.synth.getVoices()) }
+        this.synth.onvoiceschanged = done
+        setTimeout(done, 500)
+      })
+    }
     // Try each preferred voice name in order
     let voice = null
     for (const name of cfg.names) {
@@ -139,19 +149,44 @@ export class VoiceEngine {
     }
     // Fall back to any English voice
     if (!voice) voice = voices.find(v => v.lang.startsWith("en") && !v.name.includes("Google")) || voices.find(v => v.lang.startsWith("en")) || voices[0]
-    // Split into sentences to avoid browser TTS cutoff bug
-    const sentences = text.slice(0, 800).match(/[^.!?]+[.!?]+/g) || [text.slice(0, 800)]
-    for (const sentence of sentences) {
+
+    // Split into sentences, then hard-cap each chunk. Chrome silently stops
+    // speechSynthesis after ~15s of continuous speech, so a single long
+    // sentence gets cut off mid-word. Keeping every utterance short sidesteps it.
+    const CAP = 180
+    const rawSentences = text.slice(0, 800).match(/[^.!?]+[.!?]+/g) || [text.slice(0, 800)]
+    const chunks = []
+    for (const s of rawSentences) {
+      let rest = s.trim()
+      while (rest.length > CAP) {
+        let cut = rest.lastIndexOf(",", CAP)
+        if (cut < 60) cut = rest.lastIndexOf(" ", CAP)
+        if (cut < 60) cut = CAP
+        chunks.push(rest.slice(0, cut + 1).trim())
+        rest = rest.slice(cut + 1).trim()
+      }
+      if (rest) chunks.push(rest)
+    }
+
+    for (const chunk of chunks) {
+      if (!chunk) continue
       if (!this.speaking && this.queue.length === 0) break // stopped
       await new Promise(resolve => {
-        const u = new SpeechSynthesisUtterance(sentence.trim())
+        const u = new SpeechSynthesisUtterance(chunk)
         u.voice = voice
         u.pitch = cfg.pitch
         u.rate = cfg.rate
         u.volume = 1.0
-        const timeout = setTimeout(resolve, sentence.length * 100)
-        u.onend = () => { clearTimeout(timeout); resolve() }
-        u.onerror = () => { clearTimeout(timeout); resolve() }
+        // Chrome bug: long speech silently pauses. Pump pause→resume to keep it alive.
+        const keepAlive = setInterval(() => {
+          if (this.synth.speaking && !this.synth.paused) { this.synth.pause(); this.synth.resume() }
+        }, 9000)
+        // Rate-aware safety timeout (~14 chars/sec at rate 1.0) if onend never fires.
+        const estMs = (chunk.length / (14 * (cfg.rate || 1))) * 1000 * 1.6 + 1200
+        const finish = () => { clearInterval(keepAlive); clearTimeout(timeout); resolve() }
+        const timeout = setTimeout(finish, estMs)
+        u.onend = finish
+        u.onerror = finish
         // iOS Safari fix - resume if paused
         if (this.synth.paused) this.synth.resume()
         this.synth.speak(u)

@@ -419,7 +419,22 @@ export default function TheInterface() {
           // assistant history is a flat blob and Claude can't tell a
           // Gemini opinion from a Grok one.
           conversationRef.current = [...conversationRef.current, { role: "assistant", content: `[${agent.name}]: ${result.text}` }]
-          logUsage({ kind: "agent_message", provider: agent.id, model: agent.id, tokensOut: result.text.length / 4 | 0, success: true })
+          // Thread the V2 audit outcome into telemetry so silent audit outages
+          // are visible in analytics (not just console warnings). audit_state:
+          //   "not_run"  — role wasn't audited (frugal/voice/non-drift-prone)
+          //   "verified" — an audit model actually judged it (auditResult.audited)
+          //   "skipped"  — audit was attempted but couldn't run (no model / API
+          //                error / unparseable) → failed open, response unverified
+          const auditMeta = !auditResult
+            ? { audit_state: "not_run" }
+            : auditResult.audited
+              ? { audit_state: "verified", audit_passed: auditResult.passed, audit_reason: auditResult.reason }
+              : { audit_state: "skipped", audit_reason: auditResult.reason }
+          logUsage({
+            kind: "agent_message", provider: agent.id, model: agent.id,
+            tokensOut: result.text.length / 4 | 0, success: true,
+            metadata: { role: role || null, ...auditMeta },
+          })
           if (voiceMode && voiceRef.current) {
             await new Promise(r => voiceRef.current.speak(result.text.slice(0, 400), agent.id, r))
           }
