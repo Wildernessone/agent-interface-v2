@@ -3,6 +3,7 @@
 @import './styles/settings.css';
 @import './styles/sidebar.css';
 @import './styles/onboarding.css';
+@import './styles/help.css';
 
 * {
   box-sizing: border-box;

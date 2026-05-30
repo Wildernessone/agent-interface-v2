@@ -3,6 +3,7 @@ import { useStore } from '../store/useStore'
 import { buildSystemPrompt } from '../utils/buildSystemPrompt'
 import { VoiceEngine } from '../utils/voiceEngine'
 import Settings from './Settings'
+import HelpDrawer from './HelpDrawer'
 import { exportConversation } from '../utils/exportConversation'
 import HistorySidebar from './HistorySidebar'
 import { orchestrate, getProactiveNotices, processCorrection, ROLE_POOL, shouldAudit, auditResponse, buildRetryReminder } from '../utils/openClaw'
@@ -188,6 +189,7 @@ export default function TheInterface() {
   const [toolsWorking, setToolsWorking] = useState(false)
   const [listening, setListening] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [showHelp, setShowHelp] = useState(false)
   const [showExport, setShowExport] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
   const [showMemory, setShowMemory] = useState(false)
@@ -601,6 +603,9 @@ export default function TheInterface() {
               : <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M9 3L5.5 5.5H3V10.5H5.5L9 13V3Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/><path d="M11.5 6L14 8.5M14 6L11.5 8.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>
             }
           </IconButton>
+          <IconButton title="Need help?" onClick={() => setShowHelp(true)} active={showHelp}>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.2"/><path d="M6.3 6.2C6.3 5.3 7 4.7 8 4.7C9 4.7 9.7 5.3 9.7 6.1C9.7 7.6 8 7.3 8 9" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/><circle cx="8" cy="11.2" r="0.7" fill="currentColor"/></svg>
+          </IconButton>
           <IconButton title="Settings" onClick={() => setShowSettings(true)}>
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.2"/><path d="M8 1.5V3M8 13V14.5M14.5 8H13M3 8H1.5M12.6 3.4L11.5 4.5M4.5 11.5L3.4 12.6M12.6 12.6L11.5 11.5M4.5 4.5L3.4 3.4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>
           </IconButton>
@@ -931,6 +936,7 @@ export default function TheInterface() {
       </footer>
 
       {showSettings && <Settings onClose={() => setShowSettings(false)} />}
+      <HelpDrawer open={showHelp} onClose={() => setShowHelp(false)} />
       {showHistory && <HistorySidebar onClose={() => setShowHistory(false)} accent={accent} />}
       <MemoryPanel
         open={showMemory}
