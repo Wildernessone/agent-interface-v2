@@ -17,6 +17,12 @@ const PROVIDERS = [
     desc:"Same per-project folder structure, saved straight to your Dropbox.",
     icon:"🟦",
   },
+  {
+    id:"reddit",
+    name:"Reddit",
+    desc:"Connect your Reddit account so the panel can submit posts to subreddits when you ask it to.",
+    icon:"🟠",
+  },
 ]
 
 export default function StorageTab() {
@@ -62,6 +68,14 @@ export default function StorageTab() {
           return
         }
         await startDropboxAuth()
+      } else if (provider.id === "reddit") {
+        const { startRedditAuth, redditConfigured } = await import('../utils/redditAuth')
+        if (!redditConfigured()) {
+          setError("Reddit isn't configured yet. Register an app at reddit.com/prefs/apps (type: \"installed app\"), set its redirect URI to this site's URL, then paste the client ID into VITE_REDDIT_CLIENT_ID in your environment.")
+          setConnecting(null)
+          return
+        }
+        await startRedditAuth()
       }
     } catch (err) {
       setError(err.message || `Couldn't start ${provider.name} sign-in.`)
