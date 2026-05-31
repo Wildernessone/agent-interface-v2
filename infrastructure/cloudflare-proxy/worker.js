@@ -502,6 +502,38 @@ const ROUTES = {
     return new Response(JSON.stringify({ audio: bufToBase64(buf) }), { headers: { 'Content-Type': 'application/json' } })
   },
 
+  // Exa — semantic web search for agents. Verified: POST api.exa.ai/search,
+  // x-api-key, { query, numResults, contents:{text} } → { results:[{title,url,text}] }.
+  exa: async (req) => {
+    const apiKey = req.headers.get('x-api-key')
+    if (!apiKey) return new Response(JSON.stringify({ error: 'missing_provider_key' }), { status: 400 })
+    const body = await req.json()
+    return fetch('https://api.exa.ai/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
+      body: JSON.stringify({
+        query: String(body.query || '').slice(0, 1000),
+        numResults: Math.max(1, Math.min(25, Number(body.numResults) || 5)),
+        contents: { text: true },
+      }),
+    })
+  },
+
+  // Firecrawl — turn a URL into clean markdown. Verified: POST
+  // api.firecrawl.dev/v2/scrape (v2, not v1), Bearer, { url, formats } →
+  // { success, data:{ markdown, metadata } }.
+  firecrawl: async (req) => {
+    const auth = req.headers.get('Authorization')
+    if (!auth) return new Response(JSON.stringify({ error: 'missing_provider_key' }), { status: 400 })
+    const body = await req.json()
+    if (!body.url) return new Response(JSON.stringify({ error: 'missing_url' }), { status: 400 })
+    return fetch('https://api.firecrawl.dev/v2/scrape', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: auth },
+      body: JSON.stringify({ url: body.url, formats: ['markdown'] }),
+    })
+  },
+
   // Google OAuth token refresh — exchanges a stored refresh_token for a fresh
   // access_token so Drive saves don't fail when the hourly token expires. The
   // client_secret lives here (env), never in the browser. Auth-exempt (see the

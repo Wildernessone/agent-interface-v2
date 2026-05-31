@@ -533,6 +533,53 @@ const tavily = {
   },
 }
 
+const exa = {
+  id: 'exa',
+  name: 'Exa.ai',
+  category: 'search',
+  capability: 'semantic web search built for AI agents — returns page contents, not just links',
+  desc: 'Semantic web search with full page text. Uses your Exa key.',
+  keySource: 'tool_keys.exa',
+  docsUrl: 'https://dashboard.exa.ai/api-keys',
+  status: 'live',
+  async run({ prompt, structuredInput, key, proxy }) {
+    if (!key) throw new ToolError('exa', 'missing_key', 'Exa needs an API key.')
+    const cfg = (typeof structuredInput === 'object' && structuredInput) || {}
+    const query = (cfg.query || prompt || '').slice(0, 1000)
+    const res = await proxy('exa', { query, numResults: cfg.numResults || 5 }, { 'x-api-key': key })
+    if (!res.ok) throw new ToolError('exa', 'bad_response', await res.text().catch(() => `status ${res.status}`))
+    const data = await res.json()
+    const results = data.results || []
+    const text = results.map(r => `${r.title || r.url}: ${r.text || (r.highlights || []).join(' ')}`).join('\n\n')
+    if (!text) throw new ToolError('exa', 'bad_response', 'No results.')
+    return { type: 'search', text, citations: results.map(r => ({ title: r.title, url: r.url })), tool: 'exa' }
+  },
+}
+
+const firecrawl = {
+  id: 'firecrawl',
+  name: 'Firecrawl',
+  category: 'search',
+  capability: 'turn any URL into clean markdown the panel can read',
+  desc: 'Scrape a web page to clean markdown. Uses your Firecrawl key.',
+  keySource: 'tool_keys.firecrawl',
+  keyPrefix: 'fc-',
+  docsUrl: 'https://www.firecrawl.dev/app/api-keys',
+  status: 'live',
+  async run({ prompt, structuredInput, key, proxy }) {
+    if (!key) throw new ToolError('firecrawl', 'missing_key', 'Firecrawl needs an API key.')
+    const cfg = (typeof structuredInput === 'object' && structuredInput) || {}
+    const url = (cfg.url || prompt || '').trim()
+    if (!url) throw new ToolError('firecrawl', 'no_url', 'Firecrawl needs a URL to scrape.')
+    const res = await proxy('firecrawl', { url }, { Authorization: `Bearer ${key}` })
+    if (!res.ok) throw new ToolError('firecrawl', 'bad_response', await res.text().catch(() => `status ${res.status}`))
+    const data = await res.json()
+    const md = data?.data?.markdown
+    if (!md) throw new ToolError('firecrawl', 'bad_response', 'No content returned.')
+    return { type: 'search', text: md, citations: [{ title: data.data?.metadata?.title || url, url }], tool: 'firecrawl' }
+  },
+}
+
 // ── agent_synth — the panel as a tool ─────────────────────────────
 // Used inside a build plan when one step needs structured output from
 // the orchestration model: turn a topic into a slide outline, distill
@@ -1742,7 +1789,7 @@ export const TOOL_REGISTRY = [
   // Video
   runway,
   // Search
-  perplexity, tavily,
+  perplexity, tavily, exa, firecrawl,
   // Document generation — browser-side, no API key needed
   pptxgen, docgen, pdfgen, xlsxgen, htmlgen, mdgen, codezip,
   // Per-slide bundles (synced visuals + narration for deck builds)
@@ -1767,8 +1814,6 @@ export const ROADMAP_TOOLS = [
   { id:'udio',        name:'Udio',          category:'audio_music', desc:'Music generation — often beats Suno on certain genres. API in private beta.' },
   { id:'whisper',     name:'OpenAI Whisper', category:'audio_tts', desc:'Transcribe audio/video. Uses your existing OpenAI key — adding next round.' },
   { id:'assemblyai',  name:'AssemblyAI',    category:'audio_tts',  desc:'Production-grade transcription with speaker labels. Browser-direct works — adding next round.' },
-  { id:'exa',         name:'Exa.ai',        category:'search',     desc:'Semantic web search built for AI agents. Adding next round.' },
-  { id:'firecrawl',   name:'Firecrawl',     category:'search',     desc:'Turn any URL into clean markdown the panel can read. Adding next round.' },
   { id:'meshy',       name:'Meshy 3D',      category:'image',      desc:'Generate 3D models from text or images. Adding next round.' },
 ]
 

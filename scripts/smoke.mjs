@@ -77,6 +77,21 @@ try {
   }
   check('ToolError is exported', typeof ToolError === 'function')
 
+  // ── 3b. search tool contracts (mock proxy) ──────────────────────
+  const searchTools = [
+    { id: 'exa', okBody: { results: [{ title: 'T', url: 'https://e.com', text: 'body' }] }, input: { query: 'hi' } },
+    { id: 'firecrawl', okBody: { success: true, data: { markdown: '# md', metadata: { title: 'T' } } }, input: { url: 'https://e.com' } },
+  ]
+  for (const { id, okBody, input } of searchTools) {
+    const tool = TOOLS_BY_ID[id]
+    const out = await tool.run({ prompt: input.query || input.url, structuredInput: input, key: 'k', proxy: async () => mockRes(true, okBody), settings: {} })
+    check(`${id}: success returns search text`, out?.type === 'search' && typeof out.text === 'string' && out.text.length > 0)
+    await expectThrow(`${id}: upstream error throws ToolError`, () =>
+      tool.run({ prompt: input.query || input.url, structuredInput: input, key: 'k', proxy: async () => mockRes(false, { error: 'x' }, 500), settings: {} }))
+    await expectThrow(`${id}: missing key throws`, () =>
+      tool.run({ prompt: 'x', structuredInput: input, key: '', proxy: async () => mockRes(true, okBody), settings: {} }))
+  }
+
   // ── 4. dispatcher plan normalization ─────────────────────────────
   const { orchestrate } = await server.ssrLoadModule('/src/utils/openClaw.js')
   const CANNED = {

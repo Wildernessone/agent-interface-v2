@@ -53,7 +53,9 @@ export function estimateStepCents(step) {
       return 3        // ~$0.03 Claude synth
     case 'perplexity':
     case 'tavily':
-      return 1        // ~$0.01 per query
+    case 'exa':
+    case 'firecrawl':
+      return 1        // ~$0.01 per query/scrape
 
     // Image generation
     case 'dalle': {
