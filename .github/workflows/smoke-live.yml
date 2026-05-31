@@ -1,0 +1,56 @@
+name: Smoke (live)
+
+# Manual only — these call real paid APIs (video/3D/avatar gen costs money and
+# takes minutes). Never runs on push. Trigger from the Actions tab when you want
+# to verify external contracts end-to-end against the deployed worker.
+on:
+  workflow_dispatch:
+
+jobs:
+  smoke-live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # import.meta.env needs to resolve at SSR load; real values come from
+      # secrets below. Dummy fallbacks keep the module graph loading.
+      - name: Write env
+        run: |
+          cat > .env <<ENV
+          VITE_SUPABASE_URL=${{ secrets.SMOKE_SUPABASE_URL || 'https://example.supabase.co' }}
+          VITE_SUPABASE_ANON_KEY=${{ secrets.SMOKE_SUPABASE_ANON_KEY || 'dummy' }}
+          VITE_PROXY_URL=${{ secrets.SMOKE_PROXY_URL || 'https://claude-proxy.jamesreed.workers.dev' }}
+          VITE_DROPBOX_CLIENT_ID=dummy
+          ENV
+      - name: Live smoke
+        run: npm run smoke:live
+        env:
+          # Auth to reach the worker (one of these):
+          SMOKE_SUPABASE_JWT: ${{ secrets.SMOKE_SUPABASE_JWT }}
+          SMOKE_TEST_EMAIL: ${{ secrets.SMOKE_TEST_EMAIL }}
+          SMOKE_TEST_PASSWORD: ${{ secrets.SMOKE_TEST_PASSWORD }}
+          VITE_SUPABASE_URL: ${{ secrets.SMOKE_SUPABASE_URL || 'https://oqbpuspnmznqxgkmyzyb.supabase.co' }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.SMOKE_SUPABASE_ANON_KEY }}
+          VITE_PROXY_URL: ${{ secrets.SMOKE_PROXY_URL || 'https://claude-proxy.jamesreed.workers.dev' }}
+          # Provider keys — each tool runs only if its key is present, else skips:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          STABILITY_API_KEY: ${{ secrets.STABILITY_API_KEY }}
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          FAL_API_KEY: ${{ secrets.FAL_API_KEY }}
+          LUMA_API_KEY: ${{ secrets.LUMA_API_KEY }}
+          MESHY_API_KEY: ${{ secrets.MESHY_API_KEY }}
+          TOPAZ_API_KEY: ${{ secrets.TOPAZ_API_KEY }}
+          HEYGEN_API_KEY: ${{ secrets.HEYGEN_API_KEY }}
+          ASSEMBLYAI_API_KEY: ${{ secrets.ASSEMBLYAI_API_KEY }}
+          EXA_API_KEY: ${{ secrets.EXA_API_KEY }}
+          FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
+          # Inputs for tools that need a sample source / config:
+          SMOKE_AUDIO_URL: ${{ secrets.SMOKE_AUDIO_URL }}
+          SMOKE_IMAGE_URL: ${{ secrets.SMOKE_IMAGE_URL }}
+          SMOKE_AVATAR_ID: ${{ secrets.SMOKE_AVATAR_ID }}
+          SMOKE_VOICE_ID: ${{ secrets.SMOKE_VOICE_ID }}

@@ -21,7 +21,7 @@ async function expectThrow(name, fn) {
   catch { check(name, true) }
 }
 
-const server = await createServer({ root: process.cwd(), logLevel: 'error', server: { middlewareMode: true } })
+const server = await createServer({ root: process.cwd(), logLevel: 'error', optimizeDeps: { noDiscovery: true }, server: { middlewareMode: true } })
 
 // Mock fetch so any tool/dispatcher path that hits the network can't make a
 // real call during the smoke run. Tools that take an injected `proxy` get a
