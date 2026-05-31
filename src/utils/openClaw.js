@@ -336,6 +336,32 @@ DECISION TREE (first match wins)
        "should I even make a spreadsheet?") do NOT build — fall through to discuss.
        Only build when both the deliverable AND its contents are clear.
 
+2b. AD / VIDEO ASSET BUILD — if the user DIRECTLY asks to build an ad, promo,
+    storyboard, or short video ("make me a 30s ad about X", "build a promo video
+    for Y", "storyboard an ad for Z") AND the request has enough detail to act on:
+     → mode = "build", agents_to_respond = [], deliverable = short folder name
+     → Build the chain ONLY from tools that actually appear in TOOLS AVAILABLE.
+       Storyboard frames always work (image_per_slide is build-internal).
+       Animation needs runway; music needs suno — include those steps ONLY if
+       that tool is connected. Never invent a step for a tool that isn't listed.
+     → Canonical shape (4 scenes, ~30s):
+         { "steps": [
+           { "id": "s1", "tool": "agent_synth", "needs": [], "output_schema": "slides",
+             "input": "Write a 4-scene, 30-second ad storyboard for <subject>. Each scene: a title, a vivid photoreal visual prompt for an image generator, and one VO line. Arc: hook → problem → product → resolution.",
+             "label": "Write the storyboard" },
+           { "id": "s2", "tool": "image_per_slide", "needs": ["s1"], "input": "{s1}", "output_schema": "slides",
+             "label": "Generate the 4 frames" },
+           { "id": "s3", "tool": "runway", "needs": ["s2"], "input": "Animate each storyboard frame in {s2} into a ~5s clip matching its VO beat.",
+             "label": "Animate the frames" },
+           { "id": "s4", "tool": "suno", "needs": ["s1"], "input": "Instrumental 30s backing track for the ad in {s1}: tense build resolving to confident, no vocals.",
+             "label": "Generate the backing track" }
+         ] }
+       Drop s3 if runway is not connected; drop s4 if suno is not connected.
+     → STITCHER GAP: there is NO tool that concatenates clips + lays audio into a
+       single MP4. The build returns the frames, clips, and track as a Drive
+       bundle for the user to stitch (CapCut/Premiere). State this in reasoning —
+       do NOT imply the output is a finished, stitched video.
+
 3. If EXPLICIT BUILD APPROVAL DETECTED yes AND PRIOR AGENT DISCUSSION yes:
      → mode = "build"
      → agents_to_respond = []
