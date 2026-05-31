@@ -42,27 +42,38 @@ export default {
       return json({ error: 'method_not_allowed' }, 405, cors)
     }
 
-    // 1. Verify Supabase JWT
-    const auth = request.headers.get('x-supabase-auth') || ''
-    const token = auth.startsWith('Bearer ') ? auth.slice(7) : ''
-    if (!token) return json({ error: 'missing_auth' }, 401, cors)
+    const path = url.pathname.replace(/^\/+/, '')
 
-    const user = await verifySupabaseToken(token, env)
-    if (!user) return json({ error: 'invalid_auth' }, 401, cors)
+    // Token-refresh routes are authorized by the caller's own refresh_token plus
+    // the server-held client_secret, and the client calls them WITHOUT a Supabase
+    // session (see driveStorage.refreshDriveAccessToken — a raw fetch with no
+    // x-supabase-auth). They skip the JWT gate; everything else requires a
+    // signed-in user. A garbage/absent token still gets nothing useful from
+    // Google, so this exposes no new capability.
+    const AUTH_EXEMPT = new Set(['refresh_google'])
 
-    // 2. Rate limit
-    if (env.RATE_LIMIT_KV) {
-      const allowed = await checkRateLimit(env.RATE_LIMIT_KV, user.sub)
-      if (!allowed) return json({ error: 'rate_limited' }, 429, cors)
+    if (!AUTH_EXEMPT.has(path)) {
+      // 1. Verify Supabase JWT
+      const auth = request.headers.get('x-supabase-auth') || ''
+      const token = auth.startsWith('Bearer ') ? auth.slice(7) : ''
+      if (!token) return json({ error: 'missing_auth' }, 401, cors)
+
+      const user = await verifySupabaseToken(token, env)
+      if (!user) return json({ error: 'invalid_auth' }, 401, cors)
+
+      // 2. Rate limit
+      if (env.RATE_LIMIT_KV) {
+        const allowed = await checkRateLimit(env.RATE_LIMIT_KV, user.sub)
+        if (!allowed) return json({ error: 'rate_limited' }, 429, cors)
+      }
     }
 
     // 3. Route
-    const path = url.pathname.replace(/^\/+/, '')
     const route = ROUTES[path]
     if (!route) return json({ error: 'unknown_route' }, 404, cors)
 
     try {
-      const upstream = await route(request)
+      const upstream = await route(request, env)
       const headers = new Headers(upstream.headers)
       Object.entries(cors).forEach(([k, v]) => headers.set(k, v))
       return new Response(upstream.body, { status: upstream.status, headers })
@@ -441,6 +452,32 @@ const ROUTES = {
       }
     }
     return new Response(JSON.stringify({ error: 'timeout' }), { status: 504, headers: { 'Content-Type': 'application/json' } })
+  },
+
+  // Google OAuth token refresh — exchanges a stored refresh_token for a fresh
+  // access_token so Drive saves don't fail when the hourly token expires. The
+  // client_secret lives here (env), never in the browser. Auth-exempt (see the
+  // AUTH_EXEMPT set above); the refresh_token is the credential. Forwards
+  // Google's native { access_token, expires_in, ... } response straight through.
+  refresh_google: async (req, env) => {
+    const body = await req.json().catch(() => ({}))
+    if (!body.refresh_token) {
+      return new Response(JSON.stringify({ error: 'missing_refresh_token' }), { status: 400, headers: { 'Content-Type': 'application/json' } })
+    }
+    if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET) {
+      return new Response(JSON.stringify({ error: 'server_not_configured' }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+    }
+    const form = new URLSearchParams({
+      client_id: env.GOOGLE_CLIENT_ID,
+      client_secret: env.GOOGLE_CLIENT_SECRET,
+      refresh_token: body.refresh_token,
+      grant_type: 'refresh_token',
+    })
+    return fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: form.toString(),
+    })
   },
 
   // ── Reddit (OAuth2 PKCE, installed app — no client secret) ────────
