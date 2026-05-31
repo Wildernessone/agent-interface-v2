@@ -12,6 +12,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@ffmpeg/ffmpeg": "^0.12.15",
+    "@ffmpeg/util": "^0.12.2",
     "@sentry/react": "^10.53.1",
     "@supabase/supabase-js": "^2.105.4",
     "docx": "^9.7.1",

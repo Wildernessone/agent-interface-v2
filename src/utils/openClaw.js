@@ -352,33 +352,32 @@ DECISION TREE (first match wins)
              "label": "Write the storyboard + ad script" },
            { "id": "s2", "tool": "image_per_slide", "needs": ["s1"], "input": "{ \"slides\": {s1.scenes} }",
              "label": "Generate the 4 frames" },
-           { "id": "s3", "tool": "runway", "needs": ["s2"], "input": "Animate each storyboard frame in {s2} into a ~5s clip matching its beat.",
-             "label": "Animate the frames" },
-           { "id": "s4", "tool": "elevenlabs", "needs": ["s1"], "input": "{s1.voiceover_script}",
+           { "id": "s3", "tool": "elevenlabs", "needs": ["s1"], "input": "{s1.voiceover_script}",
              "label": "Record the voiceover" },
-           { "id": "s5", "tool": "stable_audio", "needs": ["s1"], "input": "Instrumental 30s backing track, no vocals: tense build resolving to confident.",
+           { "id": "s4", "tool": "stable_audio", "needs": ["s1"], "input": "Instrumental 30s backing track, no vocals: tense build resolving to confident.",
              "label": "Generate the backing track" },
-           { "id": "s6", "tool": "video_render", "needs": ["s3", "s4"], "input": "{ \"clips\": [clip urls from {s3}], \"soundtrack\": \"voiceover url from {s4}\" }",
-             "label": "Stitch into one MP4" }
+           { "id": "s5", "tool": "ad_render", "needs": ["s2", "s3", "s4"],
+             "input": "{ \"images\": {s2}, \"voiceover\": {s3}, \"music\": {s4} }",
+             "label": "Render the finished ad" }
          ] }
        CRITICAL — voiceover ≠ storyboard. s1 MUST use output_schema "storyboard"
        (it returns scenes[] for the visuals AND a separate voiceover_script that
        is real ad copy). The voiceover step MUST read "{s1.voiceover_script}" —
        NEVER feed it "{s1}" or the scene prompts, or it will narrate scene
        descriptions instead of selling the product. image_per_slide reads the
-       scenes via "{s1.scenes}". Use openai_tts instead of elevenlabs for s4 if
+       scenes via "{s1.scenes}". Use openai_tts instead of elevenlabs for s3 if
        ElevenLabs isn't connected (OpenAI usually is — image_per_slide needs it).
-       For an ad the VOICEOVER is the primary audio, so the final video_render
-       soundtrack is the voiceover (s4); the stable_audio track ships as a
-       separate bundle asset for the editor to mix (no auto audio-mix yet).
-       Drop s3 if runway is not connected. stable_audio is build-internal so s5
-       always works; only swap it for suno if the user explicitly asked for Suno.
-     → STITCHING: if video_render (Shotstack) is connected, add s6 to assemble the
-       clips + voiceover into ONE finished MP4 — that is the deliverable. If the
-       user wants to hand-edit, use capcut_bundle (build-internal) instead/also to
-       emit a CapCut edit-plan .zip. If NEITHER applies (no shotstack key, user
-       didn't ask to edit), drop s6 and return the frames/clips/voiceover/track as
-       a Drive bundle — and say so in reasoning rather than implying a finished video.
+     → STITCHING: ad_render is the default finisher — it is build-internal
+       (browser-side ffmpeg, no key) and fuses the storyboard frames + voiceover
+       (+ ducked backing track) into ONE finished MP4. In s5's input the
+       {s2}/{s3}/{s4} placeholders are NOT quoted — they resolve to whole bundle
+       objects that splice in directly; quoting them would produce invalid JSON.
+       It always works, so the ad is a real video, not a kit. Alternatives only
+       when asked: video_render (Shotstack) for a server-rendered MP4 from runway
+       VIDEO clips (needs a shotstack key AND hosted clip URLs — it cannot fetch
+       the data: frames/audio this pipeline makes, so it is NOT the default), or
+       capcut_bundle for a hand-editable CapCut .zip. For motion instead of stills,
+       add a runway step per scene before ad_render only if runway is connected.
 
 2c. USER BRIEF BEATS PRIOR PANEL SKEPTICISM — if the user's CURRENT message
     contains an explicit build instruction ("build [X] now", "generate [X]",
@@ -422,7 +421,8 @@ BUILD-INTERNAL TOOLS (always available in build mode):
 - stable_audio ({prompt, duration?:1-190} → instrumental music track up to 190s, royalty-free; PREFER for ad backing tracks, ambient, video music)
 - elevenlabs_music ({prompt, length_ms?:3000-60000} → music up to 60s, can include vocals; PREFER when user wants songs/vocals)
 - suno (third-party fallback only — use ONLY when user explicitly asks for Suno and has the key)
-- video_render ({clips:[{url,type?,length?}], soundtrack?, size?} → ONE finished MP4 via Shotstack; THE stitcher — use as the final step to assemble generated clips + audio into a deliverable video. Needs the shotstack key connected.)
+- ad_render (COMPOSER: { images:{frameStepId}, voiceover:{voiceStepId}, music?:{musicStepId} } → ONE finished .mp4 ad where the storyboard frames play across the voiceover with the backing track ducked underneath. Browser-side ffmpeg, no key, works with the data: assets this pipeline makes. THE default finisher for ad/promo/short-video builds — always the final step, fed by image_per_slide + the voiceover (+ stable_audio).)
+- video_render ({clips:[{url,type?,length?}], soundtrack?, size?} → ONE finished MP4 via Shotstack from HOSTED clip URLs (e.g. runway videos). Needs the shotstack key AND publicly-fetchable assets — it CANNOT use the data: frames/audio this pipeline produces, so prefer ad_render for ads. Use only for stitching hosted video clips.)
 - capcut_bundle ({clips:[{url,type?,length?}], soundtrack?, size?} → .zip with a timeline edit-plan + CapCut import steps; build-internal. Use when the user wants to hand-edit in CapCut rather than an auto-rendered MP4.)
 - gmail ({to,subject,body} → sent email)
 - gsheets ({title,sheets[{name,rows[][]}]} → Google Sheet in user's Drive, returns link)
@@ -533,7 +533,7 @@ export async function orchestrate({
     'agent_synth', 'pptxgen', 'docgen', 'pdfgen',
     'xlsxgen', 'htmlgen', 'mdgen', 'codezip',
     'image_per_slide', 'narrate_per_slide', 'openai_tts',
-    'stable_audio', 'elevenlabs_music', 'capcut_bundle',
+    'stable_audio', 'elevenlabs_music', 'capcut_bundle', 'ad_render',
     'gmail', 'gsheets', 'gcal', 'notion', 'twilio', 'stripe',
   ])
   const isToolAllowed = (toolId) => BUILD_INTERNAL_TOOLS.has(toolId) || !!enabledTools?.[toolId]

@@ -108,6 +108,18 @@ try {
     console.log('ℹ️  capcut_bundle: skipped (no Blob/URL.createObjectURL in this runtime)')
   }
 
+  // ── 3a4. ad_render — composer input guards (validate before ffmpeg) ──
+  // The actual render needs ffmpeg.wasm + a browser; here we only verify the
+  // input contract, which throws before the ffmpeg import is reached.
+  {
+    const ar = TOOLS_BY_ID['ad_render']
+    check('registry: ad_render present + composer', !!ar && ar.composer === true)
+    await expectThrow('ad_render: no images throws', () =>
+      ar.run({ structuredInput: { voiceover: { url: 'data:audio/mpeg;base64,AA' } } }))
+    await expectThrow('ad_render: no voiceover throws', () =>
+      ar.run({ structuredInput: { images: { files: [{ url: 'data:image/png;base64,AA' }] } } }))
+  }
+
   // ── 3b. search tool contracts (mock proxy) ──────────────────────
   const searchTools = [
     { id: 'exa', okBody: { results: [{ title: 'T', url: 'https://e.com', text: 'body' }] }, input: { query: 'hi' } },

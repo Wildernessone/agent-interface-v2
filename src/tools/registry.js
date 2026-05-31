@@ -2031,6 +2031,143 @@ const mastodon = {
   },
 }
 
+// ── ad_render — COMPOSER: storyboard frames + voiceover → one MP4 ──
+// The browser-side stitcher for ad/promo builds. Unlike narrated_deck
+// (one audio segment PER slide), an ad has N still frames shown across a
+// SINGLE continuous voiceover, with an optional backing track ducked
+// underneath. Shotstack can't fetch the data: URLs this pipeline produces
+// (DALL·E frames + base64 audio); ffmpeg.wasm renders them in-browser with
+// no key and no asset hosting. Output is a finished data: MP4.
+const adRender = {
+  id: 'ad_render',
+  name: 'Ad render → video',
+  category: 'video',
+  capability: 'combine storyboard frames + a voiceover (+ optional backing track) into ONE finished MP4 ad, browser-side',
+  desc: 'Internal composer — renders storyboard frames + voiceover into a single MP4 ad, browser-side (no key)',
+  keySource: null,
+  status: 'live',
+  hidden: true,
+  composer: true,
+  async run({ structuredInput, label }) {
+    let data = structuredInput
+    if (typeof data === 'string') {
+      try { data = JSON.parse(data) }
+      catch { throw new ToolError('ad_render', 'bad_input', 'ad_render expects { images, voiceover, music? } — the upstream bundles did not resolve into valid JSON.') }
+    }
+
+    // Accept a bundle ({files:[...]}), a bare array, or a JSON string of either.
+    const listOf = (x) => {
+      if (!x) return []
+      if (typeof x === 'string') { try { x = JSON.parse(x) } catch { return [] } }
+      if (Array.isArray(x)) return x.map(i => (typeof i === 'string' ? { url: i } : i))
+      if (Array.isArray(x.files)) return x.files
+      if (x.url) return [x]
+      return []
+    }
+    // Pull a single playable url from a single audio object OR the first
+    // non-error file of a bundle.
+    const oneUrl = (x) => {
+      const list = listOf(x).filter(f => f && !f.error && f.url)
+      return list[0]?.url || null
+    }
+
+    const images = listOf(data?.images || data?.frames || data?.slides).filter(f => f && !f.error && f.url)
+    const voiceUrl = oneUrl(data?.voiceover || data?.voice || data?.narration)
+    const musicUrl = oneUrl(data?.music || data?.soundtrack || data?.track)
+
+    if (images.length === 0) throw new ToolError('ad_render', 'no_images', 'ad_render needs storyboard frames.')
+    if (!voiceUrl) throw new ToolError('ad_render', 'no_voiceover', 'ad_render needs a voiceover track.')
+    if (images.length > 60) throw new ToolError('ad_render', 'too_many_frames', `Too many frames to render in-browser (${images.length}). Split it up.`)
+
+    const { getFFmpeg, fetchFile } = await import('../utils/ffmpegLoader')
+    const { arrayBufferToBase64 } = await import('../utils/base64')
+    const ff = await getFFmpeg()
+
+    const W = 1280, H = 720
+    const VF = `scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2,setsar=1`
+
+    // Probe the voiceover length by capturing ffmpeg's log output during a
+    // no-output decode. ffmpeg "errors" (no output file) but still prints
+    // "Duration: HH:MM:SS.ss". Fall back to 5s/frame if the probe is silent.
+    const probeDuration = async (name) => {
+      let dur = 0
+      const onLog = ({ message }) => {
+        const m = /Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/.exec(message || '')
+        if (m) dur = (+m[1]) * 3600 + (+m[2]) * 60 + parseFloat(m[3])
+      }
+      ff.on('log', onLog)
+      try { await ff.exec(['-i', name]) } catch { /* expected: no output specified */ }
+      ff.off('log', onLog)
+      return dur
+    }
+
+    const segNames = []
+    try {
+      await ff.writeFile('vo.mp3', await fetchFile(voiceUrl))
+      if (musicUrl) await ff.writeFile('music.mp3', await fetchFile(musicUrl))
+
+      const total = await probeDuration('vo.mp3') || images.length * 5
+      const per = Math.max(1, total / images.length)
+
+      // One silent video segment per frame, each held for an equal slice of
+      // the voiceover. Uniform codec params so the segments concat-copy.
+      for (let i = 0; i < images.length; i++) {
+        const imgName = `img${i}.png`
+        const segName = `seg${i}.mp4`
+        await ff.writeFile(imgName, await fetchFile(images[i].url))
+        await ff.exec([
+          '-loop', '1', '-t', per.toFixed(3), '-i', imgName,
+          '-c:v', 'libx264', '-tune', 'stillimage', '-pix_fmt', 'yuv420p',
+          '-vf', VF, '-r', '25',
+          segName,
+        ])
+        segNames.push(segName)
+        await ff.deleteFile(imgName)
+      }
+
+      const concatList = segNames.map(s => `file ${s}`).join('\n')
+      await ff.writeFile('concat.txt', new TextEncoder().encode(concatList))
+      await ff.exec(['-f', 'concat', '-safe', '0', '-i', 'concat.txt', '-c', 'copy', 'slideshow.mp4'])
+
+      // Mux audio over the slideshow. With music, duck it under the voice and
+      // mix; duration=first ties the result to the voiceover. -shortest caps
+      // the video (which may be a hair longer from rounding) to the audio.
+      if (musicUrl) {
+        await ff.exec([
+          '-i', 'slideshow.mp4', '-i', 'vo.mp3', '-i', 'music.mp3',
+          '-filter_complex', '[2:a]volume=0.22[m];[1:a][m]amix=inputs=2:duration=first:dropout_transition=0[a]',
+          '-map', '0:v', '-map', '[a]',
+          '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k',
+          '-shortest', '-movflags', '+faststart', 'out.mp4',
+        ])
+      } else {
+        await ff.exec([
+          '-i', 'slideshow.mp4', '-i', 'vo.mp3',
+          '-map', '0:v', '-map', '1:a',
+          '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k',
+          '-shortest', '-movflags', '+faststart', 'out.mp4',
+        ])
+      }
+
+      const out = await ff.readFile('out.mp4')
+      const b64 = arrayBufferToBase64(out)
+      for (const s of segNames) { try { await ff.deleteFile(s) } catch {} }
+      for (const f of ['concat.txt', 'slideshow.mp4', 'vo.mp3', 'music.mp3', 'out.mp4']) { try { await ff.deleteFile(f) } catch {} }
+
+      return {
+        type: 'video',
+        url: `data:video/mp4;base64,${b64}`,
+        title: (label || 'ad').slice(0, 60),
+        tool: 'ad_render',
+        meta: { frames: images.length, durationSec: Math.round(total) || null, hadMusic: !!musicUrl, composer: true },
+      }
+    } catch (e) {
+      if (e instanceof ToolError) throw e
+      throw new ToolError('ad_render', 'render_failed', `Couldn't render the ad: ${e?.message || e}`)
+    }
+  },
+}
+
 // ── The registry ──────────────────────────────────────────────────
 
 export const TOOL_REGISTRY = [
@@ -2052,6 +2189,8 @@ export const TOOL_REGISTRY = [
   pptxgen, docgen, pdfgen, xlsxgen, htmlgen, mdgen, codezip,
   // Per-slide bundles (synced visuals + narration for deck builds)
   imagePerSlide, narratePerSlide,
+  // Composers — fuse prior assets into ONE finished deliverable, browser-side
+  adRender,
   // Action layer
   gmail, gsheets, gcal, notion, twilio, stripe, mastodon,
   // Social
