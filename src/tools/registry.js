@@ -533,6 +533,50 @@ const tavily = {
   },
 }
 
+const luma = {
+  id: 'luma',
+  name: 'Luma Dream Machine',
+  category: 'video',
+  capability: 'generate cinematic AI video from a text prompt (Ray 2) — 5 or 10 seconds, widescreen',
+  desc: 'Text-to-video via Luma Ray 2. Uses your Luma key.',
+  keySource: 'tool_keys.luma',
+  keyPrefix: 'luma-',
+  docsUrl: 'https://lumalabs.ai/dream-machine/api/keys',
+  status: 'live',
+  async run({ prompt, structuredInput, key, proxy }) {
+    if (!key) throw new ToolError('luma', 'missing_key', 'Luma needs an API key.')
+    const cfg = (typeof structuredInput === 'object' && structuredInput) || {}
+    const realPrompt = (cfg.prompt || prompt || '').slice(0, 1000)
+    const res = await proxy('luma', { prompt: realPrompt, duration: cfg.duration === 10 ? 10 : 5, resolution: cfg.resolution || '720p' }, { Authorization: `Bearer ${key}` })
+    if (!res.ok) throw new ToolError('luma', 'bad_response', await res.text().catch(() => `status ${res.status}`))
+    const data = await res.json()
+    if (!data.url) throw new ToolError('luma', 'bad_response', 'No video returned.')
+    return { type: 'video', url: data.url, title: realPrompt.slice(0, 60), prompt: realPrompt, tool: 'luma', meta: { provider: 'luma' } }
+  },
+}
+
+const meshy = {
+  id: 'meshy',
+  name: 'Meshy 3D',
+  category: 'image',
+  capability: 'generate a 3D model (.glb) from a text prompt — for product mockups, game assets, 3D printing',
+  desc: 'Text-to-3D model via Meshy. Uses your Meshy key.',
+  keySource: 'tool_keys.meshy',
+  keyPrefix: 'msy_',
+  docsUrl: 'https://www.meshy.ai/api',
+  status: 'live',
+  async run({ prompt, structuredInput, key, proxy }) {
+    if (!key) throw new ToolError('meshy', 'missing_key', 'Meshy needs an API key.')
+    const cfg = (typeof structuredInput === 'object' && structuredInput) || {}
+    const realPrompt = (cfg.prompt || prompt || '').slice(0, 600)
+    const res = await proxy('meshy', { prompt: realPrompt, art_style: cfg.art_style || 'realistic' }, { Authorization: `Bearer ${key}` })
+    if (!res.ok) throw new ToolError('meshy', 'bad_response', await res.text().catch(() => `status ${res.status}`))
+    const data = await res.json()
+    if (!data.url) throw new ToolError('meshy', 'bad_response', 'No model returned.')
+    return { type: 'document', url: data.url, title: realPrompt.slice(0, 60), prompt: realPrompt, tool: 'meshy', meta: { format: 'glb', thumbnail: data.thumbnail || null } }
+  },
+}
+
 const exa = {
   id: 'exa',
   name: 'Exa.ai',
@@ -1787,7 +1831,9 @@ export const TOOL_REGISTRY = [
   // Voice / music
   elevenlabs, openaiTts, stableAudio, elevenlabsMusic, suno,
   // Video
-  runway,
+  runway, luma,
+  // 3D
+  meshy,
   // Search
   perplexity, tavily, exa, firecrawl,
   // Document generation — browser-side, no API key needed
@@ -1806,16 +1852,11 @@ export const TOOLS_BY_ID = Object.fromEntries(TOOL_REGISTRY.map(t => [t.id, t]))
 
 // Tools we want users to know about but that can't connect yet.
 // These appear in Settings as roadmap cards (no Connect button).
-export const ROADMAP_TOOLS = [
-  { id:'topaz',       name:'Topaz Upscale', category:'image_edit', desc:'Industry-leading upscaling. Currently invite-only beta — once Topaz opens their API we wire it up.' },
-  { id:'luma',        name:'Luma Dream Machine (Ray2)', category:'video', desc:'Best-in-class text-to-video. API access expanding through 2026.' },
-  { id:'pika',        name:'Pika Labs',     category:'video',      desc:'Image-to-video animation. API in early access.' },
-  { id:'heygen',      name:'HeyGen',        category:'video',      desc:'Talking-avatar videos from a script. Browser-direct works — adding next round.' },
-  { id:'udio',        name:'Udio',          category:'audio_music', desc:'Music generation — often beats Suno on certain genres. API in private beta.' },
-  { id:'whisper',     name:'OpenAI Whisper', category:'audio_tts', desc:'Transcribe audio/video. Uses your existing OpenAI key — adding next round.' },
-  { id:'assemblyai',  name:'AssemblyAI',    category:'audio_tts',  desc:'Production-grade transcription with speaker labels. Browser-direct works — adding next round.' },
-  { id:'meshy',       name:'Meshy 3D',      category:'image',      desc:'Generate 3D models from text or images. Adding next round.' },
-]
+// "Work or not be there" — no vaporware placeholders in the UI. Every tool the
+// user sees is a live, runnable entry in TOOL_REGISTRY. Tools graduate here as
+// real entries (Exa, Firecrawl, Stable Audio, ElevenLabs Music, Luma, Meshy all
+// did). Genuinely-blocked providers (e.g. Udio — no official API) stay out.
+export const ROADMAP_TOOLS = []
 
 export const CATEGORY_LABELS = {
   image:       'Images',

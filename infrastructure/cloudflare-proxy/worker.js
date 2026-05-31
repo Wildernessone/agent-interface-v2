@@ -502,6 +502,63 @@ const ROUTES = {
     return new Response(JSON.stringify({ audio: bufToBase64(buf) }), { headers: { 'Content-Type': 'application/json' } })
   },
 
+  // Luma Dream Machine (Ray 2) — text-to-video. Async: create returns an id,
+  // poll until completed. Verified: POST api.lumalabs.ai/dream-machine/v1/
+  // generations, Bearer, { prompt, model, resolution, duration } -> { id };
+  // GET .../generations/{id} -> { state, assets:{ video } }.
+  luma: async (req) => {
+    const auth = req.headers.get('Authorization')
+    if (!auth) return new Response(JSON.stringify({ error: 'missing_provider_key' }), { status: 400 })
+    const body = await req.json()
+    const start = await fetch('https://api.lumalabs.ai/dream-machine/v1/generations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: auth, accept: 'application/json' },
+      body: JSON.stringify({
+        prompt: String(body.prompt || '').slice(0, 1000),
+        model: 'ray-2',
+        resolution: ['540p', '720p', '1080p'].includes(body.resolution) ? body.resolution : '720p',
+        duration: body.duration === 10 ? '10s' : '5s',
+      }),
+    })
+    if (!start.ok) return start
+    const job = await start.json()
+    if (!job.id) return new Response(JSON.stringify({ error: 'no_job_id' }), { status: 502, headers: { 'Content-Type': 'application/json' } })
+    for (let i = 0; i < 24; i++) {
+      await new Promise(r => setTimeout(r, 5000))
+      const s = await fetch(`https://api.lumalabs.ai/dream-machine/v1/generations/${job.id}`, { headers: { Authorization: auth, accept: 'application/json' } })
+      const d = await s.json()
+      if (d.state === 'completed' && d.assets?.video) return new Response(JSON.stringify({ url: d.assets.video }), { headers: { 'Content-Type': 'application/json' } })
+      if (d.state === 'failed') return new Response(JSON.stringify({ error: d.failure_reason || 'luma_failed' }), { status: 502, headers: { 'Content-Type': 'application/json' } })
+    }
+    return new Response(JSON.stringify({ error: 'timeout' }), { status: 504, headers: { 'Content-Type': 'application/json' } })
+  },
+
+  // Meshy — text-to-3D. Async preview task. Verified: POST api.meshy.ai/openapi/
+  // v2/text-to-3d, Bearer, { mode:'preview', prompt } -> { result: <id> };
+  // GET .../text-to-3d/{id} -> { status, model_urls:{ glb }, thumbnail_url }.
+  meshy: async (req) => {
+    const auth = req.headers.get('Authorization')
+    if (!auth) return new Response(JSON.stringify({ error: 'missing_provider_key' }), { status: 400 })
+    const body = await req.json()
+    const start = await fetch('https://api.meshy.ai/openapi/v2/text-to-3d', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: auth },
+      body: JSON.stringify({ mode: 'preview', prompt: String(body.prompt || '').slice(0, 600), art_style: body.art_style || 'realistic' }),
+    })
+    if (!start.ok) return start
+    const job = await start.json()
+    const id = job.result || job.id
+    if (!id) return new Response(JSON.stringify({ error: 'no_job_id' }), { status: 502, headers: { 'Content-Type': 'application/json' } })
+    for (let i = 0; i < 30; i++) {
+      await new Promise(r => setTimeout(r, 5000))
+      const s = await fetch(`https://api.meshy.ai/openapi/v2/text-to-3d/${id}`, { headers: { Authorization: auth } })
+      const d = await s.json()
+      if (d.status === 'SUCCEEDED' && d.model_urls?.glb) return new Response(JSON.stringify({ url: d.model_urls.glb, thumbnail: d.thumbnail_url || null }), { headers: { 'Content-Type': 'application/json' } })
+      if (d.status === 'FAILED') return new Response(JSON.stringify({ error: 'meshy_failed' }), { status: 502, headers: { 'Content-Type': 'application/json' } })
+    }
+    return new Response(JSON.stringify({ error: 'timeout' }), { status: 504, headers: { 'Content-Type': 'application/json' } })
+  },
+
   // Exa — semantic web search for agents. Verified: POST api.exa.ai/search,
   // x-api-key, { query, numResults, contents:{text} } → { results:[{title,url,text}] }.
   exa: async (req) => {

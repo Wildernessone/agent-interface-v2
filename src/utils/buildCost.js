@@ -104,6 +104,14 @@ export function estimateStepCents(step) {
       const dur = struct?.duration === 10 ? 10 : 5
       return dur * 5   // ~$0.05/sec
     }
+    case 'luma': {
+      const dur = struct?.duration === 10 ? 10 : 5
+      return dur * 7   // ~$0.07/sec (Ray 2)
+    }
+
+    // 3D
+    case 'meshy':
+      return 10        // ~$0.10 per preview model
 
     // Image editing
     case 'removebg':

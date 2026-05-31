@@ -54,19 +54,22 @@ try {
 
   // ── 3. audio tool contracts (mock proxy) ─────────────────────────
   const mockRes = (ok, body, status = 200) => ({ ok, status, json: async () => body, text: async () => JSON.stringify(body) })
-  const audioTools = [
+  const mediaTools = [
     { id: 'elevenlabs', okBody: { audio: 'QUJD' } },
     { id: 'openai_tts', okBody: { audio: 'QUJD' } },
     { id: 'stable_audio', okBody: { audio: 'QUJD' } },
     { id: 'elevenlabs_music', okBody: { audio: 'QUJD' } },
     { id: 'suno', okBody: { url: 'https://example.com/a.mp3', title: 't' } },
+    { id: 'luma', okBody: { url: 'https://example.com/v.mp4' } },
+    { id: 'meshy', okBody: { url: 'https://example.com/m.glb', thumbnail: null } },
   ]
-  for (const { id, okBody } of audioTools) {
+  const MEDIA_TYPES = ['audio', 'video', 'document', 'image']
+  for (const { id, okBody } of mediaTools) {
     const tool = TOOLS_BY_ID[id]
-    // success → returns an audio result with a usable url
+    // success → returns a media result with a usable url
     const okProxy = async () => mockRes(true, okBody)
     const out = await tool.run({ prompt: 'test track', structuredInput: { prompt: 'test', duration: 30, length_ms: 15000 }, key: 'k', proxy: okProxy, settings: {} })
-    check(`${id}: success returns audio with url`, out?.type === 'audio' && typeof out.url === 'string' && out.url.length > 0)
+    check(`${id}: success returns media with url`, MEDIA_TYPES.includes(out?.type) && typeof out.url === 'string' && out.url.length > 0)
     // upstream failure → ToolError, not an unhandled crash
     const errProxy = async () => mockRes(false, { error: 'boom' }, 500)
     await expectThrow(`${id}: upstream error throws ToolError`, () =>
