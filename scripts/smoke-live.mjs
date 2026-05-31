@@ -57,6 +57,7 @@ const TESTS = [
   { id: 'luma', key: 'LUMA_API_KEY', input: { prompt: 'a paper boat on calm water, cinematic', duration: 5 }, ok: o => o?.type === 'video' && /^https?:/.test(o.url || '') },
   { id: 'pika', key: 'FAL_API_KEY', input: { prompt: 'gentle ocean waves at sunset', duration: 5 }, ok: o => o?.type === 'video' && /^https?:/.test(o.url || '') },
   { id: 'meshy', key: 'MESHY_API_KEY', input: { prompt: 'a small red apple' }, ok: o => o?.type === 'document' && /^https?:/.test(o.url || '') },
+  { id: 'video_render', key: 'SHOTSTACK_API_KEY', input: { clips: [{ url: SAMPLE_IMAGE, type: 'image', length: 3 }], soundtrack: SAMPLE_AUDIO || undefined }, needsEnv: ['SMOKE_IMAGE_URL'], ok: o => o?.type === 'video' && /^https?:/.test(o.url || '') },
   { id: 'topaz', key: 'TOPAZ_API_KEY', input: { image_url: SAMPLE_IMAGE }, needsEnv: ['SMOKE_IMAGE_URL'], ok: o => o?.type === 'image' && /^https?:/.test(o.url || '') },
   { id: 'heygen', key: 'HEYGEN_API_KEY', input: { avatar_id: process.env.SMOKE_AVATAR_ID, voice_id: process.env.SMOKE_VOICE_ID, input_text: 'Hello from the live smoke test.' }, needsEnv: ['SMOKE_AVATAR_ID', 'SMOKE_VOICE_ID'], ok: o => o?.type === 'video' && /^https?:/.test(o.url || '') },
   { id: 'whisper', key: 'OPENAI_API_KEY', input: { audio_url: SAMPLE_AUDIO }, needsEnv: ['SMOKE_AUDIO_URL'], ok: o => o?.type === 'transcript' && typeof o.text === 'string' },

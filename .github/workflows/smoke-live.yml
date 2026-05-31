@@ -49,6 +49,7 @@ jobs:
           ASSEMBLYAI_API_KEY: ${{ secrets.ASSEMBLYAI_API_KEY }}
           EXA_API_KEY: ${{ secrets.EXA_API_KEY }}
           FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
+          SHOTSTACK_API_KEY: ${{ secrets.SHOTSTACK_API_KEY }}
           # Inputs for tools that need a sample source / config:
           SMOKE_AUDIO_URL: ${{ secrets.SMOKE_AUDIO_URL }}
           SMOKE_IMAGE_URL: ${{ secrets.SMOKE_IMAGE_URL }}

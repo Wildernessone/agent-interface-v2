@@ -355,14 +355,18 @@ DECISION TREE (first match wins)
            { "id": "s3", "tool": "runway", "needs": ["s2"], "input": "Animate each storyboard frame in {s2} into a ~5s clip matching its VO beat.",
              "label": "Animate the frames" },
            { "id": "s4", "tool": "stable_audio", "needs": ["s1"], "input": "Instrumental 30s backing track for the ad in {s1}: tense build resolving to confident, no vocals.",
-             "label": "Generate the backing track" }
+             "label": "Generate the backing track" },
+           { "id": "s5", "tool": "video_render", "needs": ["s3", "s4"], "input": "{ \"clips\": [clip urls from {s3}], \"soundtrack\": \"audio url from {s4}\" }",
+             "label": "Stitch into one MP4" }
          ] }
        Drop s3 if runway is not connected. stable_audio is build-internal so s4
        always works; only swap it for suno if the user explicitly asked for Suno.
-     → STITCHER GAP: there is NO tool that concatenates clips + lays audio into a
-       single MP4. The build returns the frames, clips, and track as a Drive
-       bundle for the user to stitch (CapCut/Premiere). State this in reasoning —
-       do NOT imply the output is a finished, stitched video.
+     → STITCHING: if video_render (Shotstack) is connected, add s5 to assemble the
+       clips + soundtrack into ONE finished MP4 — that is the deliverable. If the
+       user wants to hand-edit, use capcut_bundle (build-internal) instead/also to
+       emit a CapCut edit-plan .zip. If NEITHER applies (no shotstack key, user
+       didn't ask to edit), drop s5 and return the frames/clips/track as a Drive
+       bundle — and say so in reasoning rather than implying a finished video.
 
 2c. USER BRIEF BEATS PRIOR PANEL SKEPTICISM — if the user's CURRENT message
     contains an explicit build instruction ("build [X] now", "generate [X]",
@@ -406,6 +410,8 @@ BUILD-INTERNAL TOOLS (always available in build mode):
 - stable_audio ({prompt, duration?:1-190} → instrumental music track up to 190s, royalty-free; PREFER for ad backing tracks, ambient, video music)
 - elevenlabs_music ({prompt, length_ms?:3000-60000} → music up to 60s, can include vocals; PREFER when user wants songs/vocals)
 - suno (third-party fallback only — use ONLY when user explicitly asks for Suno and has the key)
+- video_render ({clips:[{url,type?,length?}], soundtrack?, size?} → ONE finished MP4 via Shotstack; THE stitcher — use as the final step to assemble generated clips + audio into a deliverable video. Needs the shotstack key connected.)
+- capcut_bundle ({clips:[{url,type?,length?}], soundtrack?, size?} → .zip with a timeline edit-plan + CapCut import steps; build-internal. Use when the user wants to hand-edit in CapCut rather than an auto-rendered MP4.)
 - gmail ({to,subject,body} → sent email)
 - gsheets ({title,sheets[{name,rows[][]}]} → Google Sheet in user's Drive, returns link)
 - gcal ({summary,start,end,description?,attendees?[]} → Google Calendar event, ISO times or {date} for all-day)
@@ -515,7 +521,7 @@ export async function orchestrate({
     'agent_synth', 'pptxgen', 'docgen', 'pdfgen',
     'xlsxgen', 'htmlgen', 'mdgen', 'codezip',
     'image_per_slide', 'narrate_per_slide', 'openai_tts',
-    'stable_audio', 'elevenlabs_music',
+    'stable_audio', 'elevenlabs_music', 'capcut_bundle',
     'gmail', 'gsheets', 'gcal', 'notion', 'twilio', 'stripe',
   ])
   const isToolAllowed = (toolId) => BUILD_INTERNAL_TOOLS.has(toolId) || !!enabledTools?.[toolId]

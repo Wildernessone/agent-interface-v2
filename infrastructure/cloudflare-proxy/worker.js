@@ -669,6 +669,34 @@ const ROUTES = {
     return new Response(JSON.stringify({ error: 'timeout' }), { status: 504, headers: { 'Content-Type': 'application/json' } })
   },
 
+  // Shotstack — render a JSON timeline into a finished MP4 (the stitcher).
+  // Async: submit then poll. Verified: POST api.shotstack.io/edit/v1/render
+  // (x-api-key, { timeline, output }) -> { response:{ id } }; GET .../render/{id}
+  // -> { response:{ status, url } }.
+  shotstack: async (req) => {
+    const apiKey = req.headers.get('x-api-key')
+    if (!apiKey) return new Response(JSON.stringify({ error: 'missing_provider_key' }), { status: 400 })
+    const body = await req.json()
+    const start = await fetch('https://api.shotstack.io/edit/v1/render', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
+      body: JSON.stringify({ timeline: body.timeline, output: body.output }),
+    })
+    if (!start.ok) { const t = await start.text(); return new Response(t, { status: start.status, headers: { 'Content-Type': 'application/json' } }) }
+    const job = await start.json()
+    const id = job.response?.id
+    if (!id) return new Response(JSON.stringify({ error: 'no_job_id' }), { status: 502, headers: { 'Content-Type': 'application/json' } })
+    for (let i = 0; i < 45; i++) {
+      await new Promise(r => setTimeout(r, 4000))
+      const s = await fetch(`https://api.shotstack.io/edit/v1/render/${id}`, { headers: { 'x-api-key': apiKey } })
+      const d = await s.json()
+      const st = d.response?.status
+      if (st === 'done' && d.response?.url) return new Response(JSON.stringify({ url: d.response.url }), { headers: { 'Content-Type': 'application/json' } })
+      if (st === 'failed') return new Response(JSON.stringify({ error: d.response?.error || 'shotstack_failed' }), { status: 502, headers: { 'Content-Type': 'application/json' } })
+    }
+    return new Response(JSON.stringify({ error: 'timeout' }), { status: 504, headers: { 'Content-Type': 'application/json' } })
+  },
+
   // Whisper — OpenAI speech-to-text. Uses the OpenAI key. Routed through the
   // worker because api.openai.com sends no browser CORS (the old browser-direct
   // call in fileIngestion silently failed). Accepts a multipart file upload or

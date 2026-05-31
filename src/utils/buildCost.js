@@ -119,6 +119,15 @@ export function estimateStepCents(step) {
     case 'heygen':
       return 25        // ~$0.25 per avatar video (credit-based)
 
+    case 'video_render': {
+      // Shotstack bills by output minutes; estimate from total clip length.
+      const clips = Array.isArray(struct?.clips) ? struct.clips : []
+      const sec = clips.reduce((s, c) => s + (Number(c.length) || 5), 0) || 30
+      return Math.max(10, Math.ceil((sec / 60) * 40))  // ~$0.40/min, floor ~$0.10
+    }
+    case 'capcut_bundle':
+      return 0         // browser-side zip, no API cost
+
     // 3D
     case 'meshy':
       return 10        // ~$0.10 per preview model

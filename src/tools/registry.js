@@ -695,6 +695,92 @@ const heygen = {
   },
 }
 
+const videoRender = {
+  id: 'video_render',
+  name: 'Video Render (Shotstack)',
+  category: 'video',
+  capability: 'stitch clips + images + audio into one finished MP4 — the final ad-assembly step (the stitcher)',
+  desc: 'Assemble clips/images/a soundtrack into a rendered MP4 via Shotstack. Uses your Shotstack key.',
+  keySource: 'tool_keys.shotstack',
+  docsUrl: 'https://dashboard.shotstack.io/keys',
+  status: 'live',
+  async run({ structuredInput, key, proxy }) {
+    if (!key) throw new ToolError('video_render', 'missing_key', 'Video Render needs a Shotstack API key.')
+    const cfg = (typeof structuredInput === 'string' ? JSON.parse(structuredInput) : structuredInput) || {}
+    const clips = Array.isArray(cfg.clips) ? cfg.clips : []
+    if (!clips.length) throw new ToolError('video_render', 'no_clips', 'Provide clips: [{ url, type?, length? }] to render.')
+    let cursor = 0
+    const trackClips = clips.map(c => {
+      const isImg = c.type === 'image' || /\.(png|jpe?g|webp|gif)(\?|$)/i.test(c.url || '')
+      const length = Number(c.length) || (isImg ? 4 : 5)
+      const clip = { asset: { type: isImg ? 'image' : 'video', src: c.url }, start: cursor, length }
+      cursor += length
+      return clip
+    })
+    const timeline = { background: '#000000', tracks: [{ clips: trackClips }] }
+    if (cfg.soundtrack) timeline.soundtrack = { src: cfg.soundtrack, effect: 'fadeOut' }
+    const output = { format: 'mp4', size: cfg.size || { width: 1280, height: 720 } }
+    const res = await proxy('shotstack', { timeline, output }, { 'x-api-key': key })
+    if (!res.ok) throw new ToolError('video_render', 'bad_response', await res.text().catch(() => `status ${res.status}`))
+    const data = await res.json()
+    if (!data.url) throw new ToolError('video_render', 'bad_response', 'No rendered video URL returned.')
+    return { type: 'video', url: data.url, title: 'rendered-video', tool: 'video_render', meta: { durationSec: cursor, clips: clips.length } }
+  },
+}
+
+// CapCut hand-off bundle. CapCut has NO public render API and its draft format
+// is undocumented/version-fragile, so we do NOT fabricate a draft. Instead this
+// produces a reliable .zip: a timeline.json edit-plan (clip order, durations,
+// soundtrack) + import instructions referencing the asset URLs. Browser-side,
+// no key. Use video_render for a finished MP4; use this to hand-edit in CapCut.
+const capcutBundle = {
+  id: 'capcut_bundle',
+  name: 'CapCut Bundle (.zip)',
+  category: 'video',
+  capability: 'package clips + audio + a timeline edit-plan into a .zip for hand-assembly in CapCut',
+  desc: 'Downloadable .zip (timeline.json + import steps) to rebuild the cut in CapCut. No render API exists — this is an edit-plan, not a finished video.',
+  keySource: null,
+  status: 'live',
+  hidden: true,
+  async run({ structuredInput, label }) {
+    const { default: JSZip } = await import('jszip')
+    const cfg = (typeof structuredInput === 'string' ? JSON.parse(structuredInput) : structuredInput) || {}
+    const clips = Array.isArray(cfg.clips) ? cfg.clips : []
+    if (!clips.length) throw new ToolError('capcut_bundle', 'no_clips', 'Provide clips: [{ url, type?, length? }].')
+    let cursor = 0
+    const timeline = clips.map((c, i) => {
+      const isImg = c.type === 'image' || /\.(png|jpe?g|webp|gif)(\?|$)/i.test(c.url || '')
+      const length = Number(c.length) || (isImg ? 4 : 5)
+      const seg = { order: i + 1, src: c.url, type: isImg ? 'image' : 'video', start_sec: cursor, length_sec: length }
+      cursor += length
+      return seg
+    })
+    const manifest = { fps: 30, size: cfg.size || { width: 1280, height: 720 }, soundtrack: cfg.soundtrack || null, total_seconds: cursor, clips: timeline }
+    const readme = [
+      'CapCut assembly bundle',
+      '======================',
+      '',
+      'CapCut has no public API to build a project automatically, so this is an',
+      'edit-plan, not a finished video. To assemble in CapCut:',
+      '',
+      '1. Open CapCut → New project.',
+      '2. Import the media at the URLs listed in timeline.json (download each first).',
+      '3. Drop the clips on the timeline in `order`, each trimmed to `length_sec`.',
+      `4. Add the soundtrack (${manifest.soundtrack || 'none'}) on an audio track from 0s.`,
+      `5. Total runtime: ~${cursor}s. Canvas: ${manifest.size.width}x${manifest.size.height}.`,
+      '',
+      'Tip: for a fully-rendered MP4 with no manual steps, use the Video Render',
+      '(Shotstack) tool instead.',
+    ].join('\n')
+    const zip = new JSZip()
+    zip.file('timeline.json', JSON.stringify(manifest, null, 2))
+    zip.file('README.txt', readme)
+    const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' })
+    const url = URL.createObjectURL(blob)
+    return { type: 'document', url, filename: `${(label || 'capcut-bundle').replace(/[^a-z0-9-_ ]/gi, '').trim() || 'capcut-bundle'}.zip`, tool: 'capcut_bundle', meta: { clips: clips.length, totalSeconds: cursor } }
+  },
+}
+
 const exa = {
   id: 'exa',
   name: 'Exa.ai',
@@ -1951,7 +2037,7 @@ export const TOOL_REGISTRY = [
   // Transcription
   whisper, assemblyai,
   // Video
-  runway, luma, pika, heygen,
+  runway, luma, pika, heygen, videoRender, capcutBundle,
   // 3D
   meshy,
   // Search

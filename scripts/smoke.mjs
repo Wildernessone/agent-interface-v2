@@ -84,6 +84,30 @@ try {
   }
   check('ToolError is exported', typeof ToolError === 'function')
 
+  // ── 3a2. video_render (Shotstack stitcher) — proxy returns { url } ──
+  {
+    const vr = TOOLS_BY_ID['video_render']
+    const input = { clips: [{ url: 'https://e.com/a.mp4', length: 5 }, { url: 'https://e.com/b.png', type: 'image' }], soundtrack: 'https://e.com/m.mp3' }
+    const out = await vr.run({ structuredInput: input, key: 'k', proxy: async () => mockRes(true, { url: 'https://cdn/out.mp4' }), settings: {} })
+    check('video_render: success returns rendered video url', out?.type === 'video' && out.url === 'https://cdn/out.mp4')
+    await expectThrow('video_render: upstream error throws', () =>
+      vr.run({ structuredInput: input, key: 'k', proxy: async () => mockRes(false, { error: 'x' }, 500), settings: {} }))
+    await expectThrow('video_render: missing key throws', () =>
+      vr.run({ structuredInput: input, key: '', proxy: async () => mockRes(true, {}), settings: {} }))
+    await expectThrow('video_render: no clips throws', () =>
+      vr.run({ structuredInput: { clips: [] }, key: 'k', proxy: async () => mockRes(true, {}), settings: {} }))
+  }
+
+  // ── 3a3. capcut_bundle — browser-side zip (needs Blob/createObjectURL) ──
+  if (typeof Blob !== 'undefined' && typeof URL !== 'undefined' && URL.createObjectURL) {
+    const cb = TOOLS_BY_ID['capcut_bundle']
+    const out = await cb.run({ structuredInput: { clips: [{ url: 'https://e.com/a.mp4', length: 5 }], soundtrack: 'https://e.com/m.mp3' }, label: 'ad' })
+    check('capcut_bundle: returns a .zip document', out?.type === 'document' && /\.zip$/.test(out.filename || ''))
+    await expectThrow('capcut_bundle: no clips throws', () => cb.run({ structuredInput: { clips: [] } }))
+  } else {
+    console.log('ℹ️  capcut_bundle: skipped (no Blob/URL.createObjectURL in this runtime)')
+  }
+
   // ── 3b. search tool contracts (mock proxy) ──────────────────────
   const searchTools = [
     { id: 'exa', okBody: { results: [{ title: 'T', url: 'https://e.com', text: 'body' }] }, input: { query: 'hi' } },
