@@ -735,13 +735,13 @@ const videoRender = {
 // no key. Use video_render for a finished MP4; use this to hand-edit in CapCut.
 const capcutBundle = {
   id: 'capcut_bundle',
-  name: 'CapCut Bundle (.zip)',
+  name: 'CapCut Export (.zip)',
   category: 'video',
   capability: 'package clips + audio + a timeline edit-plan into a .zip for hand-assembly in CapCut',
   desc: 'Downloadable .zip (timeline.json + import steps) to rebuild the cut in CapCut. No render API exists — this is an edit-plan, not a finished video.',
   keySource: null,
   status: 'live',
-  hidden: true,
+  setupHint: 'CapCut has no public render API, so this is an edit-plan (clip order, timings, asset links) you import into CapCut — not a finished video. For a ready MP4, use Video Render.',
   async run({ structuredInput, label }) {
     const { default: JSZip } = await import('jszip')
     const cfg = (typeof structuredInput === 'string' ? JSON.parse(structuredInput) : structuredInput) || {}

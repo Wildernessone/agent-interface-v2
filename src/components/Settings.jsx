@@ -172,11 +172,14 @@ export default function Settings({ onClose }) {
                   {liveInCat(cat).map(tool => {
                     const on = settings.tools?.[tool.id]?.enabled
                     const usesAgentKey = tool.keySource?.startsWith('agent.')
+                    const noKey = !tool.keySource  // browser-side tools (e.g. capcut_bundle)
                     const isStubbed = tool.status === 'needs_proxy_route' || tool.status === 'beta'
-                    // Ready when: enabled AND (uses agent key OR has its own key set)
-                    const hasKey = usesAgentKey
-                      ? !!settings.agents?.gpt?.key
-                      : !!settings.toolKeys?.[tool.id]
+                    // Ready when: enabled AND (no key needed OR uses agent key OR has its own key)
+                    const hasKey = noKey
+                      ? true
+                      : usesAgentKey
+                        ? !!settings.agents?.gpt?.key
+                        : !!settings.toolKeys?.[tool.id]
                     const isReady = on && hasKey && !isStubbed
                     const needsKey = on && !hasKey && !isStubbed
                     return (
@@ -195,7 +198,7 @@ export default function Settings({ onClose }) {
                           </div>
                           <Toggle value={on || false} onChange={v => updateToolEnabled(tool.id, v)}/>
                         </div>
-                        {on && !usesAgentKey && (
+                        {on && !usesAgentKey && !noKey && (
                           <>
                             <label className="settings-label">API key</label>
                             <input className="settings-input" type="password" placeholder={tool.keyPrefix ? `${tool.keyPrefix}...` : "paste key"} value={settings.toolKeys?.[tool.id] || ""} onChange={e => updateToolKey(tool.id, e.target.value)}/>
@@ -205,6 +208,9 @@ export default function Settings({ onClose }) {
                         )}
                         {on && usesAgentKey && (
                           <div className="settings-helper">Uses your OpenAI key from the Agents tab — no separate key needed.</div>
+                        )}
+                        {on && noKey && (
+                          <div className="settings-helper">Runs in your browser — no API key needed.{tool.setupHint ? ` ${tool.setupHint}` : ''}</div>
                         )}
                       </section>
                     )
