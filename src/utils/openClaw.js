@@ -342,8 +342,9 @@ DECISION TREE (first match wins)
      → mode = "build", agents_to_respond = [], deliverable = short folder name
      → Build the chain ONLY from tools that actually appear in TOOLS AVAILABLE.
        Storyboard frames always work (image_per_slide is build-internal).
-       Animation needs runway; music needs suno — include those steps ONLY if
-       that tool is connected. Never invent a step for a tool that isn't listed.
+       Animation needs runway; for the backing track PREFER stable_audio
+       (build-internal) — include the animation step ONLY if runway is connected.
+       Never invent a step for a tool that isn't listed.
      → Canonical shape (4 scenes, ~30s):
          { "steps": [
            { "id": "s1", "tool": "agent_synth", "needs": [], "output_schema": "slides",
@@ -353,10 +354,11 @@ DECISION TREE (first match wins)
              "label": "Generate the 4 frames" },
            { "id": "s3", "tool": "runway", "needs": ["s2"], "input": "Animate each storyboard frame in {s2} into a ~5s clip matching its VO beat.",
              "label": "Animate the frames" },
-           { "id": "s4", "tool": "suno", "needs": ["s1"], "input": "Instrumental 30s backing track for the ad in {s1}: tense build resolving to confident, no vocals.",
+           { "id": "s4", "tool": "stable_audio", "needs": ["s1"], "input": "Instrumental 30s backing track for the ad in {s1}: tense build resolving to confident, no vocals.",
              "label": "Generate the backing track" }
          ] }
-       Drop s3 if runway is not connected; drop s4 if suno is not connected.
+       Drop s3 if runway is not connected. stable_audio is build-internal so s4
+       always works; only swap it for suno if the user explicitly asked for Suno.
      → STITCHER GAP: there is NO tool that concatenates clips + lays audio into a
        single MP4. The build returns the frames, clips, and track as a Drive
        bundle for the user to stitch (CapCut/Premiere). State this in reasoning —
@@ -401,12 +403,20 @@ BUILD-INTERNAL TOOLS (always available in build mode):
 - image_per_slide ({slides[{title,prompt?}], style?, size?'square'|'wide'|'tall'} → one image per slide as a bundle)
 - narrate_per_slide (slides[] → per-slide audio with timing; accepts provider:'elevenlabs'|'openai')
 - openai_tts ({text, voice?:'nova'|'alloy'|'echo'|'fable'|'onyx'|'shimmer'} → audio file; use when ElevenLabs is unavailable or user says "use OpenAI voice")
+- stable_audio ({prompt, duration?:1-190} → instrumental music track up to 190s, royalty-free; PREFER for ad backing tracks, ambient, video music)
+- elevenlabs_music ({prompt, length_ms?:3000-60000} → music up to 60s, can include vocals; PREFER when user wants songs/vocals)
+- suno (third-party fallback only — use ONLY when user explicitly asks for Suno and has the key)
 - gmail ({to,subject,body} → sent email)
 - gsheets ({title,sheets[{name,rows[][]}]} → Google Sheet in user's Drive, returns link)
 - gcal ({summary,start,end,description?,attendees?[]} → Google Calendar event, ISO times or {date} for all-day)
 - notion ({parentPageId|parentDatabaseId, title, sections:[{heading,body,items?[]}]} → Notion page; requires user's notion token + parent must be shared with their integration)
 - twilio ({to:"+E.164", from:"+E.164", body} → sends an SMS via the user's Twilio account; needs Twilio credentials)
 - stripe ({name, amount, currency?:"usd", description?, after_completion_url?} → Stripe payment link; amount in dollars (49.99) or cents (4999); test mode auto-detected from sk_test_ key)
+
+MUSIC ROUTING: when a build needs music, PREFER stable_audio for instrumental
+ad/video backing tracks and ambient; PREFER elevenlabs_music when the user wants
+vocals or a song-like track. Only use suno when the user EXPLICITLY asks for it
+(unofficial third-party reseller, may be unreliable).
 
 Variable interpolation: "{stepId}" or "{stepId.field}" in input.
 Dependency order via needs[].
@@ -505,6 +515,7 @@ export async function orchestrate({
     'agent_synth', 'pptxgen', 'docgen', 'pdfgen',
     'xlsxgen', 'htmlgen', 'mdgen', 'codezip',
     'image_per_slide', 'narrate_per_slide', 'openai_tts',
+    'stable_audio', 'elevenlabs_music',
     'gmail', 'gsheets', 'gcal', 'notion', 'twilio', 'stripe',
   ])
   const isToolAllowed = (toolId) => BUILD_INTERNAL_TOOLS.has(toolId) || !!enabledTools?.[toolId]

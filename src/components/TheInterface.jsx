@@ -214,7 +214,25 @@ export default function TheInterface() {
   const previousSpendModeRef = useRef(null)
 
   const activeAgents = AGENTS.filter(a => settings.agents[a.id]?.enabled && settings.agents[a.id]?.key)
-  const enabledTools = Object.fromEntries(Object.entries(settings.tools || {}).filter(([,v]) => v.enabled))
+  // A tool toggled "on" but missing its API key is effectively unusable — if we
+  // hand it to the dispatcher it plans a step that fails at runtime (the Suno
+  // problem). Require both the toggle AND a resolvable key before exposing it.
+  const enabledTools = Object.fromEntries(
+    Object.entries(settings.tools || {}).filter(([id, v]) => {
+      if (!v.enabled) return false
+      const tool = TOOLS_BY_ID[id]
+      if (!tool) return false
+      if (tool.keySource?.startsWith('agent.')) {
+        const agentKey = tool.keySource.split('.')[1]
+        return !!settings.agents?.[agentKey]?.key
+      }
+      if (tool.keySource?.startsWith('tool_keys.')) {
+        const tk = tool.keySource.split('.')[1]
+        return !!settings.toolKeys?.[tk]
+      }
+      return true  // tools with no keySource (OAuth-based) are always usable
+    })
+  )
   const busy = !!activeAgentId || toolsWorking
   const canSend = !busy && (input.trim() || listening)
 

@@ -336,12 +336,73 @@ const openaiTts = {
 
 // ── Music ─────────────────────────────────────────────────────────
 
+const stableAudio = {
+  id: 'stable_audio',
+  name: 'Stable Audio 2.0',
+  category: 'audio_music',
+  capability: 'generate royalty-free instrumental music tracks up to 190 seconds (best for ads, video backing, ambient)',
+  desc: 'Official Stability AI music API. Uses your Stability key. Commercial-use OK.',
+  keySource: 'tool_keys.stability',
+  keyPrefix: 'sk-',
+  docsUrl: 'https://platform.stability.ai/account/keys',
+  setupHint: 'Uses the same Stability key as Stable Diffusion 3 image generation.',
+  status: 'live',
+  async run({ prompt, structuredInput, key, proxy }) {
+    if (!key) throw new ToolError('stable_audio', 'missing_key', 'Stable Audio uses your Stability key.')
+    const cfg = (typeof structuredInput === 'object' && structuredInput) || {}
+    const duration = Math.max(1, Math.min(190, Number(cfg.duration) || 30))
+    const realPrompt = (cfg.prompt || prompt || '').slice(0, 1000)
+    const res = await proxy('stable_audio', { prompt: realPrompt, duration }, { Authorization: `Bearer ${key}` })
+    if (!res.ok) throw new ToolError('stable_audio', 'bad_response', await res.text().catch(() => `status ${res.status}`))
+    const data = await res.json()
+    if (!data.audio) throw new ToolError('stable_audio', 'bad_response', 'No audio returned.')
+    return {
+      type: 'audio',
+      url: `data:audio/mpeg;base64,${data.audio}`,
+      title: realPrompt.slice(0, 60),
+      prompt: realPrompt,
+      tool: 'stable_audio',
+      meta: { duration, provider: 'stability' },
+    }
+  },
+}
+
+const elevenlabsMusic = {
+  id: 'elevenlabs_music',
+  name: 'ElevenLabs Music',
+  category: 'audio_music',
+  capability: 'generate music tracks up to 60 seconds with optional vocals — production quality, official API',
+  desc: 'Official ElevenLabs music API. Uses your ElevenLabs key (same as voice).',
+  keySource: 'tool_keys.elevenlabs',
+  docsUrl: 'https://elevenlabs.io/app/settings/api-keys',
+  setupHint: 'Uses the same ElevenLabs key as voice/narration.',
+  status: 'live',
+  async run({ prompt, structuredInput, key, proxy }) {
+    if (!key) throw new ToolError('elevenlabs_music', 'missing_key', 'ElevenLabs Music uses your ElevenLabs key.')
+    const cfg = (typeof structuredInput === 'object' && structuredInput) || {}
+    const lengthMs = Math.max(3000, Math.min(60000, Number(cfg.length_ms) || 15000))
+    const realPrompt = (cfg.prompt || prompt || '').slice(0, 1000)
+    const res = await proxy('elevenlabs_music', { prompt: realPrompt, music_length_ms: lengthMs }, { 'x-api-key': key })
+    if (!res.ok) throw new ToolError('elevenlabs_music', 'bad_response', await res.text().catch(() => `status ${res.status}`))
+    const data = await res.json()
+    if (!data.audio) throw new ToolError('elevenlabs_music', 'bad_response', 'No audio returned.')
+    return {
+      type: 'audio',
+      url: `data:audio/mpeg;base64,${data.audio}`,
+      title: realPrompt.slice(0, 60),
+      prompt: realPrompt,
+      tool: 'elevenlabs_music',
+      meta: { duration: lengthMs / 1000, provider: 'elevenlabs' },
+    }
+  },
+}
+
 const suno = {
   id: 'suno',
   name: 'Suno',
   category: 'audio_music',
-  capability: 'generate full songs with vocals (returns duration, tags, lyrics)',
-  desc: 'Full songs with vocals from a description',
+  capability: 'generate full songs with vocals (third-party reseller API — unofficial, may be unreliable)',
+  desc: 'Suno via third-party reseller. Suno has no official public API. Prefer Stable Audio or ElevenLabs Music for production use.',
   keySource: 'tool_keys.suno',
   setup: {
     signupUrl: 'https://suno.com/', billingUrl: 'https://suno.com/account',
@@ -1677,7 +1738,7 @@ export const TOOL_REGISTRY = [
   // Image editing — stubbed but UI shows "coming with Worker route"
   removebg, clipdrop,
   // Voice / music
-  elevenlabs, openaiTts, suno,
+  elevenlabs, openaiTts, stableAudio, elevenlabsMusic, suno,
   // Video
   runway,
   // Search

@@ -86,6 +86,14 @@ export function estimateStepCents(step) {
       }, 0) || (slides.length * 500)  // fall back to ~500 chars/slide est
       return Math.ceil((totalChars / 1000) * 30)
     }
+    case 'stable_audio': {
+      const dur = struct?.duration || 30
+      return Math.ceil(dur * 0.3)  // ~$0.003/sec = $0.09 for 30s
+    }
+    case 'elevenlabs_music': {
+      const sec = (struct?.length_ms || 15000) / 1000
+      return Math.ceil(sec * 1.5)   // ~$0.015/sec premium music
+    }
     case 'suno':
       return 5        // ~$0.05 per song
 

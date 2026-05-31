@@ -454,6 +454,50 @@ const ROUTES = {
     return new Response(JSON.stringify({ error: 'timeout' }), { status: 504, headers: { 'Content-Type': 'application/json' } })
   },
 
+  // Stable Audio 2.0 — official Stability music API. multipart/form-data in,
+  // raw audio bytes out; we base64-wrap them like the elevenlabs route.
+  stable_audio: async (req) => {
+    const auth = req.headers.get('Authorization')
+    if (!auth) return new Response(JSON.stringify({ error: 'missing_provider_key' }), { status: 400 })
+    const body = await req.json()
+    const duration = Math.max(1, Math.min(190, Number(body.duration) || 30))
+    const form = new FormData()
+    form.append('prompt', String(body.prompt || '').slice(0, 1000))
+    form.append('output_format', 'mp3')
+    form.append('duration', String(duration))
+    const r = await fetch('https://api.stability.ai/v2beta/audio/stable-audio-2/text-to-audio', {
+      method: 'POST',
+      headers: { Authorization: auth, Accept: 'audio/*' },
+      body: form,
+    })
+    if (!r.ok) {
+      const text = await r.text()
+      return new Response(text, { status: r.status, headers: { 'Content-Type': 'application/json' } })
+    }
+    const buf = await r.arrayBuffer()
+    return new Response(JSON.stringify({ audio: bufToBase64(buf) }), { headers: { 'Content-Type': 'application/json' } })
+  },
+
+  // ElevenLabs Music — official music API (can include vocals). JSON in, raw
+  // audio bytes out; base64-wrapped like the other audio routes.
+  elevenlabs_music: async (req) => {
+    const apiKey = req.headers.get('x-api-key')
+    if (!apiKey) return new Response(JSON.stringify({ error: 'missing_provider_key' }), { status: 400 })
+    const body = await req.json()
+    const lengthMs = Math.max(3000, Math.min(60000, Number(body.music_length_ms) || 15000))
+    const r = await fetch('https://api.elevenlabs.io/v1/music', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'xi-api-key': apiKey, Accept: 'audio/mpeg' },
+      body: JSON.stringify({ prompt: String(body.prompt || '').slice(0, 1000), music_length_ms: lengthMs }),
+    })
+    if (!r.ok) {
+      const text = await r.text()
+      return new Response(text, { status: r.status, headers: { 'Content-Type': 'application/json' } })
+    }
+    const buf = await r.arrayBuffer()
+    return new Response(JSON.stringify({ audio: bufToBase64(buf) }), { headers: { 'Content-Type': 'application/json' } })
+  },
+
   // Google OAuth token refresh — exchanges a stored refresh_token for a fresh
   // access_token so Drive saves don't fail when the hourly token expires. The
   // client_secret lives here (env), never in the browser. Auth-exempt (see the
