@@ -254,8 +254,7 @@ const ROUTES = {
       return new Response(text, { status: r.status, headers: { 'Content-Type': 'application/json' } })
     }
     const buf = await r.arrayBuffer()
-    const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)))
-    return new Response(JSON.stringify({ audio: b64 }), { headers: { 'Content-Type': 'application/json' } })
+    return new Response(JSON.stringify({ audio: bufToBase64(buf) }), { headers: { 'Content-Type': 'application/json' } })
   },
 
   // OpenAI TTS — text-to-speech fallback for when ElevenLabs is blocked.
