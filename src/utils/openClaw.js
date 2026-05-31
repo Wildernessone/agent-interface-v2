@@ -347,26 +347,38 @@ DECISION TREE (first match wins)
        Never invent a step for a tool that isn't listed.
      → Canonical shape (4 scenes, ~30s):
          { "steps": [
-           { "id": "s1", "tool": "agent_synth", "needs": [], "output_schema": "slides",
-             "input": "Write a 4-scene, 30-second ad storyboard for <subject>. Each scene: a title, a vivid photoreal visual prompt for an image generator, and one VO line. Arc: hook → problem → product → resolution.",
-             "label": "Write the storyboard" },
-           { "id": "s2", "tool": "image_per_slide", "needs": ["s1"], "input": "{s1}", "output_schema": "slides",
+           { "id": "s1", "tool": "agent_synth", "needs": [], "output_schema": "storyboard",
+             "input": "Write a 4-scene, 30-second ad for <subject>. For each scene give a title, a vivid photoreal image prompt (describe the SHOT, not the pitch), and a duration_sec. Then write voiceover_script: persuasive spoken ad copy that SELLS <subject> to the viewer (arc: hook → problem → product → resolution), ~75 words, pure spoken language — NOT a description of the scenes.",
+             "label": "Write the storyboard + ad script" },
+           { "id": "s2", "tool": "image_per_slide", "needs": ["s1"], "input": "{ \"slides\": {s1.scenes} }",
              "label": "Generate the 4 frames" },
-           { "id": "s3", "tool": "runway", "needs": ["s2"], "input": "Animate each storyboard frame in {s2} into a ~5s clip matching its VO beat.",
+           { "id": "s3", "tool": "runway", "needs": ["s2"], "input": "Animate each storyboard frame in {s2} into a ~5s clip matching its beat.",
              "label": "Animate the frames" },
-           { "id": "s4", "tool": "stable_audio", "needs": ["s1"], "input": "Instrumental 30s backing track for the ad in {s1}: tense build resolving to confident, no vocals.",
+           { "id": "s4", "tool": "elevenlabs", "needs": ["s1"], "input": "{s1.voiceover_script}",
+             "label": "Record the voiceover" },
+           { "id": "s5", "tool": "stable_audio", "needs": ["s1"], "input": "Instrumental 30s backing track, no vocals: tense build resolving to confident.",
              "label": "Generate the backing track" },
-           { "id": "s5", "tool": "video_render", "needs": ["s3", "s4"], "input": "{ \"clips\": [clip urls from {s3}], \"soundtrack\": \"audio url from {s4}\" }",
+           { "id": "s6", "tool": "video_render", "needs": ["s3", "s4"], "input": "{ \"clips\": [clip urls from {s3}], \"soundtrack\": \"voiceover url from {s4}\" }",
              "label": "Stitch into one MP4" }
          ] }
-       Drop s3 if runway is not connected. stable_audio is build-internal so s4
+       CRITICAL — voiceover ≠ storyboard. s1 MUST use output_schema "storyboard"
+       (it returns scenes[] for the visuals AND a separate voiceover_script that
+       is real ad copy). The voiceover step MUST read "{s1.voiceover_script}" —
+       NEVER feed it "{s1}" or the scene prompts, or it will narrate scene
+       descriptions instead of selling the product. image_per_slide reads the
+       scenes via "{s1.scenes}". Use openai_tts instead of elevenlabs for s4 if
+       ElevenLabs isn't connected (OpenAI usually is — image_per_slide needs it).
+       For an ad the VOICEOVER is the primary audio, so the final video_render
+       soundtrack is the voiceover (s4); the stable_audio track ships as a
+       separate bundle asset for the editor to mix (no auto audio-mix yet).
+       Drop s3 if runway is not connected. stable_audio is build-internal so s5
        always works; only swap it for suno if the user explicitly asked for Suno.
-     → STITCHING: if video_render (Shotstack) is connected, add s5 to assemble the
-       clips + soundtrack into ONE finished MP4 — that is the deliverable. If the
+     → STITCHING: if video_render (Shotstack) is connected, add s6 to assemble the
+       clips + voiceover into ONE finished MP4 — that is the deliverable. If the
        user wants to hand-edit, use capcut_bundle (build-internal) instead/also to
        emit a CapCut edit-plan .zip. If NEITHER applies (no shotstack key, user
-       didn't ask to edit), drop s5 and return the frames/clips/track as a Drive
-       bundle — and say so in reasoning rather than implying a finished video.
+       didn't ask to edit), drop s6 and return the frames/clips/voiceover/track as
+       a Drive bundle — and say so in reasoning rather than implying a finished video.
 
 2c. USER BRIEF BEATS PRIOR PANEL SKEPTICISM — if the user's CURRENT message
     contains an explicit build instruction ("build [X] now", "generate [X]",
@@ -396,7 +408,7 @@ DECISION TREE (first match wins)
      → In frugal: 1 round, cheapest agents. In premium: up to 3, capable agents.
 
 BUILD-INTERNAL TOOLS (always available in build mode):
-- agent_synth (returns JSON; use output_schema "slides", "document", "spreadsheet", "page", "post", or "project")
+- agent_synth (returns JSON; use output_schema "slides", "document", "spreadsheet", "page", "post", "project", or "storyboard" — storyboard returns scenes[]{title,prompt,duration_sec,on_screen_text} for the visuals AND a separate voiceover_script of real spoken ad copy; use it for ANY ad/video build so the voiceover is sales copy, not scene descriptions)
 - pptxgen (slides[] → .pptx)
 - docgen (sections[] or slides[] → .docx)
 - pdfgen (sections[] or slides[] or text → .pdf)

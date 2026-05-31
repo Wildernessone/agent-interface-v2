@@ -868,6 +868,12 @@ const agentSynth = {
       ? `\nReturn JSON of this exact shape: {"files":[{"path":"src/index.js","content":"// file contents as a string\\n"}, ...]}. Paths can be nested. Escape newlines in content as \\n.`
       : outputSchema === 'event'
       ? `\nReturn JSON of this exact shape: {"summary":"event title","start":"2026-06-01T15:00:00-07:00","end":"2026-06-01T16:00:00-07:00","description":"...","attendees":["email@example.com"]}. Use ISO 8601 with timezone offset, or {"date":"YYYY-MM-DD"} for all-day.`
+      : outputSchema === 'storyboard'
+      ? `\nReturn JSON of this exact shape: {"scenes":[{"id":1,"title":"short scene label","prompt":"a vivid, photoreal image-generation prompt describing the SHOT for this scene","duration_sec":5,"on_screen_text":"optional short text overlay"}, ...], "voiceover_script":"the spoken ad copy"}.
+The "prompt" fields drive an image generator — they are visual descriptions of what's on screen.
+The "voiceover_script" is the OPPOSITE: it is what a narrator SPEAKS over the ad. It MUST be persuasive marketing copy that sells the product to a viewer — NOT a description of what's on screen, and NOT the scene prompts concatenated. Write it as pure spoken language: no scene labels, no stage directions, no "[VO]:" tags. Pace it for the total duration at ~150 words/minute (a 30-second ad ≈ 75 words).
+WRONG voiceover_script: "Scene 1 shows a person frustrated at multiple browser tabs. The screen then splits into four panels."
+RIGHT voiceover_script: "Stop juggling four AI tools. Agent Interface gives you Claude, ChatGPT, Gemini, and Grok — working together, debating each other, building real files. One prompt. Every angle covered."`
       : `\nReturn clean JSON only — no markdown fences, no prose around it.`
 
     const fullPrompt = `${prompt}${schemaHint}`
