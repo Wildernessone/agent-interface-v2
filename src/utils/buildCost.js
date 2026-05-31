@@ -98,6 +98,10 @@ export function estimateStepCents(step) {
     }
     case 'suno':
       return 5        // ~$0.05 per song
+    case 'whisper':
+      return 1        // ~$0.006/min — small flat estimate
+    case 'assemblyai':
+      return 3        // ~$0.01-0.02 + speaker labels
 
     // Video
     case 'runway': {

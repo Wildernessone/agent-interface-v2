@@ -114,6 +114,23 @@ function bufToBase64(buf) {
   return btoa(binary)
 }
 
+// Get the audio bytes for a transcription route from either path: a multipart
+// upload (the file-attachment feature) or a JSON { audio_url } (build-plan use,
+// where the worker fetches the URL). Returns a Blob or null.
+async function getAudioBlob(req) {
+  const ct = req.headers.get('content-type') || ''
+  if (ct.includes('multipart/form-data')) {
+    const form = await req.formData()
+    const f = form.get('file')
+    return f && typeof f !== 'string' ? f : null
+  }
+  const body = await req.json().catch(() => ({}))
+  if (!body.audio_url) return null
+  const r = await fetch(body.audio_url)
+  if (!r.ok) return null
+  return new Blob([await r.arrayBuffer()], { type: r.headers.get('Content-Type') || 'audio/mpeg' })
+}
+
 async function verifySupabaseToken(token, env) {
   // Calls Supabase /auth/v1/user with the token. If it returns 200, the JWT is valid.
   // (Cheap; can be replaced with local JWT verification using the project JWT secret.)
@@ -648,6 +665,53 @@ const ROUTES = {
       const st = d.data?.status
       if (st === 'completed' && d.data?.video_url) return new Response(JSON.stringify({ url: d.data.video_url }), { headers: { 'Content-Type': 'application/json' } })
       if (st === 'failed') return new Response(JSON.stringify({ error: d.data?.error || 'heygen_failed' }), { status: 502, headers: { 'Content-Type': 'application/json' } })
+    }
+    return new Response(JSON.stringify({ error: 'timeout' }), { status: 504, headers: { 'Content-Type': 'application/json' } })
+  },
+
+  // Whisper — OpenAI speech-to-text. Uses the OpenAI key. Routed through the
+  // worker because api.openai.com sends no browser CORS (the old browser-direct
+  // call in fileIngestion silently failed). Accepts a multipart file upload or
+  // a JSON { audio_url }. Verified: POST api.openai.com/v1/audio/transcriptions,
+  // Bearer, multipart { file, model } -> { text }.
+  whisper: async (req) => {
+    const auth = req.headers.get('Authorization')
+    if (!auth) return new Response(JSON.stringify({ error: 'missing_provider_key' }), { status: 400 })
+    const blob = await getAudioBlob(req)
+    if (!blob) return new Response(JSON.stringify({ error: 'no_audio' }), { status: 400, headers: { 'Content-Type': 'application/json' } })
+    const form = new FormData()
+    form.append('file', blob, 'audio.mp3')
+    form.append('model', 'whisper-1')
+    const r = await fetch('https://api.openai.com/v1/audio/transcriptions', { method: 'POST', headers: { Authorization: auth }, body: form })
+    if (!r.ok) { const t = await r.text(); return new Response(t, { status: r.status, headers: { 'Content-Type': 'application/json' } }) }
+    const d = await r.json()
+    return new Response(JSON.stringify({ text: d.text || '' }), { headers: { 'Content-Type': 'application/json' } })
+  },
+
+  // AssemblyAI — speech-to-text with speaker labels. Three-step: upload bytes,
+  // create transcript, poll. Auth header is the raw key (no "Bearer"). Verified:
+  // POST /v2/upload (octet-stream) -> { upload_url }; POST /v2/transcript
+  // { audio_url, speaker_labels } -> { id }; GET /v2/transcript/{id} ->
+  // { status, text, utterances }.
+  assemblyai: async (req) => {
+    const key = req.headers.get('Authorization')
+    if (!key) return new Response(JSON.stringify({ error: 'missing_provider_key' }), { status: 400 })
+    const blob = await getAudioBlob(req)
+    if (!blob) return new Response(JSON.stringify({ error: 'no_audio' }), { status: 400, headers: { 'Content-Type': 'application/json' } })
+    const up = await fetch('https://api.assemblyai.com/v2/upload', { method: 'POST', headers: { Authorization: key, 'Content-Type': 'application/octet-stream' }, body: await blob.arrayBuffer() })
+    if (!up.ok) { const t = await up.text(); return new Response(t, { status: up.status, headers: { 'Content-Type': 'application/json' } }) }
+    const { upload_url } = await up.json()
+    if (!upload_url) return new Response(JSON.stringify({ error: 'upload_failed' }), { status: 502, headers: { 'Content-Type': 'application/json' } })
+    const cr = await fetch('https://api.assemblyai.com/v2/transcript', { method: 'POST', headers: { Authorization: key, 'Content-Type': 'application/json' }, body: JSON.stringify({ audio_url: upload_url, speaker_labels: true }) })
+    if (!cr.ok) { const t = await cr.text(); return new Response(t, { status: cr.status, headers: { 'Content-Type': 'application/json' } }) }
+    const job = await cr.json()
+    if (!job.id) return new Response(JSON.stringify({ error: 'no_job_id' }), { status: 502, headers: { 'Content-Type': 'application/json' } })
+    for (let i = 0; i < 40; i++) {
+      await new Promise(r => setTimeout(r, 3000))
+      const s = await fetch(`https://api.assemblyai.com/v2/transcript/${job.id}`, { headers: { Authorization: key } })
+      const d = await s.json()
+      if (d.status === 'completed') return new Response(JSON.stringify({ text: d.text || '', speakers: (d.utterances || []).map(u => ({ speaker: u.speaker, text: u.text })) }), { headers: { 'Content-Type': 'application/json' } })
+      if (d.status === 'error') return new Response(JSON.stringify({ error: d.error || 'assemblyai_failed' }), { status: 502, headers: { 'Content-Type': 'application/json' } })
     }
     return new Response(JSON.stringify({ error: 'timeout' }), { status: 504, headers: { 'Content-Type': 'application/json' } })
   },

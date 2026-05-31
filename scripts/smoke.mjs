@@ -89,6 +89,22 @@ try {
     { id: 'exa', okBody: { results: [{ title: 'T', url: 'https://e.com', text: 'body' }] }, input: { query: 'hi' } },
     { id: 'firecrawl', okBody: { success: true, data: { markdown: '# md', metadata: { title: 'T' } } }, input: { url: 'https://e.com' } },
   ]
+  // Transcription tools return { type:'transcript', text } from a { text } proxy
+  const transcriptTools = [
+    { id: 'whisper', okBody: { text: 'hello world' }, input: { audio_url: 'https://e.com/a.mp3' } },
+    { id: 'assemblyai', okBody: { text: 'hello world', speakers: [] }, input: { audio_url: 'https://e.com/a.mp3' } },
+  ]
+  for (const { id, okBody, input } of transcriptTools) {
+    const tool = TOOLS_BY_ID[id]
+    const out = await tool.run({ prompt: input.audio_url, structuredInput: input, key: 'k', proxy: async () => mockRes(true, okBody), settings: {} })
+    check(`${id}: success returns transcript text`, out?.type === 'transcript' && typeof out.text === 'string' && out.text.length > 0)
+    await expectThrow(`${id}: upstream error throws ToolError`, () =>
+      tool.run({ prompt: input.audio_url, structuredInput: input, key: 'k', proxy: async () => mockRes(false, { error: 'x' }, 500), settings: {} }))
+    await expectThrow(`${id}: missing key throws`, () =>
+      tool.run({ prompt: 'x', structuredInput: input, key: '', proxy: async () => mockRes(true, okBody), settings: {} }))
+    await expectThrow(`${id}: missing audio source throws`, () =>
+      tool.run({ prompt: 'not a url', structuredInput: {}, key: 'k', proxy: async () => mockRes(true, okBody), settings: {} }))
+  }
   for (const { id, okBody, input } of searchTools) {
     const tool = TOOLS_BY_ID[id]
     const out = await tool.run({ prompt: input.query || input.url, structuredInput: input, key: 'k', proxy: async () => mockRes(true, okBody), settings: {} })

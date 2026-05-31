@@ -357,6 +357,55 @@ const openaiTts = {
   },
 }
 
+// ── Transcription (speech-to-text) ────────────────────────────────
+// These also power audio file attachments (see fileIngestion.js). As build
+// tools they transcribe an audio URL; the run() returns the text for
+// downstream steps. type:'transcript' is intentionally not a file type.
+
+const whisper = {
+  id: 'whisper',
+  name: 'OpenAI Whisper',
+  category: 'audio_tts',
+  capability: 'transcribe an audio/video file or URL to text',
+  desc: 'Speech-to-text via OpenAI Whisper. Uses your OpenAI key — also powers audio file attachments.',
+  keySource: 'agent.gpt',
+  docsUrl: 'https://platform.openai.com/api-keys',
+  status: 'live',
+  async run({ prompt, structuredInput, key, proxy }) {
+    if (!key) throw new ToolError('whisper', 'missing_key', 'Whisper uses your OpenAI key — add it in Settings → Agents → ChatGPT.')
+    const cfg = (typeof structuredInput === 'object' && structuredInput) || {}
+    const audioUrl = cfg.audio_url || (typeof prompt === 'string' && prompt.startsWith('http') ? prompt : '')
+    if (!audioUrl) throw new ToolError('whisper', 'no_source', 'Whisper needs an audio file URL (or attach an audio file in chat).')
+    const res = await proxy('whisper', { audio_url: audioUrl }, { Authorization: `Bearer ${key}` })
+    if (!res.ok) throw new ToolError('whisper', 'bad_response', await res.text().catch(() => `status ${res.status}`))
+    const data = await res.json()
+    if (typeof data.text !== 'string') throw new ToolError('whisper', 'bad_response', 'No transcript returned.')
+    return { type: 'transcript', text: data.text, prompt: audioUrl, tool: 'whisper' }
+  },
+}
+
+const assemblyai = {
+  id: 'assemblyai',
+  name: 'AssemblyAI',
+  category: 'audio_tts',
+  capability: 'transcribe audio with speaker labels (diarization) — production-grade speech-to-text',
+  desc: 'Speech-to-text with speaker labels via AssemblyAI. Uses your AssemblyAI key. Preferred for audio attachments when set.',
+  keySource: 'tool_keys.assemblyai',
+  docsUrl: 'https://www.assemblyai.com/app/api-keys',
+  status: 'live',
+  async run({ prompt, structuredInput, key, proxy }) {
+    if (!key) throw new ToolError('assemblyai', 'missing_key', 'AssemblyAI needs an API key.')
+    const cfg = (typeof structuredInput === 'object' && structuredInput) || {}
+    const audioUrl = cfg.audio_url || (typeof prompt === 'string' && prompt.startsWith('http') ? prompt : '')
+    if (!audioUrl) throw new ToolError('assemblyai', 'no_source', 'AssemblyAI needs an audio file URL (or attach an audio file in chat).')
+    const res = await proxy('assemblyai', { audio_url: audioUrl }, { Authorization: key })
+    if (!res.ok) throw new ToolError('assemblyai', 'bad_response', await res.text().catch(() => `status ${res.status}`))
+    const data = await res.json()
+    if (typeof data.text !== 'string') throw new ToolError('assemblyai', 'bad_response', 'No transcript returned.')
+    return { type: 'transcript', text: data.text, speakers: data.speakers || [], prompt: audioUrl, tool: 'assemblyai' }
+  },
+}
+
 // ── Music ─────────────────────────────────────────────────────────
 
 const stableAudio = {
@@ -1899,6 +1948,8 @@ export const TOOL_REGISTRY = [
   removebg, clipdrop, topaz,
   // Voice / music
   elevenlabs, openaiTts, stableAudio, elevenlabsMusic, suno,
+  // Transcription
+  whisper, assemblyai,
   // Video
   runway, luma, pika, heygen,
   // 3D
