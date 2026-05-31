@@ -362,6 +362,18 @@ DECISION TREE (first match wins)
        bundle for the user to stitch (CapCut/Premiere). State this in reasoning —
        do NOT imply the output is a finished, stitched video.
 
+2c. USER BRIEF BEATS PRIOR PANEL SKEPTICISM — if the user's CURRENT message
+    contains an explicit build instruction ("build [X] now", "generate [X]",
+    "create [X]", "make [X]", "fire the tools") AND the message includes enough
+    detail to act on (the artifact type, the topic, the specifics):
+     → mode = "build" REGARDLESS of whether prior agents in the discussion raised
+       concerns or flagged gaps. The user's explicit instruction overrides any
+       prior panel skepticism. Agents may have legitimately flagged missing info,
+       but if the user is saying "build it now" with sufficient detail, build it now.
+     → agents_to_respond = [], deliverable = short folder name
+     → Multi-tool builds (storyboard → image_per_slide → suno → pptxgen) are
+       valid; chain the steps via needs[] and trust each tool to do its part.
+
 3. If EXPLICIT BUILD APPROVAL DETECTED yes AND PRIOR AGENT DISCUSSION yes:
      → mode = "build"
      → agents_to_respond = []
@@ -387,7 +399,8 @@ BUILD-INTERNAL TOOLS (always available in build mode):
 - mdgen ({title,sections[],frontmatter?} → .md — blog post with YAML frontmatter)
 - codezip ({files:[{path,content}]} → .zip — multi-file code project, nested paths OK)
 - image_per_slide ({slides[{title,prompt?}], style?, size?'square'|'wide'|'tall'} → one image per slide as a bundle)
-- narrate_per_slide (slides[] → per-slide audio with timing)
+- narrate_per_slide (slides[] → per-slide audio with timing; accepts provider:'elevenlabs'|'openai')
+- openai_tts ({text, voice?:'nova'|'alloy'|'echo'|'fable'|'onyx'|'shimmer'} → audio file; use when ElevenLabs is unavailable or user says "use OpenAI voice")
 - gmail ({to,subject,body} → sent email)
 - gsheets ({title,sheets[{name,rows[][]}]} → Google Sheet in user's Drive, returns link)
 - gcal ({summary,start,end,description?,attendees?[]} → Google Calendar event, ISO times or {date} for all-day)
@@ -491,7 +504,7 @@ export async function orchestrate({
   const BUILD_INTERNAL_TOOLS = new Set([
     'agent_synth', 'pptxgen', 'docgen', 'pdfgen',
     'xlsxgen', 'htmlgen', 'mdgen', 'codezip',
-    'image_per_slide', 'narrate_per_slide',
+    'image_per_slide', 'narrate_per_slide', 'openai_tts',
     'gmail', 'gsheets', 'gcal', 'notion', 'twilio', 'stripe',
   ])
   const isToolAllowed = (toolId) => BUILD_INTERNAL_TOOLS.has(toolId) || !!enabledTools?.[toolId]

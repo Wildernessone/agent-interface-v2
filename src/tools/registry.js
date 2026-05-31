@@ -307,6 +307,48 @@ const elevenlabs = {
   },
 }
 
+// Encode an ArrayBuffer to base64 in chunks. Spreading a large Uint8Array into
+// String.fromCharCode(...) overflows the argument limit for multi-second audio
+// (a few minutes of TTS is ~1MB), so walk it in 32KB windows.
+function bufToBase64(buf) {
+  const bytes = new Uint8Array(buf)
+  let binary = ''
+  const CHUNK = 0x8000
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK))
+  }
+  return btoa(binary)
+}
+
+const OPENAI_TTS_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer']
+
+const openaiTts = {
+  id: 'openai_tts',
+  name: 'OpenAI TTS',
+  category: 'audio_tts',
+  capability: 'synthesize speech via OpenAI TTS — reliable, no proxy/IP issues, works when ElevenLabs free tier is blocked',
+  desc: 'OpenAI text-to-speech (uses your OpenAI key). Voices: alloy, echo, fable, onyx, nova, shimmer.',
+  keySource: 'agent.gpt',
+  docsUrl: 'https://platform.openai.com/api-keys',
+  status: 'live',
+  async run({ prompt, structuredInput, key }) {
+    if (!key) throw new ToolError('openai_tts', 'missing_key', 'OpenAI TTS uses your OpenAI key — add it in Settings → Agents → ChatGPT.')
+    const cfg = (typeof structuredInput === 'object' && structuredInput) || {}
+    const text = (cfg.text || prompt || '').slice(0, 4000)
+    const voice = OPENAI_TTS_VOICES.includes(cfg.voice) ? cfg.voice : 'nova'
+    const model = cfg.hd ? 'tts-1-hd' : 'tts-1'
+    const res = await fetch('https://api.openai.com/v1/audio/speech', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+      body: JSON.stringify({ model, input: text, voice, response_format: 'mp3' }),
+    })
+    if (!res.ok) throw new ToolError('openai_tts', 'bad_response', await res.text().catch(() => `status ${res.status}`))
+    const buf = await res.arrayBuffer()
+    const b64 = bufToBase64(buf)
+    return { type: 'audio', url: `data:audio/mpeg;base64,${b64}`, title: text.slice(0, 60), prompt: text, tool: 'openai_tts', meta: { voice, model } }
+  },
+}
+
 // ── Music ─────────────────────────────────────────────────────────
 
 const suno = {
@@ -1510,13 +1552,21 @@ const narratePerSlide = {
   status: 'live',
   hidden: true,
   async run({ structuredInput, key, proxy, settings }) {
-    if (!key) throw new ToolError('narrate_per_slide', 'missing_key', 'ElevenLabs needs an API key.')
     const data = typeof structuredInput === 'string' ? JSON.parse(structuredInput) : structuredInput
     const slides = data?.slides || []
     if (slides.length === 0) throw new ToolError('narrate_per_slide', 'no_slides', 'No slides to narrate.')
 
+    // provider: 'elevenlabs' (default) | 'openai'. ElevenLabs uses the
+    // tool_keys.elevenlabs key passed in as `key`; OpenAI uses the user's
+    // ChatGPT key from settings (no proxy — direct, avoids IP/geo blocks).
+    const provider = data?.provider === 'openai' ? 'openai' : 'elevenlabs'
+    const oaKey = settings?.agents?.gpt?.key || null
+    if (provider === 'elevenlabs' && !key) throw new ToolError('narrate_per_slide', 'missing_key', 'ElevenLabs needs an API key.')
+    if (provider === 'openai' && !oaKey) throw new ToolError('narrate_per_slide', 'missing_key', 'OpenAI TTS uses your OpenAI key — add it in Settings → Agents → ChatGPT.')
+
     // Voice priority: explicit input → user's narrator voice setting → Rachel
     const voiceId = data?.voice_id || settings?.narratorVoiceId || '21m00Tcm4TlvDq8ikWAM'
+    const oaVoice = OPENAI_TTS_VOICES.includes(data?.voice) ? data.voice : 'nova'
     const files = []
     let cumulativeSec = 0
     for (let i = 0; i < slides.length; i++) {
@@ -1525,21 +1575,32 @@ const narratePerSlide = {
       const safe = text.slice(0, 2500).trim()
       if (!safe) continue
 
-      const res = await proxy('elevenlabs', { text: safe, voice_id: voiceId }, { 'x-api-key': key })
-      if (!res.ok) {
-        files.push({ slideIndex: i + 1, error: `elevenlabs_${res.status}` })
-        continue
+      let audioB64 = null
+      let errLabel = null
+      if (provider === 'openai') {
+        const res = await fetch('https://api.openai.com/v1/audio/speech', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${oaKey}` },
+          body: JSON.stringify({ model: 'tts-1', input: safe, voice: oaVoice, response_format: 'mp3' }),
+        })
+        if (!res.ok) errLabel = `openai_${res.status}`
+        else audioB64 = bufToBase64(await res.arrayBuffer())
+      } else {
+        const res = await proxy('elevenlabs', { text: safe, voice_id: voiceId }, { 'x-api-key': key })
+        if (!res.ok) errLabel = `elevenlabs_${res.status}`
+        else {
+          const payload = await res.json()
+          if (!payload.audio) errLabel = 'no_audio'
+          else audioB64 = payload.audio
+        }
       }
-      const payload = await res.json()
-      if (!payload.audio) {
-        files.push({ slideIndex: i + 1, error: 'no_audio' })
-        continue
-      }
+      if (errLabel) { files.push({ slideIndex: i + 1, error: errLabel }); continue }
+
       // Rough duration estimate: ~150 words/min, ~5 chars/word → ~12.5 chars/sec
       const estSec = Math.max(2, Math.round(safe.length / 12.5))
       files.push({
         slideIndex: i + 1,
-        url: `data:audio/mpeg;base64,${payload.audio}`,
+        url: `data:audio/mpeg;base64,${audioB64}`,
         startSec: cumulativeSec,
         durationSec: estSec,
         filename: `slide-${String(i + 1).padStart(2, '0')}.mp3`,
@@ -1552,6 +1613,7 @@ const narratePerSlide = {
       tool: 'narrate_per_slide',
       files,
       totalDurationSec: cumulativeSec,
+      provider,
     }
   },
 }
@@ -1630,7 +1692,7 @@ export const TOOL_REGISTRY = [
   // Image editing — stubbed but UI shows "coming with Worker route"
   removebg, clipdrop,
   // Voice / music
-  elevenlabs, suno,
+  elevenlabs, openaiTts, suno,
   // Video
   runway,
   // Search

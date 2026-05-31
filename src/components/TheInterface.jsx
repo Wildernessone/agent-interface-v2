@@ -33,14 +33,17 @@ const PROXY = import.meta.env.VITE_PROXY_URL || "https://claude-proxy.jamesreed.
 
 // We prefix each agent's message in the shared history with "[Name]: " so the
 // other agents can tell who said what. Agents sometimes imitate that format in
-// their OWN reply — occasionally copying the wrong name (e.g. ChatGPT emitting
-// "[Grok]: ..."). Strip any leading speaker tag(s) from a model's own output so
-// it never displays or gets saved; the real tag is added separately when we
-// push the message into conversationRef.
+// their OWN reply — copying the wrong name (e.g. ChatGPT emitting "[Grok]: ..."),
+// or echoing the transcript format at the start of interior lines mid-reply.
+// Strip BOTH the leading speaker tag(s) and any line-starting tag throughout the
+// text so it never displays or gets saved; the real tag is added separately when
+// we push the message into conversationRef.
 const SPEAKER_TAG_RE = /^\s*\[[^\]\n]{1,24}\]:[ \t]*/
+const LINE_SPEAKER_TAG_RE = /\n[ \t]*\[[^\]\n]{1,24}\]:[ \t]*/g
 function stripLeadingSpeakerTag(text) {
   let out = text
   while (SPEAKER_TAG_RE.test(out)) out = out.replace(SPEAKER_TAG_RE, '')
+  out = out.replace(LINE_SPEAKER_TAG_RE, '\n')
   return out
 }
 
@@ -443,11 +446,17 @@ export default function TheInterface() {
         }
 
         if (result.text) {
+          // Belt-and-suspenders: re-strip any [Name]: tags (leading or
+          // line-start) the model echoed, then use the cleaned text for BOTH
+          // what we display and what we store. Overwrite the live-streamed turn
+          // text so the displayed final matches the stored one exactly.
+          const cleanResultText = stripLeadingSpeakerTag(result.text).trim()
+          setTurnText(id, cleanResultText)
           // Tag with the speaking agent so a later agent picking up the
           // conversation can tell who said what. Without this prefix the
           // assistant history is a flat blob and Claude can't tell a
           // Gemini opinion from a Grok one.
-          conversationRef.current = [...conversationRef.current, { role: "assistant", content: `[${agent.name}]: ${result.text}` }]
+          conversationRef.current = [...conversationRef.current, { role: "assistant", content: `[${agent.name}]: ${cleanResultText}` }]
           // Thread the V2 audit outcome into telemetry so silent audit outages
           // are visible in analytics (not just console warnings). audit_state:
           //   "not_run"  — role wasn't audited (frugal/voice/non-drift-prone)
@@ -473,11 +482,11 @@ export default function TheInterface() {
                 : { audit_state: "skipped", audit_reason: auditResult.reason }
           logUsage({
             kind: "agent_message", provider: agent.id, model: agent.id,
-            tokensOut: result.text.length / 4 | 0, success: true,
+            tokensOut: cleanResultText.length / 4 | 0, success: true,
             metadata: { role: role || null, ...auditMeta },
           })
           if (voiceMode && voiceRef.current) {
-            await new Promise(r => voiceRef.current.speak(result.text.slice(0, 400), agent.id, r))
+            await new Promise(r => voiceRef.current.speak(cleanResultText.slice(0, 400), agent.id, r))
           }
         }
       }
