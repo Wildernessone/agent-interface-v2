@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import { logError } from './telemetry'
+import { arrayBufferToBase64 } from './base64'
 
 /**
  * Dropbox storage layer — mirrors driveStorage.js so the cloudStorage
@@ -33,7 +34,7 @@ function randomString(len = 64) {
 async function sha256(text) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
   // base64url
-  return btoa(String.fromCharCode(...new Uint8Array(buf)))
+  return arrayBufferToBase64(buf)
     .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 

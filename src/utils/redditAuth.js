@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import { logError } from './telemetry'
+import { arrayBufferToBase64 } from './base64'
 
 /**
  * Reddit OAuth — mirrors the Dropbox flow (manual, not a Supabase provider).
@@ -32,7 +33,7 @@ function randomString(len = 64) {
 
 async function sha256base64url(text) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
-  return btoa(String.fromCharCode(...new Uint8Array(buf)))
+  return arrayBufferToBase64(buf)
     .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 

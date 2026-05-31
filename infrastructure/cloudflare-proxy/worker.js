@@ -485,7 +485,11 @@ const ROUTES = {
     if (!apiKey) return new Response(JSON.stringify({ error: 'missing_provider_key' }), { status: 400 })
     const body = await req.json()
     const lengthMs = Math.max(3000, Math.min(60000, Number(body.music_length_ms) || 15000))
-    const r = await fetch('https://api.elevenlabs.io/v1/music', {
+    // output_format is a query param (default varies); pin it to mp3 so the
+    // tool's data:audio/mpeg wrapper is always correct. Verified against
+    // elevenlabs.io/docs/api-reference/music/compose (POST /v1/music, xi-api-key,
+    // { prompt, music_length_ms }, returns audio bytes).
+    const r = await fetch('https://api.elevenlabs.io/v1/music?output_format=mp3_44100_128', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'xi-api-key': apiKey, Accept: 'audio/mpeg' },
       body: JSON.stringify({ prompt: String(body.prompt || '').slice(0, 1000), music_length_ms: lengthMs }),

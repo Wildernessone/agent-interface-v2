@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import { logError } from './telemetry'
+import { arrayBufferToBase64 } from './base64'
 
 const PROXY = import.meta.env.VITE_PROXY_URL || 'https://claude-proxy.jamesreed.workers.dev'
 
@@ -184,7 +185,7 @@ async function uploadFile(token, parentId, filename, mimeType, body) {
   let bodyB64
   if (body instanceof Blob) {
     const buf = await body.arrayBuffer()
-    bodyB64 = btoa(String.fromCharCode(...new Uint8Array(buf)))
+    bodyB64 = arrayBufferToBase64(buf)
   } else if (typeof body === 'string' && body.startsWith('data:')) {
     bodyB64 = body.split(',')[1]
   } else if (typeof body === 'string') {
