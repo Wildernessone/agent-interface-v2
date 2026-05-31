@@ -6,6 +6,7 @@ import { captureDriveTokens } from './utils/driveStorage'
 import { finishDropboxAuth } from './utils/dropboxStorage'
 import { finishRedditAuth } from './utils/redditAuth'
 import { applyTheme } from './utils/applyTheme'
+import { trackSessionStart, trackLogin, setTrackUser } from './utils/track'
 import AuthScreen from './components/AuthScreen'
 import TheInterface from './components/TheInterface'
 import './App.css'
@@ -23,10 +24,12 @@ export default function App() {
   useEffect(() => { finishRedditAuth() }, [])
 
   useEffect(() => {
+    trackSessionStart()
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)
       setUser(session?.user ?? null)
       identifyUser(session?.user)
+      setTrackUser(session?.user?.id)
       if (session) {
         loadSettings()
         if (session.provider_token) captureDriveTokens()
@@ -37,10 +40,12 @@ export default function App() {
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
+      (event, session) => {
         setSession(session)
         setUser(session?.user ?? null)
         identifyUser(session?.user)
+        setTrackUser(session?.user?.id)
+        if (event === 'SIGNED_IN') trackLogin()
         if (session) {
           loadSettings()
           if (session.provider_token) captureDriveTokens()

@@ -9,6 +9,7 @@ import HistorySidebar from './HistorySidebar'
 import { orchestrate, getProactiveNotices, processCorrection, ROLE_POOL, shouldAudit, auditResponse, buildRetryReminder } from '../utils/openClaw'
 import { detectSignalsFromUserMessage, logSignals, logAuditFail, getRecentRolePerformance } from '../utils/roleSignals'
 import { logUsage, logError, checkTierLimits } from '../utils/telemetry'
+import { track } from '../utils/track'
 import { saveToCloud } from '../utils/cloudStorage'
 import { TOOLS_BY_ID, ToolError, readKey } from '../tools/registry'
 import { runBuild } from '../utils/buildExecutor'
@@ -556,6 +557,8 @@ export default function TheInterface() {
     })
     result.files.forEach(f => logUsage({ kind: 'tool_call', provider: f.output?.tool || 'build', success: true }))
     result.errors.forEach(e => logUsage({ kind: 'tool_call', provider: e.stepId, success: false, errorType: 'build_step' }))
+    // Surface which build tools get used as a hub feature signal (feeds top_features).
+    result.files.forEach(f => track('tool_use', { feature: f.output?.tool || 'build' }))
 
     setToolsWorking(false)
   }
