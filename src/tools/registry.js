@@ -307,19 +307,6 @@ const elevenlabs = {
   },
 }
 
-// Encode an ArrayBuffer to base64 in chunks. Spreading a large Uint8Array into
-// String.fromCharCode(...) overflows the argument limit for multi-second audio
-// (a few minutes of TTS is ~1MB), so walk it in 32KB windows.
-function bufToBase64(buf) {
-  const bytes = new Uint8Array(buf)
-  let binary = ''
-  const CHUNK = 0x8000
-  for (let i = 0; i < bytes.length; i += CHUNK) {
-    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK))
-  }
-  return btoa(binary)
-}
-
 const OPENAI_TTS_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer']
 
 const openaiTts = {
@@ -331,21 +318,19 @@ const openaiTts = {
   keySource: 'agent.gpt',
   docsUrl: 'https://platform.openai.com/api-keys',
   status: 'live',
-  async run({ prompt, structuredInput, key }) {
+  async run({ prompt, structuredInput, key, proxy }) {
     if (!key) throw new ToolError('openai_tts', 'missing_key', 'OpenAI TTS uses your OpenAI key — add it in Settings → Agents → ChatGPT.')
     const cfg = (typeof structuredInput === 'object' && structuredInput) || {}
     const text = (cfg.text || prompt || '').slice(0, 4000)
     const voice = OPENAI_TTS_VOICES.includes(cfg.voice) ? cfg.voice : 'nova'
     const model = cfg.hd ? 'tts-1-hd' : 'tts-1'
-    const res = await fetch('https://api.openai.com/v1/audio/speech', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-      body: JSON.stringify({ model, input: text, voice, response_format: 'mp3' }),
-    })
+    // Route through the worker proxy — api.openai.com sends no CORS headers, so
+    // a direct browser fetch is blocked. The worker returns { audio: <base64> }.
+    const res = await proxy('openai_tts', { text, voice, model }, { Authorization: `Bearer ${key}` })
     if (!res.ok) throw new ToolError('openai_tts', 'bad_response', await res.text().catch(() => `status ${res.status}`))
-    const buf = await res.arrayBuffer()
-    const b64 = bufToBase64(buf)
-    return { type: 'audio', url: `data:audio/mpeg;base64,${b64}`, title: text.slice(0, 60), prompt: text, tool: 'openai_tts', meta: { voice, model } }
+    const data = await res.json()
+    if (!data.audio) throw new ToolError('openai_tts', 'bad_response', 'OpenAI TTS returned no audio.')
+    return { type: 'audio', url: `data:audio/mpeg;base64,${data.audio}`, title: text.slice(0, 60), prompt: text, tool: 'openai_tts', meta: { voice, model } }
   },
 }
 
@@ -1578,13 +1563,13 @@ const narratePerSlide = {
       let audioB64 = null
       let errLabel = null
       if (provider === 'openai') {
-        const res = await fetch('https://api.openai.com/v1/audio/speech', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${oaKey}` },
-          body: JSON.stringify({ model: 'tts-1', input: safe, voice: oaVoice, response_format: 'mp3' }),
-        })
+        const res = await proxy('openai_tts', { text: safe, voice: oaVoice, model: 'tts-1' }, { Authorization: `Bearer ${oaKey}` })
         if (!res.ok) errLabel = `openai_${res.status}`
-        else audioB64 = bufToBase64(await res.arrayBuffer())
+        else {
+          const payload = await res.json()
+          if (!payload.audio) errLabel = 'no_audio'
+          else audioB64 = payload.audio
+        }
       } else {
         const res = await proxy('elevenlabs', { text: safe, voice_id: voiceId }, { 'x-api-key': key })
         if (!res.ok) errLabel = `elevenlabs_${res.status}`

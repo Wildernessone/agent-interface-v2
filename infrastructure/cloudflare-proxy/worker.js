@@ -91,6 +91,18 @@ function json(body, status, headers = {}) {
   })
 }
 
+// Base64-encode an ArrayBuffer in chunks. Spreading a large Uint8Array into
+// String.fromCharCode(...) overflows the argument limit for multi-second audio.
+function bufToBase64(buf) {
+  const bytes = new Uint8Array(buf)
+  let binary = ''
+  const CHUNK = 0x8000
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK))
+  }
+  return btoa(binary)
+}
+
 async function verifySupabaseToken(token, env) {
   // Calls Supabase /auth/v1/user with the token. If it returns 200, the JWT is valid.
   // (Cheap; can be replaced with local JWT verification using the project JWT secret.)
@@ -244,6 +256,31 @@ const ROUTES = {
     const buf = await r.arrayBuffer()
     const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)))
     return new Response(JSON.stringify({ audio: b64 }), { headers: { 'Content-Type': 'application/json' } })
+  },
+
+  // OpenAI TTS — text-to-speech fallback for when ElevenLabs is blocked.
+  // Mirrors the elevenlabs route: returns { audio: <base64 mp3> }.
+  openai_tts: async (req) => {
+    const auth = req.headers.get('Authorization')
+    if (!auth) return new Response(JSON.stringify({ error: 'missing_provider_key' }), { status: 400 })
+    const body = await req.json()
+    const VOICES = new Set(['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'])
+    const r = await fetch('https://api.openai.com/v1/audio/speech', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: auth },
+      body: JSON.stringify({
+        model: body.model === 'tts-1-hd' ? 'tts-1-hd' : 'tts-1',
+        input: String(body.text || '').slice(0, 4000),
+        voice: VOICES.has(body.voice) ? body.voice : 'nova',
+        response_format: 'mp3',
+      }),
+    })
+    if (!r.ok) {
+      const text = await r.text()
+      return new Response(text, { status: r.status, headers: { 'Content-Type': 'application/json' } })
+    }
+    const buf = await r.arrayBuffer()
+    return new Response(JSON.stringify({ audio: bufToBase64(buf) }), { headers: { 'Content-Type': 'application/json' } })
   },
 
   runway: async (req) => {
