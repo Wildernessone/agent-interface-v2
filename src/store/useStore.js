@@ -2,6 +2,39 @@ import { create } from 'zustand'
 import { supabase } from '../utils/supabase'
 import { logError } from '../utils/telemetry'
 
+// Conversations are persisted as JSON into Supabase. Inline media (images,
+// audio, video, documents) arrives as base64 `data:` URLs that are huge —
+// a single video can be tens of MB. Persisting those would bloat the row and
+// can blow past Postgres limits. We drop any large data URL before saving;
+// the cloud copy (savedLink) stays, and on reload ToolOutput shows a
+// "Saved · Open ↗" card instead of a dead embed. Small inline images survive
+// so short chats still rehydrate fully.
+const HEAVY_URL_CHARS = 200_000 // ~150KB of base64
+function isHeavy(url) {
+  return typeof url === 'string' && url.startsWith('data:') && url.length > HEAVY_URL_CHARS
+}
+function lightenOutput(output) {
+  if (!output || typeof output !== 'object') return output
+  let next = output
+  if (isHeavy(output.url)) next = { ...next, url: undefined }
+  if (Array.isArray(output.files) && output.files.some(f => isHeavy(f?.url))) {
+    next = { ...next, files: output.files.map(f => (isHeavy(f?.url) ? { ...f, url: undefined } : f)) }
+  }
+  return next
+}
+function stripHeavyTurns(turns) {
+  return turns.map(t => {
+    if (t?.output) {
+      const lightened = lightenOutput(t.output)
+      if (lightened !== t.output) t = { ...t, output: lightened }
+    }
+    if (Array.isArray(t?.files) && t.files.some(f => f?.output)) {
+      t = { ...t, files: t.files.map(f => (f?.output ? { ...f, output: lightenOutput(f.output) } : f)) }
+    }
+    return t
+  })
+}
+
 const DEFAULT_SETTINGS = {
   themeId: 'dark',
   accent: '#6FA1FF',
@@ -220,10 +253,11 @@ export const useStore = create((set, get) => ({
       const projectId = useStore.getState().activeProject?.id || null
       const title = turns.find(t => t.type === "user")?.text?.slice(0, 60) || "Conversation"
       const preview = turns.find(t => t.type === "agent" && t.text)?.text?.slice(0, 100) || ""
+      const persisted = JSON.stringify(stripHeavyTurns(turns))
       if (cId) {
-        await supabase.from("conversations").update({ title, preview, turn_count: turns.length, turns_data: JSON.stringify(turns), project_id: projectId, updated_at: new Date().toISOString() }).eq("id", cId).eq("user_id", user.id)
+        await supabase.from("conversations").update({ title, preview, turn_count: turns.length, turns_data: persisted, project_id: projectId, updated_at: new Date().toISOString() }).eq("id", cId).eq("user_id", user.id)
       } else {
-        const { data } = await supabase.from("conversations").insert({ user_id: user.id, project_id: projectId, title, preview, turn_count: turns.length, turns_data: JSON.stringify(turns), created_at: new Date().toISOString(), updated_at: new Date().toISOString() }).select().single()
+        const { data } = await supabase.from("conversations").insert({ user_id: user.id, project_id: projectId, title, preview, turn_count: turns.length, turns_data: persisted, created_at: new Date().toISOString(), updated_at: new Date().toISOString() }).select().single()
         if (data?.id) useStore.setState({ conversationId: data.id })
       }
     } catch(e) { logError("saveConversation", e) }

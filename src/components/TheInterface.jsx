@@ -249,6 +249,18 @@ export default function TheInterface() {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
   }, [turns])
 
+  // Autosave the conversation once a response settles (not mid-stream), so it
+  // persists to History and stays tagged to the active project. saveConversation
+  // stamps the active project_id and reuses conversationId for updates. The
+  // activeProject dep re-stamps if the project is switched mid-conversation; the
+  // debounce coalesces the burst of turn updates at the end of a multi-agent
+  // response into a single write.
+  useEffect(() => {
+    if (busy || !turns.length) return
+    const t = setTimeout(() => saveConversation(turns), 800)
+    return () => clearTimeout(t)
+  }, [turns, busy, activeProject, saveConversation])
+
   useEffect(() => {
     const handler = (e) => {
       const { agent, role } = e.detail || {}
