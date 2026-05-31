@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # Gating job — must pass before code reaches users. Catches the classes of
+  # failure that have actually hit production (base64 overflow, broken tool
+  # contracts, dispatcher mis-planning) plus build breakage.
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      # .env is gitignored; the build + smoke only need import.meta.env to
+      # resolve (Supabase client throws on a missing URL at import). Dummy
+      # values are fine — the smoke harness mocks all network calls.
+      - name: Write dummy env
+        run: |
+          cat > .env <<'ENV'
+          VITE_SUPABASE_URL=https://example.supabase.co
+          VITE_SUPABASE_ANON_KEY=dummy-anon-key
+          VITE_PROXY_URL=https://claude-proxy.example.workers.dev
+          VITE_DROPBOX_CLIENT_ID=dummy
+          ENV
+      - name: Build
+        run: npm run build
+      - name: Smoke tests
+        run: npm run smoke
+
+  # Non-gating for now — the repo carries pre-existing lint debt. Surfaces
+  # issues without blocking merges; tighten to a gate once the debt is cleared.
+  lint:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
