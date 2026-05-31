@@ -54,29 +54,33 @@ try {
 
   // ── 3. audio tool contracts (mock proxy) ─────────────────────────
   const mockRes = (ok, body, status = 200) => ({ ok, status, json: async () => body, text: async () => JSON.stringify(body) })
+  const DEF = { prompt: 'test', duration: 30, length_ms: 15000 }
   const mediaTools = [
-    { id: 'elevenlabs', okBody: { audio: 'QUJD' } },
-    { id: 'openai_tts', okBody: { audio: 'QUJD' } },
-    { id: 'stable_audio', okBody: { audio: 'QUJD' } },
-    { id: 'elevenlabs_music', okBody: { audio: 'QUJD' } },
-    { id: 'suno', okBody: { url: 'https://example.com/a.mp3', title: 't' } },
-    { id: 'luma', okBody: { url: 'https://example.com/v.mp4' } },
-    { id: 'meshy', okBody: { url: 'https://example.com/m.glb', thumbnail: null } },
+    { id: 'elevenlabs', okBody: { audio: 'QUJD' }, input: DEF },
+    { id: 'openai_tts', okBody: { audio: 'QUJD' }, input: DEF },
+    { id: 'stable_audio', okBody: { audio: 'QUJD' }, input: DEF },
+    { id: 'elevenlabs_music', okBody: { audio: 'QUJD' }, input: DEF },
+    { id: 'suno', okBody: { url: 'https://example.com/a.mp3', title: 't' }, input: DEF },
+    { id: 'luma', okBody: { url: 'https://example.com/v.mp4' }, input: DEF },
+    { id: 'meshy', okBody: { url: 'https://example.com/m.glb', thumbnail: null }, input: DEF },
+    { id: 'pika', okBody: { url: 'https://example.com/v.mp4' }, input: DEF },
+    { id: 'topaz', okBody: { url: 'https://example.com/up.jpg' }, input: { image_url: 'https://example.com/src.png' } },
+    { id: 'heygen', okBody: { url: 'https://example.com/av.mp4' }, input: { avatar_id: 'a', voice_id: 'v', input_text: 'hi' } },
   ]
   const MEDIA_TYPES = ['audio', 'video', 'document', 'image']
-  for (const { id, okBody } of mediaTools) {
+  for (const { id, okBody, input } of mediaTools) {
     const tool = TOOLS_BY_ID[id]
     // success → returns a media result with a usable url
     const okProxy = async () => mockRes(true, okBody)
-    const out = await tool.run({ prompt: 'test track', structuredInput: { prompt: 'test', duration: 30, length_ms: 15000 }, key: 'k', proxy: okProxy, settings: {} })
+    const out = await tool.run({ prompt: input.prompt || input.image_url || 'x', structuredInput: input, key: 'k', proxy: okProxy, settings: {} })
     check(`${id}: success returns media with url`, MEDIA_TYPES.includes(out?.type) && typeof out.url === 'string' && out.url.length > 0)
     // upstream failure → ToolError, not an unhandled crash
     const errProxy = async () => mockRes(false, { error: 'boom' }, 500)
     await expectThrow(`${id}: upstream error throws ToolError`, () =>
-      tool.run({ prompt: 'x', structuredInput: { prompt: 'x' }, key: 'k', proxy: errProxy, settings: {} }))
+      tool.run({ prompt: input.prompt || input.image_url || 'x', structuredInput: input, key: 'k', proxy: errProxy, settings: {} }))
     // missing key → ToolError
     await expectThrow(`${id}: missing key throws`, () =>
-      tool.run({ prompt: 'x', structuredInput: { prompt: 'x' }, key: '', proxy: okProxy, settings: {} }))
+      tool.run({ prompt: 'x', structuredInput: input, key: '', proxy: okProxy, settings: {} }))
   }
   check('ToolError is exported', typeof ToolError === 'function')
 

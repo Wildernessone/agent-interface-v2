@@ -559,6 +559,99 @@ const ROUTES = {
     return new Response(JSON.stringify({ error: 'timeout' }), { status: 504, headers: { 'Content-Type': 'application/json' } })
   },
 
+  // Topaz — image upscale/enhance. Async + multipart: fetch the source image,
+  // POST it, poll status, then download. Verified: POST api.topazlabs.com/image/
+  // v1/enhance/async (X-API-Key, multipart image+model) -> { process_id };
+  // GET /image/v1/status/{id} -> { status }; GET /image/v1/download/{id} -> { url }.
+  topaz: async (req) => {
+    const apiKey = req.headers.get('x-api-key')
+    if (!apiKey) return new Response(JSON.stringify({ error: 'missing_provider_key' }), { status: 400 })
+    const body = await req.json()
+    if (!body.image_url) return new Response(JSON.stringify({ error: 'missing_image_url' }), { status: 400 })
+    const img = await fetch(body.image_url)
+    if (!img.ok) return new Response(JSON.stringify({ error: 'source_fetch_failed' }), { status: 502, headers: { 'Content-Type': 'application/json' } })
+    const form = new FormData()
+    form.append('image', new Blob([await img.arrayBuffer()], { type: img.headers.get('Content-Type') || 'image/png' }), 'image.png')
+    form.append('model', body.model || 'Standard V2')
+    form.append('output_format', 'jpeg')
+    if (body.output_height) form.append('output_height', String(body.output_height))
+    const start = await fetch('https://api.topazlabs.com/image/v1/enhance/async', { method: 'POST', headers: { 'X-API-Key': apiKey }, body: form })
+    if (!start.ok) return start
+    const job = await start.json()
+    if (!job.process_id) return new Response(JSON.stringify({ error: 'no_job_id' }), { status: 502, headers: { 'Content-Type': 'application/json' } })
+    for (let i = 0; i < 30; i++) {
+      await new Promise(r => setTimeout(r, 2000))
+      const s = await fetch(`https://api.topazlabs.com/image/v1/status/${job.process_id}`, { headers: { 'X-API-Key': apiKey } })
+      const d = await s.json()
+      if (d.status === 'Completed') {
+        const dl = await fetch(`https://api.topazlabs.com/image/v1/download/${job.process_id}`, { headers: { 'X-API-Key': apiKey } })
+        const dd = await dl.json()
+        if (dd.url) return new Response(JSON.stringify({ url: dd.url }), { headers: { 'Content-Type': 'application/json' } })
+        return new Response(JSON.stringify({ error: 'no_url' }), { status: 502, headers: { 'Content-Type': 'application/json' } })
+      }
+      if (d.status === 'Failed' || d.status === 'Cancelled') return new Response(JSON.stringify({ error: 'topaz_failed' }), { status: 502, headers: { 'Content-Type': 'application/json' } })
+    }
+    return new Response(JSON.stringify({ error: 'timeout' }), { status: 504, headers: { 'Content-Type': 'application/json' } })
+  },
+
+  // Pika 2.2 text-to-video, hosted on fal.ai (no direct Pika API). Sync call.
+  // Verified: POST fal.run/fal-ai/pika/v2.2/text-to-video, Authorization: Key
+  // <falkey>, { prompt, duration, aspect_ratio, resolution } -> { video:{ url } }.
+  pika: async (req) => {
+    const auth = req.headers.get('Authorization')
+    if (!auth) return new Response(JSON.stringify({ error: 'missing_provider_key' }), { status: 400 })
+    const body = await req.json()
+    const r = await fetch('https://fal.run/fal-ai/pika/v2.2/text-to-video', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: auth },
+      body: JSON.stringify({
+        prompt: String(body.prompt || '').slice(0, 1000),
+        duration: body.duration === 10 ? 10 : 5,
+        aspect_ratio: ['16:9', '9:16', '1:1', '4:5', '5:4', '3:2', '2:3'].includes(body.aspect_ratio) ? body.aspect_ratio : '16:9',
+        resolution: body.resolution === '1080p' ? '1080p' : '720p',
+      }),
+    })
+    if (!r.ok) { const t = await r.text(); return new Response(t, { status: r.status, headers: { 'Content-Type': 'application/json' } }) }
+    const d = await r.json()
+    if (!d.video?.url) return new Response(JSON.stringify({ error: 'no_url' }), { status: 502, headers: { 'Content-Type': 'application/json' } })
+    return new Response(JSON.stringify({ url: d.video.url }), { headers: { 'Content-Type': 'application/json' } })
+  },
+
+  // HeyGen — talking-avatar video from a script. Async. Needs caller-supplied
+  // avatar_id + voice_id. Verified: POST api.heygen.com/v2/video/generate
+  // (X-Api-Key) -> { data:{ video_id } }; GET v1/video_status.get?video_id=
+  // -> { data:{ status, video_url } }.
+  heygen: async (req) => {
+    const apiKey = req.headers.get('x-api-key')
+    if (!apiKey) return new Response(JSON.stringify({ error: 'missing_provider_key' }), { status: 400 })
+    const body = await req.json()
+    if (!body.avatar_id || !body.voice_id) return new Response(JSON.stringify({ error: 'missing_fields' }), { status: 400 })
+    const start = await fetch('https://api.heygen.com/v2/video/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Api-Key': apiKey },
+      body: JSON.stringify({
+        video_inputs: [{
+          character: { type: 'avatar', avatar_id: body.avatar_id, avatar_style: 'normal' },
+          voice: { type: 'text', input_text: String(body.input_text || '').slice(0, 1500), voice_id: body.voice_id },
+        }],
+        dimension: { width: 1280, height: 720 },
+      }),
+    })
+    if (!start.ok) return start
+    const job = await start.json()
+    const vid = job.data?.video_id
+    if (!vid) return new Response(JSON.stringify({ error: 'no_job_id' }), { status: 502, headers: { 'Content-Type': 'application/json' } })
+    for (let i = 0; i < 40; i++) {
+      await new Promise(r => setTimeout(r, 5000))
+      const s = await fetch(`https://api.heygen.com/v1/video_status.get?video_id=${vid}`, { headers: { 'X-Api-Key': apiKey } })
+      const d = await s.json()
+      const st = d.data?.status
+      if (st === 'completed' && d.data?.video_url) return new Response(JSON.stringify({ url: d.data.video_url }), { headers: { 'Content-Type': 'application/json' } })
+      if (st === 'failed') return new Response(JSON.stringify({ error: d.data?.error || 'heygen_failed' }), { status: 502, headers: { 'Content-Type': 'application/json' } })
+    }
+    return new Response(JSON.stringify({ error: 'timeout' }), { status: 504, headers: { 'Content-Type': 'application/json' } })
+  },
+
   // Exa — semantic web search for agents. Verified: POST api.exa.ai/search,
   // x-api-key, { query, numResults, contents:{text} } → { results:[{title,url,text}] }.
   exa: async (req) => {

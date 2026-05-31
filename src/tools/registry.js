@@ -276,6 +276,29 @@ const clipdrop = {
   },
 }
 
+const topaz = {
+  id: 'topaz',
+  name: 'Topaz Upscale',
+  category: 'image_edit',
+  capability: 'upscale & enhance an image with industry-leading AI (sharpen, denoise, recover detail)',
+  desc: 'Topaz Gigapixel image enhancement. Uses your Topaz key. Runs on a source image.',
+  keySource: 'tool_keys.topaz',
+  docsUrl: 'https://developer.topazlabs.com/',
+  setupHint: 'Generate or provide an image first, then run Topaz on it.',
+  status: 'live',
+  async run({ prompt, structuredInput, key, context, proxy }) {
+    if (!key) throw new ToolError('topaz', 'missing_key', 'Topaz needs an API key.')
+    const cfg = (typeof structuredInput === 'object' && structuredInput) || {}
+    const sourceUrl = cfg.image_url || context?.sourceImageUrl
+    if (!sourceUrl) throw new ToolError('topaz', 'no_source', 'Topaz needs a source image — generate or provide an image first.')
+    const res = await proxy('topaz', { image_url: sourceUrl, model: cfg.model || 'Standard V2', output_height: cfg.output_height }, { 'x-api-key': key })
+    if (!res.ok) throw new ToolError('topaz', 'bad_response', await res.text().catch(() => `status ${res.status}`))
+    const data = await res.json()
+    if (!data.url) throw new ToolError('topaz', 'bad_response', 'No enhanced image returned.')
+    return { type: 'image', url: data.url, prompt: sourceUrl, tool: 'topaz', meta: { enhanced: true } }
+  },
+}
+
 // ── Voice / TTS ───────────────────────────────────────────────────
 
 const elevenlabs = {
@@ -574,6 +597,52 @@ const meshy = {
     const data = await res.json()
     if (!data.url) throw new ToolError('meshy', 'bad_response', 'No model returned.')
     return { type: 'document', url: data.url, title: realPrompt.slice(0, 60), prompt: realPrompt, tool: 'meshy', meta: { format: 'glb', thumbnail: data.thumbnail || null } }
+  },
+}
+
+const pika = {
+  id: 'pika',
+  name: 'Pika',
+  category: 'video',
+  capability: 'generate AI video from text (Pika 2.2, via fal.ai) — 5 or 10 seconds, up to 1080p',
+  desc: 'Text-to-video via Pika 2.2 on fal.ai. Uses your fal.ai key (the same "fal-" key Flux uses).',
+  keySource: 'tool_keys.pika',
+  keyPrefix: 'fal-',
+  docsUrl: 'https://fal.ai/dashboard/keys',
+  setupHint: 'Pika runs on fal.ai — paste your fal.ai key (same one Flux uses).',
+  status: 'live',
+  async run({ prompt, structuredInput, key, proxy }) {
+    if (!key) throw new ToolError('pika', 'missing_key', 'Pika needs a fal.ai API key.')
+    const cfg = (typeof structuredInput === 'object' && structuredInput) || {}
+    const realPrompt = (cfg.prompt || prompt || '').slice(0, 1000)
+    const res = await proxy('pika', { prompt: realPrompt, duration: cfg.duration === 10 ? 10 : 5, aspect_ratio: cfg.aspect_ratio || '16:9', resolution: cfg.resolution || '720p' }, { Authorization: `Key ${key}` })
+    if (!res.ok) throw new ToolError('pika', 'bad_response', await res.text().catch(() => `status ${res.status}`))
+    const data = await res.json()
+    if (!data.url) throw new ToolError('pika', 'bad_response', 'No video returned.')
+    return { type: 'video', url: data.url, title: realPrompt.slice(0, 60), prompt: realPrompt, tool: 'pika', meta: { provider: 'pika' } }
+  },
+}
+
+const heygen = {
+  id: 'heygen',
+  name: 'HeyGen',
+  category: 'video',
+  capability: 'generate a talking-avatar video from a script (requires an avatar_id and voice_id from your HeyGen account)',
+  desc: 'Talking-avatar video via HeyGen. Needs your HeyGen key plus an avatar_id and voice_id.',
+  keySource: 'tool_keys.heygen',
+  docsUrl: 'https://app.heygen.com/settings?nav=API',
+  setupHint: 'Needs an avatar_id and voice_id from your HeyGen account — find them in the HeyGen dashboard.',
+  status: 'live',
+  async run({ prompt, structuredInput, key, proxy }) {
+    if (!key) throw new ToolError('heygen', 'missing_key', 'HeyGen needs an API key.')
+    const cfg = (typeof structuredInput === 'object' && structuredInput) || {}
+    if (!cfg.avatar_id || !cfg.voice_id) throw new ToolError('heygen', 'missing_config', 'HeyGen needs an avatar_id and voice_id from your HeyGen account.')
+    const script = (cfg.input_text || cfg.script || prompt || '').slice(0, 1500)
+    const res = await proxy('heygen', { avatar_id: cfg.avatar_id, voice_id: cfg.voice_id, input_text: script }, { 'x-api-key': key })
+    if (!res.ok) throw new ToolError('heygen', 'bad_response', await res.text().catch(() => `status ${res.status}`))
+    const data = await res.json()
+    if (!data.url) throw new ToolError('heygen', 'bad_response', 'No video returned.')
+    return { type: 'video', url: data.url, title: script.slice(0, 60), prompt: script, tool: 'heygen', meta: { provider: 'heygen' } }
   },
 }
 
@@ -1826,12 +1895,12 @@ const mastodon = {
 export const TOOL_REGISTRY = [
   // Image generation — all confirmed working from browser
   dalle, stability, ideogram, flux, recraft,
-  // Image editing — stubbed but UI shows "coming with Worker route"
-  removebg, clipdrop,
+  // Image editing
+  removebg, clipdrop, topaz,
   // Voice / music
   elevenlabs, openaiTts, stableAudio, elevenlabsMusic, suno,
   // Video
-  runway, luma,
+  runway, luma, pika, heygen,
   // 3D
   meshy,
   // Search

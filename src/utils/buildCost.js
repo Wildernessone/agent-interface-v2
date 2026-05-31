@@ -108,6 +108,12 @@ export function estimateStepCents(step) {
       const dur = struct?.duration === 10 ? 10 : 5
       return dur * 7   // ~$0.07/sec (Ray 2)
     }
+    case 'pika': {
+      const dur = struct?.duration === 10 ? 10 : 5
+      return dur * 5   // ~$0.05/sec (Pika 2.2 via fal)
+    }
+    case 'heygen':
+      return 25        // ~$0.25 per avatar video (credit-based)
 
     // 3D
     case 'meshy':
@@ -117,6 +123,8 @@ export function estimateStepCents(step) {
     case 'removebg':
     case 'clipdrop':
       return 2        // ~$0.02 per edit
+    case 'topaz':
+      return 5        // ~$0.05 per enhance
 
     default:
       return null     // unknown — don't count, log so it shows up
