@@ -4,9 +4,10 @@ import { useStore } from '../store/useStore'
 export default function HistorySidebar({ onClose }) {
   const [conversations, setConversations] = useState([])
   const [loading, setLoading] = useState(true)
-  const { loadConversations, loadConversation, deleteConversation, clearTurns } = useStore()
+  const { loadConversations, loadConversation, deleteConversation, clearTurns, moveConversation, loadProjects, projects } = useStore()
 
   useEffect(() => {
+    loadProjects()
     loadConversations().then(data => {
       setConversations(data || [])
       setLoading(false)
@@ -22,6 +23,15 @@ export default function HistorySidebar({ onClose }) {
     e.stopPropagation()
     await deleteConversation(id)
     setConversations(prev => prev.filter(c => c.id !== id))
+  }
+
+  const handleMove = async (id, value) => {
+    const projectId = value || null
+    // Optimistic — reflect the choice immediately, revert if the write fails.
+    const prev = conversations
+    setConversations(cs => cs.map(c => (c.id === id ? { ...c, project_id: projectId } : c)))
+    const ok = await moveConversation(id, projectId)
+    if (!ok) setConversations(prev)
   }
 
   const handleNew = () => {
@@ -68,10 +78,30 @@ export default function HistorySidebar({ onClose }) {
           )}
 
           {conversations.map(c => (
-            <button key={c.id} className="sidebar-item" onClick={() => handleLoad(c.id)}>
+            <div
+              key={c.id}
+              className="sidebar-item"
+              role="button"
+              tabIndex={0}
+              onClick={() => handleLoad(c.id)}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleLoad(c.id) } }}
+            >
               <div className="sidebar-item-title">{c.title}</div>
               {c.preview && <div className="sidebar-item-preview">{c.preview}</div>}
               <div className="sidebar-item-meta">{fmt(c.updated_at)} · {c.turn_count} turns</div>
+              <div className="sidebar-item-footer" onClick={e => e.stopPropagation()}>
+                <svg className="sidebar-item-projecticon" width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M1.5 4C1.5 3.44772 1.94772 3 2.5 3H5.5L6.8 4.3H11.5C12.0523 4.3 12.5 4.74772 12.5 5.3V10.5C12.5 11.0523 12.0523 11.5 11.5 11.5H2.5C1.94772 11.5 1.5 11.0523 1.5 10.5V4Z" stroke="currentColor" strokeWidth="1.1"/></svg>
+                <select
+                  className="sidebar-item-project"
+                  value={c.project_id || ''}
+                  onChange={(e) => handleMove(c.id, e.target.value)}
+                  aria-label="Move conversation to project"
+                  title="Move to project"
+                >
+                  <option value="">No project</option>
+                  {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </div>
               <button
                 className="sidebar-item-delete"
                 onClick={(e) => handleDelete(e, c.id)}
@@ -79,7 +109,7 @@ export default function HistorySidebar({ onClose }) {
               >
                 <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M2 3.5H11M5 6V10M8 6V10M3.5 3.5V11C3.5 11.5523 3.94772 12 4.5 12H8.5C9.05228 12 9.5 11.5523 9.5 11V3.5M5 3.5V2C5 1.44772 5.44772 1 6 1H7C7.55228 1 8 1.44772 8 2V3.5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round"/></svg>
               </button>
-            </button>
+            </div>
           ))}
         </div>
       </aside>

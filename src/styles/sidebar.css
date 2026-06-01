@@ -346,6 +346,39 @@
   color: var(--color-status-error);
 }
 
+/* Per-conversation "move to project" control. */
+.sidebar-item-footer {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: var(--space-2);
+  padding-right: var(--space-7);
+  color: var(--color-text-tertiary);
+}
+.sidebar-item-projecticon { flex: 0 0 auto; }
+.sidebar-item-project {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  background: transparent;
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-md);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+  padding: 2px 4px;
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--easing-default),
+              color var(--duration-fast) var(--easing-default);
+}
+.sidebar-item-project:hover {
+  color: var(--color-text-primary);
+  border-color: var(--color-text-tertiary);
+}
+.sidebar-item-project:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
 /* ────────── Prompt cards (inside Prompts sidebar) ────────── */
 
 .prompt-card {

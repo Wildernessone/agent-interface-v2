@@ -173,7 +173,7 @@ export default function TheInterface() {
   // skills is the per-agent knowledge loaded from Drive at sign-in.
   // We thread it into buildSystemPrompt so every agent call picks up
   // whatever the user has dropped into Drive/Agent Interface/Skills/.
-  const { settings, turns, activeAgentId, voiceMode, addTurn, addToolTurn, updateToolTurn, updateBuildTurn, setTurnText, finishTurn, addErrorTurn, addToolErrorTurn, clearTurns, setVoiceMode, saveConversation, conversationId, loadMemory, saveMemory, resetTurnForRetry, activeProject, projects, loadProjects, createProject, setActiveProject, skills } = useStore()
+  const { settings, turns, activeAgentId, voiceMode, addTurn, addToolTurn, updateToolTurn, updateBuildTurn, setTurnText, finishTurn, addErrorTurn, addToolErrorTurn, clearTurns, setVoiceMode, saveConversation, saveStatus, conversationId, loadMemory, saveMemory, resetTurnForRetry, activeProject, projects, loadProjects, createProject, setActiveProject, skills } = useStore()
   
   const handleVoiceToggle = () => {
     if (!voiceMode) {
@@ -609,6 +609,23 @@ export default function TheInterface() {
           <Logo/>
           <h1>Agent Interface</h1>
           <ProjectPicker/>
+          {turns.length > 0 && saveStatus !== 'idle' && (
+            <span className={`save-status save-status--${saveStatus}`} title={
+              saveStatus === 'saving' ? 'Saving conversation…'
+              : saveStatus === 'saved' ? 'Conversation saved'
+              : 'Could not save — check your connection'
+            }>
+              {saveStatus === 'saving' && (
+                <><span className="save-status-dot" aria-hidden="true"/>Saving…</>
+              )}
+              {saveStatus === 'saved' && (
+                <><svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M2.5 6.5L5 9L9.5 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>Saved</>
+              )}
+              {saveStatus === 'error' && (
+                <><span className="save-status-dot" aria-hidden="true"/>Save failed</>
+              )}
+            </span>
+          )}
         </div>
         <nav className="ai-toolbar">
           <IconButton title="Prompt library" onClick={() => setShowPrompts(true)}>

@@ -356,6 +356,29 @@
   text-overflow: ellipsis;
 }
 
+/* Autosave indicator next to the project picker. */
+.save-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  user-select: none;
+}
+.save-status--saved { color: var(--color-status-success); }
+.save-status--error { color: var(--color-status-error); }
+.save-status--saving { color: var(--color-text-secondary); }
+.save-status--saved svg { display: block; }
+.save-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.save-status--saving .save-status-dot { animation: ai-blink 1s var(--easing-default) infinite; }
+
 .proj-overlay {
   position: fixed;
   inset: 0;

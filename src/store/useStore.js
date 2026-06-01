@@ -243,33 +243,50 @@ export const useStore = create((set, get) => ({
   })),
   addErrorTurn: (agentId, errorType) => set(state => ({ turns: [...state.turns, { id: `err-${agentId}-${Date.now()}`, type: 'error', agent: agentId, errorType }], activeAgentId: null })),
   addToolErrorTurn: (tool, errorType, message) => set(state => ({ turns: [...state.turns, { id: `tool-err-${tool}-${Date.now()}`, type: 'tool_error', tool, errorType, message }] })),
-  clearTurns: () => set({ turns: [], activeAgentId: null, conversationId: null }),
+  clearTurns: () => set({ turns: [], activeAgentId: null, conversationId: null, saveStatus: 'idle' }),
 
+  saveStatus: 'idle', // 'idle' | 'saving' | 'saved' | 'error'
   saveConversation: async (turns) => {
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user || !turns.length) return
+      set({ saveStatus: 'saving' })
       const cId = useStore.getState().conversationId
       const projectId = useStore.getState().activeProject?.id || null
       const title = turns.find(t => t.type === "user")?.text?.slice(0, 60) || "Conversation"
       const preview = turns.find(t => t.type === "agent" && t.text)?.text?.slice(0, 100) || ""
       const persisted = JSON.stringify(stripHeavyTurns(turns))
       if (cId) {
-        await supabase.from("conversations").update({ title, preview, turn_count: turns.length, turns_data: persisted, project_id: projectId, updated_at: new Date().toISOString() }).eq("id", cId).eq("user_id", user.id)
+        const { error } = await supabase.from("conversations").update({ title, preview, turn_count: turns.length, turns_data: persisted, project_id: projectId, updated_at: new Date().toISOString() }).eq("id", cId).eq("user_id", user.id)
+        if (error) throw error
       } else {
-        const { data } = await supabase.from("conversations").insert({ user_id: user.id, project_id: projectId, title, preview, turn_count: turns.length, turns_data: persisted, created_at: new Date().toISOString(), updated_at: new Date().toISOString() }).select().single()
+        const { data, error } = await supabase.from("conversations").insert({ user_id: user.id, project_id: projectId, title, preview, turn_count: turns.length, turns_data: persisted, created_at: new Date().toISOString(), updated_at: new Date().toISOString() }).select().single()
+        if (error) throw error
         if (data?.id) useStore.setState({ conversationId: data.id })
       }
-    } catch(e) { logError("saveConversation", e) }
+      set({ saveStatus: 'saved' })
+    } catch(e) { set({ saveStatus: 'error' }); logError("saveConversation", e) }
   },
 
   loadConversations: async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return []
-      const { data } = await supabase.from("conversations").select("id,title,preview,turn_count,updated_at").eq("user_id", user.id).order("updated_at", { ascending: false }).limit(50)
+      const { data } = await supabase.from("conversations").select("id,title,preview,turn_count,updated_at,project_id").eq("user_id", user.id).order("updated_at", { ascending: false }).limit(50)
       return data || []
     } catch(e) { return [] }
+  },
+
+  // Re-assign a saved conversation to a different project (or null for none).
+  // Returns true on success so the History UI can update its row optimistically.
+  moveConversation: async (id, projectId) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return false
+      const { error } = await supabase.from("conversations").update({ project_id: projectId || null, updated_at: new Date().toISOString() }).eq("id", id).eq("user_id", user.id)
+      if (error) throw error
+      return true
+    } catch(e) { logError("moveConversation", e); return false }
   },
 
   loadConversation: async (id) => {
@@ -277,7 +294,7 @@ export const useStore = create((set, get) => ({
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
       const { data } = await supabase.from("conversations").select("*").eq("id", id).eq("user_id", user.id).single()
-      if (data?.turns_data) useStore.setState({ turns: JSON.parse(data.turns_data), conversationId: id, activeAgentId: null })
+      if (data?.turns_data) useStore.setState({ turns: JSON.parse(data.turns_data), conversationId: id, activeAgentId: null, saveStatus: 'saved' })
     } catch(e) { logError("loadConversation", e) }
   },
 
