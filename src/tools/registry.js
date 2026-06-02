@@ -38,6 +38,8 @@
  * surfaces it via addToolErrorTurn.
  */
 
+import { modelFor } from '../config/models'
+
 export class ToolError extends Error {
   constructor(toolId, errorType, message) {
     super(message || `${toolId} failed`)
@@ -896,7 +898,7 @@ RIGHT voiceover_script: "Stop juggling four AI tools. Agent Interface gives you 
           // 4K fits any outline (slides[] or sections[]) and finishes
           // well inside Cloudflare's ~100s wall. 8K gens were hitting
           // 524 timeouts in real testing.
-          body: JSON.stringify({ messages: [{ role: 'user', content: fullPrompt }], max_tokens: 4096 }),
+          body: JSON.stringify({ model: modelFor('claude'), messages: [{ role: 'user', content: fullPrompt }], max_tokens: 4096 }),
         })
         if (!res.ok) { const e = new Error(`claude_${res.status}`); e.status = res.status; throw e }
         const data = await res.json()
@@ -905,7 +907,7 @@ RIGHT voiceover_script: "Stop juggling four AI tools. Agent Interface gives you 
         const res = await fetch(`${PROXY}/gpt`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.key}`, ...supaAuth },
-          body: JSON.stringify({ messages: [{ role: 'user', content: fullPrompt }], max_tokens: 4096 }),
+          body: JSON.stringify({ model: modelFor('gpt'), messages: [{ role: 'user', content: fullPrompt }], max_tokens: 4096 }),
         })
         if (!res.ok) { const e = new Error(`gpt_${res.status}`); e.status = res.status; throw e }
         return res.text()
@@ -914,6 +916,7 @@ RIGHT voiceover_script: "Stop juggling four AI tools. Agent Interface gives you 
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-api-key': cfg.key, ...supaAuth },
           body: JSON.stringify({
+            model: modelFor('gemini'),
             contents: [{ role: 'user', parts: [{ text: fullPrompt }] }],
             generationConfig: { maxOutputTokens: 4096 },
           }),

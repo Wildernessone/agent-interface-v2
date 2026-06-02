@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useModalDismiss } from '../utils/useModalDismiss'
+import { testConnection } from '../utils/testConnection'
 import MemoryTab from './MemoryTab'
 import StorageTab from './StorageTab'
 import SkillsTab from './SkillsTab'
@@ -75,8 +76,24 @@ export default function Settings({ onClose }) {
   const [tab, setTab] = useState("agents")
   const [showKey, setShowKey] = useState({})
   const [toolQuery, setToolQuery] = useState("")
+  const [connTests, setConnTests] = useState({})   // { [agentId]: {ok,reason,model} | 'testing' }
+  const [testingAll, setTestingAll] = useState(false)
 
   const userEmail = useStore.getState().user?.email
+
+  // Health check: ping every connected agent so a retired model / bad key
+  // surfaces here instead of mid-conversation.
+  const runConnectionTests = async () => {
+    const connected = AGENTS.filter(a => settings.agents?.[a.id]?.key)
+    if (!connected.length) return
+    setTestingAll(true)
+    setConnTests(Object.fromEntries(connected.map(a => [a.id, 'testing'])))
+    await Promise.all(connected.map(async a => {
+      const result = await testConnection(a.id, settings.agents[a.id].key)
+      setConnTests(prev => ({ ...prev, [a.id]: result }))
+    }))
+    setTestingAll(false)
+  }
 
   const updateAgent = (agentId, field, value) => {
     updateSetting("agents", { ...settings.agents, [agentId]: { ...settings.agents[agentId], [field]: value } })
@@ -138,6 +155,14 @@ export default function Settings({ onClose }) {
         </nav>
 
         <div className="settings-body">
+          {tab === "agents" && (
+            <div className="settings-conn-test">
+              <button type="button" className="ai-btn" onClick={runConnectionTests} disabled={testingAll || !AGENTS.some(a => settings.agents?.[a.id]?.key)}>
+                {testingAll ? 'Testing…' : 'Test connections'}
+              </button>
+              <span className="settings-helper" style={{ margin: 0 }}>Pings each connected agent to verify its model and key are live.</span>
+            </div>
+          )}
           {tab === "agents" && AGENTS.map(agent => (
             <section className="settings-card" key={agent.id}>
               <div className="settings-row">
@@ -149,6 +174,13 @@ export default function Settings({ onClose }) {
                   </div>
                 </div>
                 <div className="settings-row-end">
+                  {connTests[agent.id] && (
+                    connTests[agent.id] === 'testing'
+                      ? <span className="conn-result conn-result--testing">testing…</span>
+                      : connTests[agent.id].ok
+                        ? <span className="conn-result conn-result--ok" title={`Responding via ${connTests[agent.id].model || 'configured model'}`}>✓ live</span>
+                        : <span className="conn-result conn-result--bad" title={`Status ${connTests[agent.id].status ?? ''}`}>✕ {connTests[agent.id].reason}</span>
+                  )}
                   <span className={`settings-status-dot${settings.agents[agent.id]?.key ? " is-on" : ""}`}/>
                   <Toggle value={settings.agents[agent.id]?.enabled||false} onChange={v => updateAgent(agent.id, "enabled", v)} label={`Enable ${agent.name}`}/>
                 </div>
