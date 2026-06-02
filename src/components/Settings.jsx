@@ -179,7 +179,7 @@ export default function Settings({ onClose }) {
                       ? <span className="conn-result conn-result--testing">testing…</span>
                       : connTests[agent.id].ok
                         ? <span className="conn-result conn-result--ok" title={`Responding via ${connTests[agent.id].model || 'configured model'}`}>✓ live</span>
-                        : <span className="conn-result conn-result--bad" title={`Status ${connTests[agent.id].status ?? ''}`}>✕ {connTests[agent.id].reason}</span>
+                        : <span className="conn-result conn-result--bad" title={[connTests[agent.id].model && `model ${connTests[agent.id].model}`, `status ${connTests[agent.id].status ?? '—'}`, connTests[agent.id].detail].filter(Boolean).join(' · ')}>✕ {connTests[agent.id].reason}{connTests[agent.id].detail ? ` — ${connTests[agent.id].detail}` : ''}</span>
                   )}
                   <span className={`settings-status-dot${settings.agents[agent.id]?.key ? " is-on" : ""}`}/>
                   <Toggle value={settings.agents[agent.id]?.enabled||false} onChange={v => updateAgent(agent.id, "enabled", v)} label={`Enable ${agent.name}`}/>

@@ -241,7 +241,7 @@ export const useStore = create((set, get) => ({
       return updated
     }),
   })),
-  addErrorTurn: (agentId, errorType) => set(state => ({ turns: [...state.turns, { id: `err-${agentId}-${Date.now()}`, type: 'error', agent: agentId, errorType }], activeAgentId: null })),
+  addErrorTurn: (agentId, errorType, detail = null) => set(state => ({ turns: [...state.turns, { id: `err-${agentId}-${Date.now()}`, type: 'error', agent: agentId, errorType, detail }], activeAgentId: null })),
   addToolErrorTurn: (tool, errorType, message) => set(state => ({ turns: [...state.turns, { id: `tool-err-${tool}-${Date.now()}`, type: 'tool_error', tool, errorType, message }] })),
   clearTurns: () => set({ turns: [], activeAgentId: null, conversationId: null, justCreatedConversationId: null, saveStatus: 'idle' }),
 

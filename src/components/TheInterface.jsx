@@ -67,6 +67,28 @@ function classifyError(status, text) {
   return "unknown"
 }
 
+// Distill a provider's raw error response into one short diagnostic line for
+// the error card: "<model> · <provider's own message>". Providers usually
+// return JSON ({error:{message}} for OpenAI/x.ai, {error:{message}} or a bare
+// {message}); we dig out the human string and fall back to the raw text.
+function buildErrorDetail(status, msg, model) {
+  let human = ''
+  const raw = (msg == null ? '' : String(msg)).trim()
+  if (raw) {
+    try {
+      const j = JSON.parse(raw)
+      human = j?.error?.message || j?.error || j?.message || j?.detail || ''
+      if (typeof human !== 'string') human = JSON.stringify(human)
+    } catch { human = raw }
+  }
+  human = human.replace(/\s+/g, ' ').trim().slice(0, 280)
+  const parts = []
+  if (model) parts.push(model)
+  if (status) parts.push(`HTTP ${status}`)
+  const head = parts.join(' · ')
+  return [head, human].filter(Boolean).join(' — ') || null
+}
+
 // POST to a proxy provider route, trying each model in turn. The client owns
 // the model id (see src/config/models.js); the worker honors body.model. If a
 // model is retired/renamed (model-not-found), we fall back to the next id
@@ -76,25 +98,28 @@ function classifyError(status, text) {
 async function postWithModelFallback(route, provider, buildBody, headers) {
   const models = modelsToTry(provider)
   const ids = models.length ? models : [undefined]  // fall back to worker default
-  let res = null, text = ''
+  let res = null, text = '', model
   for (let i = 0; i < ids.length; i++) {
+    model = ids[i]
     res = await fetch(`${PROXY}/${route}`, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...headers, ...(await authHeader()) },
-      body: JSON.stringify(buildBody(ids[i])),
+      body: JSON.stringify(buildBody(model)),
     })
-    if (res.ok) return { res, text: '' }
+    if (res.ok) return { res, text: '', model }
     text = await res.text().catch(() => '')
     // Only keep trying on a model-not-found; bail on auth/rate/server errors.
     if (!isModelError(res.status, text) || i === ids.length - 1) break
   }
-  return { res, text }
+  // `model` is the LAST model tried — the one whose error `text` we return,
+  // so the caller can show "which model the provider rejected".
+  return { res, text, model }
 }
 
 async function streamClaude(key, messages, onChunk, onDone, onError) {
   try {
-    const { res, text: errText } = await postWithModelFallback('claude', 'claude', (model) => ({ messages, model }), { "x-api-key": key })
-    if (!res.ok) { onError?.(res.status, errText); onDone(); return }
+    const { res, text: errText, model } = await postWithModelFallback('claude', 'claude', (model) => ({ messages, model }), { "x-api-key": key })
+    if (!res.ok) { onError?.(res.status, errText, model); onDone(); return }
     const data = await res.json()
     if (data.error) { onError?.(0, data.error?.message || "Claude error"); onDone(); return }
     const text = data.content?.[0]?.text || ""
@@ -117,8 +142,8 @@ async function streamClaude(key, messages, onChunk, onDone, onError) {
 
 async function streamOpenAI(key, messages, onChunk, onDone, onError) {
   try {
-    const { res, text: errText } = await postWithModelFallback('gpt', 'gpt', (model) => ({ messages, model }), { "Authorization": `Bearer ${key}` })
-    if (!res.ok) { onError?.(res.status, errText); onDone(); return }
+    const { res, text: errText, model } = await postWithModelFallback('gpt', 'gpt', (model) => ({ messages, model }), { "Authorization": `Bearer ${key}` })
+    if (!res.ok) { onError?.(res.status, errText, model); onDone(); return }
     const reader = res.body.getReader()
     const dec = new TextDecoder()
     let buf = ""
@@ -142,8 +167,8 @@ async function streamGemini(key, messages, onChunk, onDone, onError) {
     const contents = messages
       .filter(m => m.role !== "system")
       .map(m => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }))
-    const { res, text: errText } = await postWithModelFallback('gemini', 'gemini', (model) => ({ contents, model }), { "x-api-key": key })
-    if (!res.ok) { onError?.(res.status, errText); onDone(); return }
+    const { res, text: errText, model } = await postWithModelFallback('gemini', 'gemini', (model) => ({ contents, model }), { "x-api-key": key })
+    if (!res.ok) { onError?.(res.status, errText, model); onDone(); return }
     const reader = res.body.getReader()
     const dec = new TextDecoder()
     let buf = ""
@@ -168,8 +193,8 @@ async function streamGemini(key, messages, onChunk, onDone, onError) {
 
 async function streamGrok(key, messages, onChunk, onDone, onError) {
   try {
-    const { res, text: errText } = await postWithModelFallback('grok', 'grok', (model) => ({ messages, model }), { "Authorization": `Bearer ${key}` })
-    if (!res.ok) { onError?.(res.status, errText); onDone(); return }
+    const { res, text: errText, model } = await postWithModelFallback('grok', 'grok', (model) => ({ messages, model }), { "Authorization": `Bearer ${key}` })
+    if (!res.ok) { onError?.(res.status, errText, model); onDone(); return }
     const reader = res.body.getReader()
     const dec = new TextDecoder()
     let buf = ""
@@ -544,10 +569,14 @@ export default function TheInterface() {
           // tag can straddle a chunk boundary.
           const onChunk = (c) => { fullText += c; setTurnText(id, stripLeadingSpeakerTag(fullText)) }
           const onDone = () => { finishTurn(); resolve({ text: stripLeadingSpeakerTag(fullText), error: null }) }
-          const onError = (status, msg) => {
+          const onError = (status, msg, model) => {
             const errorType = classifyError(status, msg)
-            addErrorTurn(agent.id, errorType)
-            logUsage({ kind: "agent_message", provider: agent.id, model: agent.id, success: false, errorType })
+            // Keep the RAW provider message (e.g. x.ai's "model grok-3 does not
+            // exist or you do not have access") so the error card shows WHICH
+            // model was rejected — not just a generic "isn't responding".
+            const detail = buildErrorDetail(status, msg, model)
+            addErrorTurn(agent.id, errorType, detail)
+            logUsage({ kind: "agent_message", provider: agent.id, model: model || agent.id, success: false, errorType })
             resolve({ text: "", error: errorType })
           }
           const key = settings.agents[agent.id]?.key
@@ -1094,6 +1123,12 @@ const TurnRow = memo(function TurnRow({ turn, isActive, busy, onRetryLast, onExe
                 <div className="ai-error" role="alert">
                   <div className="ai-error-title">{label} isn't responding</div>
                   <div className="ai-error-msg">{message}</div>
+                  {turn.detail && (
+                    <details className="ai-error-detail">
+                      <summary>Technical details</summary>
+                      <code>{turn.detail}</code>
+                    </details>
+                  )}
                   <div className="ai-actions">
                     <button className="ai-btn ai-btn--primary" onClick={onRetryLast}>Retry</button>
                     {turn.errorType === "out_of_credits" && agent && (
