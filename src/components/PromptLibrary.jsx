@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../utils/supabase'
 import { useStore } from '../store/useStore'
+import { useModalDismiss } from '../utils/useModalDismiss'
 
 const BUILT_IN_TEMPLATES = [
   { id:"brainstorm",   name:"Brainstorm Session", category:"Creative",  prompt:"I want to brainstorm [TOPIC]. Give me diverse perspectives, challenge assumptions, and build on each other's ideas.", mode:"balanced" },
@@ -18,6 +19,7 @@ const BUILT_IN_TEMPLATES = [
 const CATEGORIES = ["All", "Creative", "Strategy", "Product", "Technical", "Learning", "Writing"]
 
 export default function PromptLibrary({ onUse, onClose }) {
+  useModalDismiss(onClose)
   const [tab, setTab] = useState("templates")
   const [saved, setSaved] = useState([])
   const [loading, setLoading] = useState(false)
@@ -68,10 +70,10 @@ export default function PromptLibrary({ onUse, onClose }) {
 
   return (
     <div className="sidebar-backdrop" onClick={e => e.target === e.currentTarget && onClose()}>
-      <aside className="sidebar sidebar--wide">
+      <aside className="sidebar sidebar--wide" role="dialog" aria-modal="true" aria-labelledby="prompts-title">
         <header className="sidebar-header">
           <div>
-            <h2>Prompts</h2>
+            <h2 id="prompts-title">Prompts</h2>
             <div className="sidebar-sub">Templates and your saved prompts</div>
           </div>
           <div className="sidebar-header-actions">

@@ -96,7 +96,7 @@ export default function AuthScreen() {
             required
             autoComplete={mode === "login" ? "current-password" : "new-password"}
           />
-          {error && <div className="auth-error">{error}</div>}
+          {error && <div className="auth-error" role="alert">{error}</div>}
           <button type="submit" className="ai-btn ai-btn--primary auth-submit" disabled={loading}>
             {loading ? "…" : mode === "login" ? "Sign in" : "Create account"}
           </button>

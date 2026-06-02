@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useStore } from '../store/useStore'
+import { useModalDismiss } from '../utils/useModalDismiss'
 import { inferMemoriesFromConversation } from '../utils/openClaw'
 import { supabase } from '../utils/supabase'
 
@@ -16,6 +17,7 @@ import { supabase } from '../utils/supabase'
  * agent_memory and flow back into every future agent + OpenClaw call.
  */
 export default function MemoryPanel({ open, onClose, turns, settings }) {
+  useModalDismiss(onClose, { active: open })
   const { saveMemory, deleteMemory, loadMemory } = useStore()
   const [stored, setStored] = useState([])
   const [candidates, setCandidates] = useState([])
@@ -79,9 +81,9 @@ export default function MemoryPanel({ open, onClose, turns, settings }) {
   return (
     <>
       <div className="mem-overlay" onClick={onClose}/>
-      <aside className="mem-panel" role="dialog" aria-label="Memory">
+      <aside className="mem-panel" role="dialog" aria-modal="true" aria-labelledby="memory-title">
         <header className="mem-header">
-          <h2>Memory</h2>
+          <h2 id="memory-title">Memory</h2>
           <button className="mem-close" onClick={onClose} aria-label="Close">×</button>
         </header>
 

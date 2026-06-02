@@ -750,7 +750,7 @@ export default function TheInterface() {
           </IconButton>
           {turns.length > 0 && (
             <div style={{ position:"relative" }}>
-              <IconButton title="Export" onClick={() => setShowExport(!showExport)}>
+              <IconButton title="Export" expanded={showExport} onClick={() => setShowExport(!showExport)}>
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2.5V10.5M8 10.5L5 7.5M8 10.5L11 7.5M3 13H13" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
               </IconButton>
               {showExport && (
@@ -1077,7 +1077,7 @@ const TurnRow = memo(function TurnRow({ turn, isActive, busy, onRetryLast, onExe
                   ? <div className="ai-avatar" style={{ color: agent.color, borderColor: agent.color }}>{agent.avatar}</div>
                   : <div className="ai-avatar ai-avatar--error">!</div>
                 }
-                <div className="ai-error">
+                <div className="ai-error" role="alert">
                   <div className="ai-error-title">{label} isn't responding</div>
                   <div className="ai-error-msg">{message}</div>
                   <div className="ai-actions">
@@ -1097,7 +1097,7 @@ const TurnRow = memo(function TurnRow({ turn, isActive, busy, onRetryLast, onExe
             )
           }
           if (turn.type === "tool_error") return (
-            <div key={turn.id} className="ai-tool-error">
+            <div key={turn.id} className="ai-tool-error" role="alert">
               <div className="ai-tool-error-title">{turn.tool} failed</div>
               <div className="ai-tool-error-msg">{turn.message}</div>
               {turn.errorType === "missing_key" && (
@@ -1117,7 +1117,7 @@ const TurnRow = memo(function TurnRow({ turn, isActive, busy, onRetryLast, onExe
                   {roleDef && <span className="ai-agent-role" style={{ borderColor: agent.color, color: agent.color }}>{roleDef.name}</span>}
                   {turn.reRolled && <span className="ai-agent-rerolled" title="OpenClaw asked this agent to retry — first response was off-role">↻ re-rolled</span>}
                 </div>
-                <div className={`ai-agent-text${isActive ? " is-streaming" : ""}`}>
+                <div className={`ai-agent-text${isActive ? " is-streaming" : ""}`} aria-live={isActive ? "polite" : undefined}>
                   {turn.text || (isActive ? <span className="ai-typing">thinking…</span> : "")}
                 </div>
               </div>
@@ -1158,9 +1158,17 @@ function Logo({ size = 32 }) {
   )
 }
 
-function IconButton({ children, onClick, title, active }) {
+function IconButton({ children, onClick, title, active, expanded }) {
   return (
-    <button className={`ai-iconbtn${active ? " is-active" : ""}`} onClick={onClick} title={title} aria-label={title}>
+    <button
+      type="button"
+      className={`ai-iconbtn${active ? " is-active" : ""}`}
+      onClick={onClick}
+      title={title}
+      aria-label={title}
+      aria-haspopup={expanded !== undefined ? "menu" : undefined}
+      aria-expanded={expanded}
+    >
       {children}
     </button>
   )

@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react'
 import { useStore } from '../store/useStore'
+import { useModalDismiss } from '../utils/useModalDismiss'
 
 export default function HistorySidebar({ onClose }) {
+  useModalDismiss(onClose)
   const [conversations, setConversations] = useState([])
   const [loading, setLoading] = useState(true)
   const { loadConversations, loadConversation, deleteConversation, clearTurns, moveConversation, loadProjects, projects } = useStore()
@@ -52,10 +54,10 @@ export default function HistorySidebar({ onClose }) {
 
   return (
     <div className="sidebar-backdrop" onClick={e => e.target === e.currentTarget && onClose()}>
-      <aside className="sidebar">
+      <aside className="sidebar" role="dialog" aria-modal="true" aria-labelledby="history-title">
         <header className="sidebar-header">
           <div>
-            <h2>History</h2>
+            <h2 id="history-title">History</h2>
             <div className="sidebar-sub">{conversations.length} conversation{conversations.length === 1 ? "" : "s"}</div>
           </div>
           <button className="ai-iconbtn" onClick={onClose} aria-label="Close">

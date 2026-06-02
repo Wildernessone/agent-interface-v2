@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useStore } from '../store/useStore'
+import { useModalDismiss } from '../utils/useModalDismiss'
 
 /**
  * Slim project picker that lives in the header next to the brand.
@@ -13,6 +14,7 @@ export default function ProjectPicker() {
   const [newName, setNewName] = useState("")
   const [newDesc, setNewDesc] = useState("")
   const [busy, setBusy] = useState(false)
+  useModalDismiss(() => { setOpen(false); setCreating(false) }, { active: open })
 
   useEffect(() => {
     loadProjects()
@@ -43,6 +45,8 @@ export default function ProjectPicker() {
       <button
         className={`proj-trigger${activeProject ? " is-active" : ""}`}
         onClick={() => setOpen(o => !o)}
+        aria-haspopup="menu"
+        aria-expanded={open}
         title={activeProject ? `Project: ${activeProject.name}` : "No project — outputs save to your root Drive folder"}
       >
         <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>

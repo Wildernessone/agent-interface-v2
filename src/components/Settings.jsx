@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useModalDismiss } from '../utils/useModalDismiss'
 import MemoryTab from './MemoryTab'
 import StorageTab from './StorageTab'
 import SkillsTab from './SkillsTab'
@@ -69,6 +70,7 @@ const TABS = [
 ]
 
 export default function Settings({ onClose }) {
+  useModalDismiss(onClose)
   const { settings, updateSetting } = useStore()
   const [tab, setTab] = useState("agents")
   const [showKey, setShowKey] = useState({})
@@ -115,10 +117,10 @@ export default function Settings({ onClose }) {
 
   return (
     <div className="settings-backdrop" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="settings-dialog">
+      <div className="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title">
         <header className="settings-header">
           <div>
-            <h2>Settings</h2>
+            <h2 id="settings-title">Settings</h2>
             {userEmail && <div className="settings-email">{userEmail}</div>}
           </div>
           <div className="settings-header-actions">
@@ -129,9 +131,9 @@ export default function Settings({ onClose }) {
           </div>
         </header>
 
-        <nav className="settings-tabs">
+        <nav className="settings-tabs" role="tablist" aria-label="Settings sections">
           {TABS.map(t => (
-            <button key={t.id} className={`settings-tab${tab === t.id ? " is-active" : ""}`} onClick={() => setTab(t.id)}>{t.label}</button>
+            <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} className={`settings-tab${tab === t.id ? " is-active" : ""}`} onClick={() => setTab(t.id)}>{t.label}</button>
           ))}
         </nav>
 
@@ -148,7 +150,7 @@ export default function Settings({ onClose }) {
                 </div>
                 <div className="settings-row-end">
                   <span className={`settings-status-dot${settings.agents[agent.id]?.key ? " is-on" : ""}`}/>
-                  <Toggle value={settings.agents[agent.id]?.enabled||false} onChange={v => updateAgent(agent.id, "enabled", v)}/>
+                  <Toggle value={settings.agents[agent.id]?.enabled||false} onChange={v => updateAgent(agent.id, "enabled", v)} label={`Enable ${agent.name}`}/>
                 </div>
               </div>
               <label className="settings-label">{agent.provider} API key</label>
@@ -198,7 +200,7 @@ export default function Settings({ onClose }) {
                             </div>
                             <div className="settings-row-sub">{tool.desc}</div>
                           </div>
-                          <Toggle value={on || false} onChange={v => updateToolEnabled(tool.id, v)}/>
+                          <Toggle value={on || false} onChange={v => updateToolEnabled(tool.id, v)} label={`Enable ${tool.name || tool.id}`}/>
                         </div>
                         {on && !usesAgentKey && !noKey && (
                           <>
@@ -419,9 +421,9 @@ function InfoTip({ text }) {
   return <span className="tool-info" title={text} aria-label={text}>ⓘ</span>
 }
 
-function Toggle({ value, onChange }) {
+function Toggle({ value, onChange, label }) {
   return (
-    <button className={`settings-toggle${value ? " is-on" : ""}`} onClick={() => onChange(!value)} role="switch" aria-checked={value}>
+    <button type="button" className={`settings-toggle${value ? " is-on" : ""}`} onClick={() => onChange(!value)} role="switch" aria-checked={value} aria-label={label}>
       <span className="settings-toggle-thumb"/>
     </button>
   )
