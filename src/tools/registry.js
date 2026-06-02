@@ -1613,7 +1613,15 @@ const imagePerSlide = {
       const promptText = (s.prompt || `${s.title || 'cover image'}. Style: ${style}`).slice(0, 900)
       try {
         const res = await proxy('dalle', { prompt: promptText, size, quality: 'high' }, { Authorization: `Bearer ${key}` })
-        if (!res.ok) { files.push({ error: `dalle_${res.status}`, filename: `slide-${i + 1}.png` }); continue }
+        if (!res.ok) {
+          // Surface OpenAI's real message (e.g. org-verification required for
+          // gpt-image-1, invalid key, rate limit) instead of a bare status.
+          const body = await res.text().catch(() => '')
+          let msg = ''
+          try { msg = JSON.parse(body)?.error?.message || '' } catch { msg = body }
+          files.push({ error: `dalle_${res.status}${msg ? `: ${msg.slice(0, 160)}` : ''}`, filename: `slide-${i + 1}.png` })
+          continue
+        }
         const json = await res.json()
         const b64 = json.data?.[0]?.b64_json
         const url = json.data?.[0]?.url
@@ -1625,7 +1633,10 @@ const imagePerSlide = {
       }
     }
     const successful = files.filter(f => !f.error).length
-    if (successful === 0) throw new ToolError('image_per_slide', 'bad_response', 'No images generated.')
+    if (successful === 0) {
+      const reasons = [...new Set(files.map(f => f.error).filter(Boolean))].join(' | ')
+      throw new ToolError('image_per_slide', 'bad_response', `No images generated — ${reasons || 'unknown error'}`)
+    }
 
     return {
       type: 'image_bundle',
