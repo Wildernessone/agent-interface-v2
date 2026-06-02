@@ -51,10 +51,18 @@ function interpolate(template, stepOutputs) {
     return out
   }
 
-  return template.replace(/\{([a-z0-9_]+)(?:\.([a-z0-9_]+))?\}/gi, (_, stepId, field) => {
+  // Match a placeholder optionally wrapped in double quotes (the \1 backref
+  // requires the same opening/closing quote). When a downstream step's input
+  // is a JSON template, the dispatcher often writes the placeholder as a JSON
+  // value and quotes it ("{s1.scenes}"). If that value resolves to an
+  // object/array, splicing raw JSON *inside* those quotes breaks the JSON
+  // (e.g. {"slides": "[{"id"...}). So for a quoted placeholder we replace the
+  // quotes too and emit a JSON-valid token (string→quoted, object/array→raw
+  // JSON). Unquoted placeholders splice the stringified value as before.
+  return template.replace(/("?)\{([a-z0-9_]+)(?:\.([a-z0-9_]+))?\}\1/gi, (_, quote, stepId, field) => {
     const out = stepOutputs[stepId]
-    if (out == null) return ''
-    const v = field ? out?.[field] : out
+    const v = out == null ? null : (field ? out?.[field] : out)
+    if (quote) return v == null ? '""' : JSON.stringify(v)
     if (v == null) return ''
     return typeof v === 'string' ? v : JSON.stringify(v)
   })
