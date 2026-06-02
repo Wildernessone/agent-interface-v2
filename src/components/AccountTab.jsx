@@ -106,7 +106,7 @@ export default function AccountTab() {
         </button>
       </section>
 
-      {error && <p className="settings-help" style={{ color: 'var(--color-danger, #e5484d)' }}>{error}</p>}
+      {error && <p className="settings-help" role="alert" style={{ color: 'var(--color-status-error)' }}>{error}</p>}
     </>
   )
 }
