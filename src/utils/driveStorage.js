@@ -122,12 +122,49 @@ export async function getValidDriveToken() {
   return conn?.access_token || null
 }
 
-async function findOrCreateFolder(token, name, parentId = null) {
+/**
+ * Open a short-lived Drive session for one save operation.
+ *
+ * getDriveToken() already refreshes PROACTIVELY (when <5 min to expiry).
+ * This session adds REACTIVE recovery: if Google rejects a call with 401
+ * anyway — clock skew, a token revoked early, or a proactive refresh that
+ * silently failed (e.g. the Worker route was momentarily down) — refresh the
+ * token ONCE and retry the same request before giving up. Only if that retry
+ * also fails does the caller surface "reconnect in Settings".
+ *
+ * All Drive API calls in this module go through `session.driveFetch`, which
+ * injects the bearer token and owns the refresh-and-retry. Callers must NOT
+ * set their own Authorization header.
+ */
+async function openDriveSession() {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return null
+  const conn = await getDriveToken()
+  if (!conn?.access_token) return null
+
+  let token = conn.access_token
+  const refreshToken = conn.refresh_token
+  let triedRefresh = false
+
+  const driveFetch = async (url, opts = {}) => {
+    const withAuth = (t) => ({ ...opts, headers: { ...(opts.headers || {}), Authorization: `Bearer ${t}` } })
+    let res = await fetch(url, withAuth(token))
+    if (res.status === 401 && !triedRefresh && refreshToken) {
+      triedRefresh = true
+      const fresh = await refreshDriveAccessToken(user.id, refreshToken)
+      if (fresh) { token = fresh; res = await fetch(url, withAuth(token)) }
+    }
+    return res
+  }
+
+  return { driveFetch, userId: user.id }
+}
+
+async function findOrCreateFolder(session, name, parentId = null) {
   const parentClause = parentId ? ` and '${parentId}' in parents` : ''
   const q = `name='${name.replace(/'/g, "\\'")}' and mimeType='application/vnd.google-apps.folder' and trashed=false${parentClause}`
-  const search = await fetch(
-    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name)`,
-    { headers: { Authorization: `Bearer ${token}` } }
+  const search = await session.driveFetch(
+    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name)`
   )
   if (!search.ok) throw new Error(`drive_search_failed_${search.status}`)
   const data = await search.json()
@@ -135,9 +172,9 @@ async function findOrCreateFolder(token, name, parentId = null) {
 
   const body = { name, mimeType: 'application/vnd.google-apps.folder' }
   if (parentId) body.parents = [parentId]
-  const create = await fetch('https://www.googleapis.com/drive/v3/files', {
+  const create = await session.driveFetch('https://www.googleapis.com/drive/v3/files', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
   if (!create.ok) throw new Error(`drive_create_folder_failed_${create.status}`)
@@ -145,11 +182,11 @@ async function findOrCreateFolder(token, name, parentId = null) {
   return folder.id
 }
 
-async function ensureRootFolder(token) {
-  return findOrCreateFolder(token, 'Agent Interface')
+async function ensureRootFolder(session) {
+  return findOrCreateFolder(session, 'Agent Interface')
 }
 
-async function ensureProjectFolder(token, rootId, project) {
+async function ensureProjectFolder(session, rootId, project) {
   if (!project?.name) return rootId
 
   // Names can be slashed paths for nested build folders, e.g.
@@ -162,7 +199,7 @@ async function ensureProjectFolder(token, rootId, project) {
   let parent = rootId
   let topFolderId = null
   for (let i = 0; i < segments.length; i++) {
-    const id = await findOrCreateFolder(token, segments[i], parent)
+    const id = await findOrCreateFolder(session, segments[i], parent)
     if (i === 0) topFolderId = id
     parent = id
   }
@@ -178,7 +215,7 @@ async function ensureProjectFolder(token, rootId, project) {
   return parent
 }
 
-async function uploadFile(token, parentId, filename, mimeType, body) {
+async function uploadFile(session, parentId, filename, mimeType, body) {
   const boundary = '----agentinterface' + Math.random().toString(36).slice(2)
   const metadata = JSON.stringify({ name: filename, parents: [parentId], mimeType })
 
@@ -204,11 +241,11 @@ async function uploadFile(token, parentId, filename, mimeType, body) {
     bodyB64 + `\r\n` +
     `--${boundary}--`
 
-  const res = await fetch(
+  const res = await session.driveFetch(
     'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink',
     {
       method: 'POST',
-      headers: { 'Content-Type': `multipart/related; boundary=${boundary}`, Authorization: `Bearer ${token}` },
+      headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
       body: multipartBody,
     }
   )
@@ -221,9 +258,8 @@ async function uploadFile(token, parentId, filename, mimeType, body) {
  */
 export async function saveToDrive(output, project = null) {
   try {
-    const conn = await getDriveToken()
-    if (!conn?.access_token) return null
-    const token = conn.access_token
+    const session = await openDriveSession()
+    if (!session) return null
 
     let mimeType = 'application/octet-stream'
     let ext = 'bin'
@@ -250,13 +286,13 @@ export async function saveToDrive(output, project = null) {
       return null
     }
 
-    const rootId = await ensureRootFolder(token)
-    const folderId = project ? await ensureProjectFolder(token, rootId, project) : rootId
+    const rootId = await ensureRootFolder(session)
+    const folderId = project ? await ensureProjectFolder(session, rootId, project) : rootId
     const folderLink = `https://drive.google.com/drive/folders/${folderId}`
 
     const safePrompt = (output.prompt || output.tool || 'output').replace(/[^a-z0-9-_ ]/gi, '').slice(0, 60).trim() || 'output'
     const filename = `${Date.now()}-${output.tool}-${safePrompt}.${ext}`
-    const file = await uploadFile(token, folderId, filename, mimeType, body)
+    const file = await uploadFile(session, folderId, filename, mimeType, body)
 
     if (project?.id) {
       try {
