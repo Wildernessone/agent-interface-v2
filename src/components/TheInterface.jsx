@@ -169,11 +169,48 @@ async function streamGrok(key, messages, onChunk, onDone, onError) {
   } catch(e) { onError?.(0, e.message); onDone() }
 }
 
+// Short human "when" for project-context previews: "today" / "3d ago" / "May 12".
+function relativeDate(iso) {
+  if (!iso) return ""
+  const then = new Date(iso)
+  if (isNaN(then)) return ""
+  const days = Math.floor((Date.now() - then.getTime()) / 86400000)
+  if (days <= 0) return "today"
+  if (days === 1) return "yesterday"
+  if (days < 7) return `${days}d ago`
+  return then.toLocaleDateString(undefined, { month: "short", day: "numeric" })
+}
+
+// Smart conversation title via Gemini — the cheapest connected model (the
+// proxy's /gemini route is a Flash-tier model, ~$0.0001/title). Reuses the
+// existing streamGemini transport and accumulates the (tiny) output. Returns
+// "" on any failure so the caller falls back to the heuristic title.
+function generateGeminiTitle(key, userText, agentText) {
+  const prompt =
+    `Write a short, specific title (3-6 words) for this conversation. ` +
+    `No quotes, no trailing punctuation, no "Title:" prefix — just the title.\n\n` +
+    `User: ${(userText || "").slice(0, 300)}\n` +
+    `Assistant: ${(agentText || "").slice(0, 300)}`
+  return new Promise((resolve) => {
+    let out = ""
+    streamGemini(
+      key,
+      [{ role: "user", content: prompt }],
+      (c) => { out += c },
+      () => {
+        const title = out.split("\n")[0].replace(/^["'\s]+|["'\s.]+$/g, "").slice(0, 60)
+        resolve(title)
+      },
+      () => resolve("")
+    )
+  })
+}
+
 export default function TheInterface() {
   // skills is the per-agent knowledge loaded from Drive at sign-in.
   // We thread it into buildSystemPrompt so every agent call picks up
   // whatever the user has dropped into Drive/Agent Interface/Skills/.
-  const { settings, turns, activeAgentId, voiceMode, addTurn, addToolTurn, updateToolTurn, updateBuildTurn, setTurnText, finishTurn, addErrorTurn, addToolErrorTurn, clearTurns, setVoiceMode, saveConversation, saveStatus, conversationId, loadMemory, saveMemory, resetTurnForRetry, activeProject, projects, loadProjects, createProject, setActiveProject, skills } = useStore()
+  const { settings, turns, activeAgentId, voiceMode, addTurn, addToolTurn, updateToolTurn, updateBuildTurn, setTurnText, finishTurn, addErrorTurn, addToolErrorTurn, clearTurns, setVoiceMode, saveConversation, saveStatus, conversationId, loadMemory, saveMemory, resetTurnForRetry, activeProject, projects, loadProjects, createProject, setActiveProject, skills, renameConversation, loadProjectConversations, justCreatedConversationId } = useStore()
   
   const handleVoiceToggle = () => {
     if (!voiceMode) {
@@ -199,6 +236,7 @@ export default function TheInterface() {
   const [showMemory, setShowMemory] = useState(false)
   const [showPrompts, setShowPrompts] = useState(false)
   const [agentMemory, setAgentMemory] = useState([])
+  const [projectConvos, setProjectConvos] = useState([])
   const [setupNotices, setSetupNotices] = useState([])
   const [skippedOnboarding, setSkippedOnboarding] = useState(false)
   const scrollRef = useRef(null)
@@ -260,6 +298,36 @@ export default function TheInterface() {
     const t = setTimeout(() => saveConversation(turns), 800)
     return () => clearTimeout(t)
   }, [turns, busy, activeProject, saveConversation])
+
+  // Load compact previews of prior conversations in the active project so the
+  // panel can reference past discussions. Refreshes when the project switches
+  // or a new conversation is created (conversationId), so the list stays current.
+  useEffect(() => {
+    let cancelled = false
+    // loadProjectConversations returns [] for a null projectId, so this also
+    // clears the list when no project is active — no synchronous setState needed.
+    loadProjectConversations(activeProject?.id).then(d => { if (!cancelled) setProjectConvos(d) })
+    return () => { cancelled = true }
+  }, [activeProject?.id, conversationId, loadProjectConversations])
+
+  // Smart title: once a conversation is first created, generate a concise title
+  // from the opening exchange via the cheapest model (Gemini). One call per
+  // conversation — justCreatedConversationId is a one-shot marker we clear after
+  // consuming it. No Gemini key → keep the heuristic title (no extra cost).
+  useEffect(() => {
+    const cid = justCreatedConversationId
+    if (!cid) return
+    useStore.setState({ justCreatedConversationId: null })
+    const key = settings.agents?.gemini?.key
+    if (!key) return
+    const live = useStore.getState().turns
+    const firstUser = live.find(t => t.type === "user")?.text || ""
+    const firstAgent = live.find(t => t.type === "agent" && t.text)?.text || ""
+    if (!firstUser) return
+    generateGeminiTitle(key, firstUser, firstAgent).then(title => {
+      if (title) renameConversation(cid, title)
+    })
+  }, [justCreatedConversationId, settings, renameConversation])
 
   useEffect(() => {
     const handler = (e) => {
@@ -419,6 +487,18 @@ export default function TheInterface() {
           ? agentMemory.slice(0, 8).map(m => `[${m.title}]: ${m.content.slice(0, 300)}`).join("\n")
           : ""
 
+        // Compact prior-project context: title + one-line preview + when, for up
+        // to 5 other conversations in this project. Deliberately tiny (~one line
+        // each) so it never bloats the prompt — previews are pre-capped at 100
+        // chars in the DB; we trim a little more here. Current chat is excluded.
+        const projectContext = (activeProject && projectConvos.length)
+          ? projectConvos
+              .filter(c => c.id !== conversationId)
+              .slice(0, 5)
+              .map(c => `- "${(c.title || "Untitled").slice(0, 60)}" (${relativeDate(c.updated_at)}): ${(c.preview || "").slice(0, 90)}`)
+              .join("\n")
+          : ""
+
         // Per-agent skills toggle: when false, this agent's prompt won't
         // include shared/ or its own skill files. Default true so users
         // who haven't touched the setting get the full benefit.
@@ -430,7 +510,7 @@ export default function TheInterface() {
         const baseSystemPrompt = buildSystemPrompt({
           activeAgentIds: selected.map(a => a.id),
           enabledTools, mode: activeResponseMode, round: round + 1, totalRounds,
-          agentId: agent.id, voiceMode, memoryContext, role,
+          agentId: agent.id, voiceMode, memoryContext, projectContext, role,
           skills, useSkills: agentUseSkills,
         })
 
