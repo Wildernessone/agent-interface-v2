@@ -2,6 +2,7 @@ import { useState } from 'react'
 import MemoryTab from './MemoryTab'
 import StorageTab from './StorageTab'
 import SkillsTab from './SkillsTab'
+import AccountTab from './AccountTab'
 import { supabase } from '../utils/supabase'
 import { useStore } from '../store/useStore'
 import { TOOL_REGISTRY, ROADMAP_TOOLS, CATEGORY_LABELS } from '../tools/registry'
@@ -64,6 +65,7 @@ const TABS = [
   { id: "memory",  label: "Memory"  },
   { id: "storage", label: "Storage" },
   { id: "display", label: "Display" },
+  { id: "account", label: "Account" },
 ]
 
 export default function Settings({ onClose }) {
@@ -320,6 +322,7 @@ export default function Settings({ onClose }) {
 
           {tab === "memory" && <MemoryTab/>}
           {tab === "storage" && <StorageTab/>}
+          {tab === "account" && <AccountTab/>}
 
           {tab === "display" && (
             <>

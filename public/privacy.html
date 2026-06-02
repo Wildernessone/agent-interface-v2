@@ -1,0 +1,70 @@
+<!doctype html>
+<!--
+  TEMPLATE — review with legal counsel before launch. Bracketed [PLACEHOLDERS]
+  need real values (legal entity, jurisdiction, contact). Tailored to Agent
+  Interface's bring-your-own-key, multi-provider architecture.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Privacy Policy — Agent Interface</title>
+  <style>
+    :root { color-scheme: dark light; }
+    body { max-width: 720px; margin: 0 auto; padding: 48px 20px 96px; font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #e8e8ea; background: #0d0d10; }
+    h1 { font-size: 28px; margin-bottom: 4px; }
+    h2 { font-size: 19px; margin-top: 36px; }
+    a { color: #6FA1FF; }
+    .meta { color: #9a9aa2; font-size: 14px; }
+    code { background: #1c1c22; padding: 1px 5px; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <h1>Privacy Policy</h1>
+  <p class="meta">Last updated: June 1, 2026</p>
+
+  <p>Agent Interface ("the Service," "we," "us") is a multi-agent AI workspace operated by
+  [LEGAL ENTITY NAME]. This policy explains what we collect, how we use it, and the choices you have.</p>
+
+  <h2>1. Bring-your-own-key model</h2>
+  <p>The Service uses a <strong>bring-your-own-key</strong> model. You supply your own API keys for
+  third-party AI providers (Anthropic, OpenAI, Google, xAI). Your prompts and conversation content are
+  transmitted — through our request proxy — to those providers under <em>your own</em> provider account,
+  and are governed by each provider's terms and privacy policy. We do not use your content to train any
+  models.</p>
+
+  <h2>2. Information we store</h2>
+  <ul>
+    <li><strong>Account:</strong> email address and authentication identifiers (via Supabase Auth; Google/Apple if you use OAuth).</li>
+    <li><strong>Content:</strong> conversations, projects, uploaded/generated files metadata, agent memory, and saved prompts.</li>
+    <li><strong>Settings:</strong> preferences and which agents/tools you've enabled.</li>
+    <li><strong>API keys:</strong> stored <strong>encrypted at rest</strong>; decrypted server-side only to forward your requests.</li>
+    <li><strong>Connected storage:</strong> if you link Google Drive or Dropbox, we store OAuth tokens to access the folders you authorize.</li>
+    <li><strong>Usage &amp; diagnostics:</strong> request counts, token/cost estimates, error events (via Sentry) for reliability and abuse prevention.</li>
+  </ul>
+
+  <h2>3. Sub-processors</h2>
+  <p>We rely on: Supabase (authentication and database), Cloudflare (hosting and request proxy),
+  the AI providers listed above, Sentry (error monitoring), and — where applicable — Google Drive/Dropbox
+  (only if you connect them) and Stripe (if/when you subscribe to a paid plan).</p>
+
+  <h2>4. How we use information</h2>
+  <p>To operate and secure the Service, route your requests to your chosen providers, store your work so you
+  can return to it, enforce plan limits, prevent abuse, and improve reliability. We do not sell your
+  personal information.</p>
+
+  <h2>5. Your rights</h2>
+  <p>You can <strong>export</strong> all your data and <strong>permanently delete</strong> your account and
+  associated data at any time from <code>Settings → Account</code>. Depending on your location, you may have
+  additional rights under the GDPR or CCPA; contact us to exercise them.</p>
+
+  <h2>6. Data retention</h2>
+  <p>We retain your content until you delete it or close your account. Deletion is immediate and
+  irreversible. Backups are purged on a rolling basis.</p>
+
+  <h2>7. Contact</h2>
+  <p>Questions or requests: <a href="mailto:[CONTACT EMAIL]">[CONTACT EMAIL]</a>.</p>
+
+  <p class="meta">Governing data-protection framework: [JURISDICTION].</p>
+</body>
+</html>

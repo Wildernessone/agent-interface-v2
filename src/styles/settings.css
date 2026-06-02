@@ -592,6 +592,21 @@
 }
 .memory-actions .ai-btn { flex: 1; justify-content: center; }
 
+/* Account tab — destructive zone. The danger card gets a red-tinted border so
+   the irreversible delete action reads as distinct from ordinary settings. */
+.settings-card--danger {
+  border-color: var(--color-danger, #e5484d);
+}
+.ai-btn--danger {
+  background: var(--color-danger, #e5484d);
+  border-color: var(--color-danger, #e5484d);
+  color: #fff;
+}
+.ai-btn--danger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .memory-form .settings-input { margin-bottom: var(--space-3); }
 .memory-form-actions {
   display: flex;
