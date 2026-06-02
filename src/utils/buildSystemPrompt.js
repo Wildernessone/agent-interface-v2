@@ -1,7 +1,7 @@
 import { ROLE_POOL } from './openClaw'
 import { TOOLS_BY_ID } from '../tools/registry'
 
-export function buildSystemPrompt({ activeAgentIds=[], enabledTools={}, mode="concise", round=1, totalRounds=1, agentId="claude", voiceMode=false, memoryContext="", leadAgent=null, role=null, skills=null, useSkills=true }) {
+export function buildSystemPrompt({ activeAgentIds=[], enabledTools={}, mode="concise", round=1, totalRounds=1, agentId="claude", voiceMode=false, memoryContext="", projectContext="", leadAgent=null, role=null, skills=null, useSkills=true }) {
   const AGENT_NAMES = { claude:"Claude (Anthropic)", gpt:"ChatGPT (OpenAI)", gemini:"Gemini (Google)", grok:"Grok (xAI)" }
   const otherAgents = activeAgentIds.filter(id => id !== agentId).map(id => AGENT_NAMES[id] || id)
   const lines = []
@@ -18,6 +18,17 @@ export function buildSystemPrompt({ activeAgentIds=[], enabledTools={}, mode="co
     lines.push(`\nWHAT YOU KNOW ABOUT THIS USER AND THEIR BUSINESS:`)
     lines.push(memoryContext)
     lines.push(`\nUse this context naturally in your responses. Don't announce that you have it — just use it.`)
+  }
+
+  // PROJECT CONTEXT — compact previews of prior conversations in the active
+  // project (title + one-line preview + when), NOT full transcripts. This is
+  // what lets the panel carry continuity across separate chats in a project.
+  // Kept deliberately small (a handful of one-liners) so it never bloats the
+  // prompt; the caller is responsible for trimming/capping.
+  if (projectContext) {
+    lines.push(`\nEARLIER IN THIS PROJECT (prior conversations, summarized — not the current one):`)
+    lines.push(projectContext)
+    lines.push(`\nThese are past discussions in the same project. Build on them for continuity when relevant; don't recap them unprompted, and don't treat them as the current question.`)
   }
 
   // SKILLS — user-curated knowledge from Drive/Agent Interface/Skills/.

@@ -243,9 +243,10 @@ export const useStore = create((set, get) => ({
   })),
   addErrorTurn: (agentId, errorType) => set(state => ({ turns: [...state.turns, { id: `err-${agentId}-${Date.now()}`, type: 'error', agent: agentId, errorType }], activeAgentId: null })),
   addToolErrorTurn: (tool, errorType, message) => set(state => ({ turns: [...state.turns, { id: `tool-err-${tool}-${Date.now()}`, type: 'tool_error', tool, errorType, message }] })),
-  clearTurns: () => set({ turns: [], activeAgentId: null, conversationId: null, saveStatus: 'idle' }),
+  clearTurns: () => set({ turns: [], activeAgentId: null, conversationId: null, justCreatedConversationId: null, saveStatus: 'idle' }),
 
   saveStatus: 'idle', // 'idle' | 'saving' | 'saved' | 'error'
+  justCreatedConversationId: null, // one-shot: set on insert, consumed by title-gen UI
   saveConversation: async (turns) => {
     try {
       const { data: { user } } = await supabase.auth.getUser()
@@ -257,12 +258,19 @@ export const useStore = create((set, get) => ({
       const preview = turns.find(t => t.type === "agent" && t.text)?.text?.slice(0, 100) || ""
       const persisted = JSON.stringify(stripHeavyTurns(turns))
       if (cId) {
-        const { error } = await supabase.from("conversations").update({ title, preview, turn_count: turns.length, turns_data: persisted, project_id: projectId, updated_at: new Date().toISOString() }).eq("id", cId).eq("user_id", user.id)
+        // Don't overwrite `title` on update — it's set once on insert (heuristic)
+        // and may have been upgraded to a smart LLM title (see renameConversation).
+        // Re-writing it here every autosave would clobber that and churn the title
+        // as the conversation grows.
+        const { error } = await supabase.from("conversations").update({ preview, turn_count: turns.length, turns_data: persisted, project_id: projectId, updated_at: new Date().toISOString() }).eq("id", cId).eq("user_id", user.id)
         if (error) throw error
       } else {
         const { data, error } = await supabase.from("conversations").insert({ user_id: user.id, project_id: projectId, title, preview, turn_count: turns.length, turns_data: persisted, created_at: new Date().toISOString(), updated_at: new Date().toISOString() }).select().single()
         if (error) throw error
-        if (data?.id) useStore.setState({ conversationId: data.id })
+        // justCreatedConversationId is a one-shot marker the UI watches to fire
+        // smart-title generation exactly once per new conversation. loadConversation
+        // (opening an old chat) never sets it, so existing chats aren't re-titled.
+        if (data?.id) useStore.setState({ conversationId: data.id, justCreatedConversationId: data.id })
       }
       set({ saveStatus: 'saved' })
     } catch(e) { set({ saveStatus: 'error' }); logError("saveConversation", e) }
@@ -287,6 +295,33 @@ export const useStore = create((set, get) => ({
       if (error) throw error
       return true
     } catch(e) { logError("moveConversation", e); return false }
+  },
+
+  // Replace a conversation's title (used by smart-title generation). Title-only
+  // write so it can't race with the turns/preview autosave; updates never touch
+  // title (see saveConversation), so this sticks.
+  renameConversation: async (id, title) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user || !id || !title) return
+      await supabase.from("conversations").update({ title }).eq("id", id).eq("user_id", user.id)
+    } catch(e) { logError("renameConversation", e) }
+  },
+
+  // Compact prior-conversation previews for one project, newest first. Selects
+  // only the lightweight columns (no turns_data) — this feeds the project-context
+  // block in the system prompt, so it must stay small.
+  loadProjectConversations: async (projectId) => {
+    try {
+      if (!projectId) return []
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return []
+      const { data } = await supabase.from("conversations")
+        .select("id,title,preview,updated_at")
+        .eq("user_id", user.id).eq("project_id", projectId)
+        .order("updated_at", { ascending: false }).limit(8)
+      return data || []
+    } catch(e) { return [] }
   },
 
   loadConversation: async (id) => {
