@@ -373,6 +373,47 @@ export const useStore = create((set, get) => ({
     } catch(e) { logError("deleteConversation", e) }
   },
 
+  // GDPR/CCPA data portability: gather everything we hold about the caller into
+  // one JSON object. RLS already scopes each select to auth.uid(); we add an
+  // explicit user_id filter for clarity. Deliberately EXCLUDES secrets — the
+  // encrypted API keys (user_api_keys) and OAuth storage tokens
+  // (storage_connections) are never decrypted into a downloadable file.
+  exportMyData: async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return null
+    const tables = [
+      "conversations", "projects", "project_files", "agent_memory",
+      "prompt_library", "usage_events", "role_outcomes",
+    ]
+    const out = {}
+    const results = await Promise.all(
+      tables.map(t => supabase.from(t).select("*").eq("user_id", user.id))
+    )
+    tables.forEach((t, i) => { out[t] = results[i].data || [] })
+    // user_settings is keyed by user_id (no row-per-id), fetch separately.
+    const { data: settingsRow } = await supabase.from("user_settings").select("*").eq("user_id", user.id).maybeSingle()
+    out.user_settings = settingsRow || null
+    return {
+      exported_at: new Date().toISOString(),
+      account: { id: user.id, email: user.email },
+      note: "Encrypted API keys and connected-storage OAuth tokens are intentionally excluded for security.",
+      data: out,
+    }
+  },
+
+  // Irreversibly delete the caller's account and all associated data via the
+  // delete_my_account SECURITY DEFINER RPC (see supabase migration), then sign
+  // out. The RPC derives the user from auth.uid() — no id is passed from the
+  // client. Returns true on success.
+  deleteMyAccount: async () => {
+    try {
+      const { error } = await supabase.rpc("delete_my_account")
+      if (error) throw error
+      await supabase.auth.signOut()
+      return true
+    } catch(e) { logError("deleteMyAccount", e); return false }
+  },
+
   voiceMode: false,
   listening: false,
   voiceStatus: 'idle',

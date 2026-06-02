@@ -103,7 +103,10 @@ export default function AuthScreen() {
         </form>
 
         <p className="auth-fineprint">
-          By continuing you agree to the terms. Your AI keys stay in your account.
+          By continuing you agree to the{' '}
+          <a href="/terms.html" target="_blank" rel="noopener noreferrer">Terms</a> and{' '}
+          <a href="/privacy.html" target="_blank" rel="noopener noreferrer">Privacy Policy</a>.
+          Your AI keys stay in your account.
         </p>
       </div>
     </div>
