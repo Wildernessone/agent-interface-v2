@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useStore } from '../store/useStore'
 import { supabase } from '../utils/supabase'
+import { SkeletonList } from './Skeleton'
 
 const MEMORY_TYPES = [
   { id:"about",    label:"About Me",     hint:"Who you are, what you do, your role" },
@@ -143,7 +144,7 @@ export default function MemoryTab() {
 
       {saving && !adding && <div className="memory-status">Saving…</div>}
 
-      {loading && <div className="memory-status">Loading…</div>}
+      {loading && <SkeletonList rows={5} />}
 
       {!loading && memories.length === 0 && (
         <div className="memory-empty">

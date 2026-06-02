@@ -202,7 +202,7 @@ export default function SkillsTab({ onGoToStorage }) {
                 )}
               </div>
               {isAgent && (
-                <Toggle value={useSkills} onChange={() => toggleAgentSkills(key)} />
+                <Toggle value={useSkills} onChange={() => toggleAgentSkills(key)} label={`Use skills for ${AGENT_LABELS[key] || key}`} />
               )}
             </div>
             {useSkills && (
@@ -256,13 +256,15 @@ When analyzing tax questions, prefer concrete numbers...
   )
 }
 
-function Toggle({ value, onChange }) {
+function Toggle({ value, onChange, label }) {
   return (
     <button
+      type="button"
       className={`settings-toggle${value ? ' is-on' : ''}`}
       onClick={onChange}
       role="switch"
       aria-checked={value}
+      aria-label={label}
     >
       <span className="settings-toggle-thumb"/>
     </button>

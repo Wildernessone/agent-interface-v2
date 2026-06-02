@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useStore } from '../store/useStore'
+import { useModalDismiss } from '../utils/useModalDismiss'
 import { askHelp } from '../utils/openClaw'
 import { TOOL_REGISTRY } from '../tools/registry'
 import { AGENT_SETUP } from '../config/agentSetup'
@@ -66,6 +67,7 @@ const SUGGESTIONS = [
 ]
 
 export default function HelpDrawer({ open, onClose }) {
+  useModalDismiss(onClose, { active: open })
   const { settings } = useStore()
   const [messages, setMessages] = useState([]) // {role, content, providers?}
   const [input, setInput] = useState('')
@@ -106,7 +108,7 @@ export default function HelpDrawer({ open, onClose }) {
   return (
     <>
       <div className="help-overlay" onClick={onClose} />
-      <aside className="help-drawer" role="dialog" aria-label="Help">
+      <aside className="help-drawer" role="dialog" aria-modal="true" aria-label="Help">
         <header className="help-head">
           <div className="help-title">Need help?</div>
           <button className="help-close" onClick={onClose} aria-label="Close help">×</button>

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo, useCallback, memo } from 'react'
 import { useStore } from '../store/useStore'
 import { buildSystemPrompt } from '../utils/buildSystemPrompt'
 import { VoiceEngine } from '../utils/voiceEngine'
@@ -74,13 +74,19 @@ async function streamClaude(key, messages, onChunk, onDone, onError) {
     if (data.error) { onError?.(0, data.error?.message || "Claude error"); onDone(); return }
     const text = data.content?.[0]?.text || ""
     if (!text) { onError?.(0, "Empty response from Claude"); onDone(); return }
+    // Claude returns the full text at once; we reveal it progressively for a
+    // streaming feel. Emit a small batch of words per tick (not one) so a long
+    // answer triggers ~4x fewer store updates / re-renders while still reading
+    // as a live type-out.
     const words = text.split(" ")
     let i = 0
+    const BATCH = 4
     const iv = setInterval(() => {
       if (i >= words.length) { clearInterval(iv); onDone(); return }
-      onChunk((i === 0 ? "" : " ") + words[i])
-      i++
-    }, 40)
+      const chunk = words.slice(i, i + BATCH).join(" ")
+      onChunk((i === 0 ? "" : " ") + chunk)
+      i += BATCH
+    }, 50)
   } catch(e) { onError?.(0, e.message); onDone() }
 }
 
@@ -252,11 +258,14 @@ export default function TheInterface() {
   // frugal until the user signals otherwise (build it, "use the best", etc).
   const previousSpendModeRef = useRef(null)
 
-  const activeAgents = AGENTS.filter(a => settings.agents[a.id]?.enabled && settings.agents[a.id]?.key)
+  const activeAgents = useMemo(
+    () => AGENTS.filter(a => settings.agents[a.id]?.enabled && settings.agents[a.id]?.key),
+    [settings.agents]
+  )
   // A tool toggled "on" but missing its API key is effectively unusable — if we
   // hand it to the dispatcher it plans a step that fails at runtime (the Suno
   // problem). Require both the toggle AND a resolvable key before exposing it.
-  const enabledTools = Object.fromEntries(
+  const enabledTools = useMemo(() => Object.fromEntries(
     Object.entries(settings.tools || {}).filter(([id, v]) => {
       if (!v.enabled) return false
       const tool = TOOLS_BY_ID[id]
@@ -271,7 +280,7 @@ export default function TheInterface() {
       }
       return true  // tools with no keySource (OAuth-based) are always usable
     })
-  )
+  ), [settings.tools, settings.agents, settings.toolKeys])
   const busy = !!activeAgentId || toolsWorking
   const canSend = !busy && (input.trim() || listening)
 
@@ -655,6 +664,23 @@ export default function TheInterface() {
     setToolsWorking(false)
   }
 
+  // Stable callback identities for the memoized TurnRow rows. We keep the
+  // latest sendMessage/executeBuild in a ref so settled rows don't re-render on
+  // every streamed token just because these closures are recreated each render.
+  const fnRefs = useRef({})
+  // Update the ref after commit (not during render) so the stable callbacks
+  // below always invoke the current sendMessage/executeBuild closures.
+  useEffect(() => {
+    fnRefs.current.sendMessage = sendMessage
+    fnRefs.current.executeBuild = executeBuild
+  })
+  const onRetryLast = useCallback(() => {
+    const ts = useStore.getState().turns
+    fnRefs.current.sendMessage(ts.filter(t => t.type === "user").slice(-1)[0]?.text || "")
+  }, [])
+  const onExecuteBuild = useCallback((plan) => fnRefs.current.executeBuild(plan), [])
+  const onOpenSettings = useCallback(() => setShowSettings(true), [])
+
   const toggleTarget = (id) => {
     if (id === "all") { setTargets(["all"]); return }
     setTargets(prev => {
@@ -724,7 +750,7 @@ export default function TheInterface() {
           </IconButton>
           {turns.length > 0 && (
             <div style={{ position:"relative" }}>
-              <IconButton title="Export" onClick={() => setShowExport(!showExport)}>
+              <IconButton title="Export" expanded={showExport} onClick={() => setShowExport(!showExport)}>
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2.5V10.5M8 10.5L5 7.5M8 10.5L11 7.5M3 13H13" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
               </IconButton>
               {showExport && (
@@ -790,7 +816,124 @@ export default function TheInterface() {
           </div>
         )}
 
-        {turns.map(turn => {
+        {turns.map(turn => (
+          <TurnRow
+            key={turn.id}
+            turn={turn}
+            isActive={activeAgentId === turn.id}
+            busy={busy}
+            onRetryLast={onRetryLast}
+            onExecuteBuild={onExecuteBuild}
+            onOpenSettings={onOpenSettings}
+          />
+        ))}
+      </main>
+
+      <footer className="ai-composer">
+        <div className="ai-targets">
+          <span className="ai-targets-label">To</span>
+          <button
+            className={`ai-chip${targets.includes("all") ? " is-active" : ""}`}
+            onClick={() => toggleTarget("all")}
+          >All</button>
+          {activeAgents.map(ag => {
+            const sel = !targets.includes("all") && targets.includes(ag.id)
+            return (
+              <button
+                key={ag.id}
+                className={`ai-chip${sel ? " is-active" : ""}`}
+                onClick={() => toggleTarget(ag.id)}
+                style={sel ? { color: ag.color, borderColor: ag.color } : {}}
+              >{ag.name}</button>
+            )
+          })}
+          {turns.length > 0 && (
+            <button className="ai-chip ai-chip--clear" onClick={() => { clearTurns(); conversationRef.current = []; previousRolesRef.current = {}; previousSpendModeRef.current = null }}>Clear</button>
+          )}
+        </div>
+        {attachments.length > 0 && (
+          <div className="ai-attachments">
+            {attachments.map((a, i) => (
+              <span key={i} className={`ai-attachment ai-attachment--${a.kind}`}>
+                <span className="ai-attachment-icon">
+                  {a.kind === 'pdf' ? '📄' : a.kind === 'image' ? '🖼' : a.kind === 'audio' ? '🎙' : '📝'}
+                </span>
+                <span className="ai-attachment-name">{a.filename}</span>
+                <button className="ai-attachment-remove" onClick={() => removeAttachment(i)} aria-label="Remove">×</button>
+              </span>
+            ))}
+            {ingesting && <span className="ai-attachment ai-attachment--loading">Reading…</span>}
+          </div>
+        )}
+        <div className="ai-input-row">
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept="text/*,image/*,audio/*,application/pdf,.md,.csv,.json"
+            style={{ display: 'none' }}
+            onChange={e => handleFiles(e.target.files)}
+          />
+          <button
+            className="ai-iconbtn ai-iconbtn--lg"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={ingesting || busy}
+            aria-label="Attach file"
+            title="Attach file — PDF, image, audio, or text"
+          >
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+              <path d="M14.5 8L8.5 14C7.4 15.1 5.6 15.1 4.5 14C3.4 12.9 3.4 11.1 4.5 10L10.5 4C11.2 3.3 12.3 3.3 13 4C13.7 4.7 13.7 5.8 13 6.5L7.5 12C7.2 12.3 6.8 12.3 6.5 12C6.2 11.7 6.2 11.3 6.5 11L11 6.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </button>
+          <textarea
+            className="ai-input"
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => { if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMessage()} }}
+            placeholder={attachments.length > 0 ? `Ask about the ${attachments.length === 1 ? 'attached file' : 'attachments'}…` : (targets.includes("all")?"Message all agents…":activeAgents.filter(a=>targets.includes(a.id)).map(a=>a.name).join(" + ")+"…")}
+            rows={1}
+          />
+          {voiceMode && (
+            <button
+              className={`ai-iconbtn ai-iconbtn--lg${listening ? " is-listening" : ""}`}
+              onClick={toggleVoiceListening}
+              aria-label={listening ? "Stop listening" : "Start listening"}
+            >
+              {listening
+                ? <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="5" y="5" width="8" height="8" rx="1" fill="currentColor"/></svg>
+                : <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="6.5" y="2" width="5" height="8" rx="2.5" stroke="currentColor" strokeWidth="1.5"/><path d="M3.5 8.5C3.5 11.5 6 13.5 9 13.5C12 13.5 14.5 11.5 14.5 8.5M9 13.5V16M6 16H12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+              }
+            </button>
+          )}
+          <button
+            className="ai-iconbtn ai-iconbtn--lg ai-iconbtn--send"
+            onClick={() => sendMessage()}
+            disabled={(!input.trim() && attachments.length === 0) || busy || ingesting}
+            aria-label="Send"
+          >
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M9 14V4M9 4L5 8M9 4L13 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          </button>
+        </div>
+        <div className="ai-composer-hint">
+          Enter to send · {activeAgents.length} agent{activeAgents.length!==1?"s":""} live · say "build it" to trigger tools
+        </div>
+      </footer>
+
+      {showSettings && <Settings onClose={() => setShowSettings(false)} />}
+      <HelpDrawer open={showHelp} onClose={() => setShowHelp(false)} />
+      {showHistory && <HistorySidebar onClose={() => setShowHistory(false)} accent={accent} />}
+      <MemoryPanel
+        open={showMemory}
+        onClose={() => { setShowMemory(false); loadMemory().then(setAgentMemory) }}
+        turns={turns}
+        settings={settings}
+      />
+      {showPrompts && <PromptLibrary accent={accent} onClose={() => setShowPrompts(false)} onUse={(prompt, mode) => { setInput(prompt); if(mode) setResponseMode(mode); setShowPrompts(false); setTimeout(() => document.querySelector("textarea")?.focus(), 100) }}/>}
+    </div>
+  )
+}
+
+const TurnRow = memo(function TurnRow({ turn, isActive, busy, onRetryLast, onExecuteBuild, onOpenSettings }) {
           if (turn.type === "user") return (
             <div key={turn.id} className="ai-turn ai-turn--user">
               <div className="ai-user-bubble">{turn.text}</div>
@@ -902,7 +1045,7 @@ export default function TheInterface() {
                   <div className="ai-build-actions">
                     <button
                       className="ai-btn ai-btn--small"
-                      onClick={() => executeBuild(turn.plan)}
+                      onClick={() => onExecuteBuild(turn.plan)}
                       disabled={busy}
                       title="Re-run this exact build plan"
                     >
@@ -934,19 +1077,19 @@ export default function TheInterface() {
                   ? <div className="ai-avatar" style={{ color: agent.color, borderColor: agent.color }}>{agent.avatar}</div>
                   : <div className="ai-avatar ai-avatar--error">!</div>
                 }
-                <div className="ai-error">
+                <div className="ai-error" role="alert">
                   <div className="ai-error-title">{label} isn't responding</div>
                   <div className="ai-error-msg">{message}</div>
                   <div className="ai-actions">
-                    <button className="ai-btn ai-btn--primary" onClick={() => sendMessage(turns.filter(t=>t.type==="user").slice(-1)[0]?.text||"")}>Retry</button>
+                    <button className="ai-btn ai-btn--primary" onClick={onRetryLast}>Retry</button>
                     {turn.errorType === "out_of_credits" && agent && (
                       <a className="ai-btn" href={billingUrl} target="_blank" rel="noreferrer">Add credits</a>
                     )}
                     {turn.errorType === "invalid_key" && (
-                      <button className="ai-btn" onClick={() => setShowSettings(true)}>Fix key</button>
+                      <button className="ai-btn" onClick={onOpenSettings}>Fix key</button>
                     )}
                     {turn.errorType === "free_tier_limit" && (
-                      <button className="ai-btn ai-btn--primary" onClick={() => setShowSettings(true)}>Upgrade</button>
+                      <button className="ai-btn ai-btn--primary" onClick={onOpenSettings}>Upgrade</button>
                     )}
                   </div>
                 </div>
@@ -954,16 +1097,15 @@ export default function TheInterface() {
             )
           }
           if (turn.type === "tool_error") return (
-            <div key={turn.id} className="ai-tool-error">
+            <div key={turn.id} className="ai-tool-error" role="alert">
               <div className="ai-tool-error-title">{turn.tool} failed</div>
               <div className="ai-tool-error-msg">{turn.message}</div>
               {turn.errorType === "missing_key" && (
-                <button className="ai-btn" onClick={() => setShowSettings(true)}>Open settings</button>
+                <button className="ai-btn" onClick={onOpenSettings}>Open settings</button>
               )}
             </div>
           )
           const agent = AGENTS.find(a => a.id === turn.agent)
-          const isActive = activeAgentId === turn.id
           if (!agent) return null
           const roleDef = turn.role && ROLE_POOL[turn.role]
           return (
@@ -975,118 +1117,13 @@ export default function TheInterface() {
                   {roleDef && <span className="ai-agent-role" style={{ borderColor: agent.color, color: agent.color }}>{roleDef.name}</span>}
                   {turn.reRolled && <span className="ai-agent-rerolled" title="OpenClaw asked this agent to retry — first response was off-role">↻ re-rolled</span>}
                 </div>
-                <div className={`ai-agent-text${isActive ? " is-streaming" : ""}`}>
+                <div className={`ai-agent-text${isActive ? " is-streaming" : ""}`} aria-live={isActive ? "polite" : undefined}>
                   {turn.text || (isActive ? <span className="ai-typing">thinking…</span> : "")}
                 </div>
               </div>
             </div>
           )
-        })}
-      </main>
-
-      <footer className="ai-composer">
-        <div className="ai-targets">
-          <span className="ai-targets-label">To</span>
-          <button
-            className={`ai-chip${targets.includes("all") ? " is-active" : ""}`}
-            onClick={() => toggleTarget("all")}
-          >All</button>
-          {activeAgents.map(ag => {
-            const sel = !targets.includes("all") && targets.includes(ag.id)
-            return (
-              <button
-                key={ag.id}
-                className={`ai-chip${sel ? " is-active" : ""}`}
-                onClick={() => toggleTarget(ag.id)}
-                style={sel ? { color: ag.color, borderColor: ag.color } : {}}
-              >{ag.name}</button>
-            )
-          })}
-          {turns.length > 0 && (
-            <button className="ai-chip ai-chip--clear" onClick={() => { clearTurns(); conversationRef.current = []; previousRolesRef.current = {}; previousSpendModeRef.current = null }}>Clear</button>
-          )}
-        </div>
-        {attachments.length > 0 && (
-          <div className="ai-attachments">
-            {attachments.map((a, i) => (
-              <span key={i} className={`ai-attachment ai-attachment--${a.kind}`}>
-                <span className="ai-attachment-icon">
-                  {a.kind === 'pdf' ? '📄' : a.kind === 'image' ? '🖼' : a.kind === 'audio' ? '🎙' : '📝'}
-                </span>
-                <span className="ai-attachment-name">{a.filename}</span>
-                <button className="ai-attachment-remove" onClick={() => removeAttachment(i)} aria-label="Remove">×</button>
-              </span>
-            ))}
-            {ingesting && <span className="ai-attachment ai-attachment--loading">Reading…</span>}
-          </div>
-        )}
-        <div className="ai-input-row">
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            accept="text/*,image/*,audio/*,application/pdf,.md,.csv,.json"
-            style={{ display: 'none' }}
-            onChange={e => handleFiles(e.target.files)}
-          />
-          <button
-            className="ai-iconbtn ai-iconbtn--lg"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={ingesting || busy}
-            aria-label="Attach file"
-            title="Attach file — PDF, image, audio, or text"
-          >
-            <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-              <path d="M14.5 8L8.5 14C7.4 15.1 5.6 15.1 4.5 14C3.4 12.9 3.4 11.1 4.5 10L10.5 4C11.2 3.3 12.3 3.3 13 4C13.7 4.7 13.7 5.8 13 6.5L7.5 12C7.2 12.3 6.8 12.3 6.5 12C6.2 11.7 6.2 11.3 6.5 11L11 6.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-          </button>
-          <textarea
-            className="ai-input"
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={e => { if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMessage()} }}
-            placeholder={attachments.length > 0 ? `Ask about the ${attachments.length === 1 ? 'attached file' : 'attachments'}…` : (targets.includes("all")?"Message all agents…":activeAgents.filter(a=>targets.includes(a.id)).map(a=>a.name).join(" + ")+"…")}
-            rows={1}
-          />
-          {voiceMode && (
-            <button
-              className={`ai-iconbtn ai-iconbtn--lg${listening ? " is-listening" : ""}`}
-              onClick={toggleVoiceListening}
-              aria-label={listening ? "Stop listening" : "Start listening"}
-            >
-              {listening
-                ? <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="5" y="5" width="8" height="8" rx="1" fill="currentColor"/></svg>
-                : <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="6.5" y="2" width="5" height="8" rx="2.5" stroke="currentColor" strokeWidth="1.5"/><path d="M3.5 8.5C3.5 11.5 6 13.5 9 13.5C12 13.5 14.5 11.5 14.5 8.5M9 13.5V16M6 16H12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
-              }
-            </button>
-          )}
-          <button
-            className="ai-iconbtn ai-iconbtn--lg ai-iconbtn--send"
-            onClick={() => sendMessage()}
-            disabled={(!input.trim() && attachments.length === 0) || busy || ingesting}
-            aria-label="Send"
-          >
-            <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M9 14V4M9 4L5 8M9 4L13 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>
-          </button>
-        </div>
-        <div className="ai-composer-hint">
-          Enter to send · {activeAgents.length} agent{activeAgents.length!==1?"s":""} live · say "build it" to trigger tools
-        </div>
-      </footer>
-
-      {showSettings && <Settings onClose={() => setShowSettings(false)} />}
-      <HelpDrawer open={showHelp} onClose={() => setShowHelp(false)} />
-      {showHistory && <HistorySidebar onClose={() => setShowHistory(false)} accent={accent} />}
-      <MemoryPanel
-        open={showMemory}
-        onClose={() => { setShowMemory(false); loadMemory().then(setAgentMemory) }}
-        turns={turns}
-        settings={settings}
-      />
-      {showPrompts && <PromptLibrary accent={accent} onClose={() => setShowPrompts(false)} onUse={(prompt, mode) => { setInput(prompt); if(mode) setResponseMode(mode); setShowPrompts(false); setTimeout(() => document.querySelector("textarea")?.focus(), 100) }}/>}
-    </div>
-  )
-}
+})
 
 function Logo({ size = 32 }) {
   const points = [0, 72, 144, 216, 288]
@@ -1121,9 +1158,17 @@ function Logo({ size = 32 }) {
   )
 }
 
-function IconButton({ children, onClick, title, active }) {
+function IconButton({ children, onClick, title, active, expanded }) {
   return (
-    <button className={`ai-iconbtn${active ? " is-active" : ""}`} onClick={onClick} title={title} aria-label={title}>
+    <button
+      type="button"
+      className={`ai-iconbtn${active ? " is-active" : ""}`}
+      onClick={onClick}
+      title={title}
+      aria-label={title}
+      aria-haspopup={expanded !== undefined ? "menu" : undefined}
+      aria-expanded={expanded}
+    >
       {children}
     </button>
   )

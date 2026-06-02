@@ -190,7 +190,31 @@
 .ai-empty p {
   margin: 0 0 var(--space-7);
   font-size: var(--font-size-sm);
-  color: var(--color-text-tertiary);
+  color: var(--color-text-secondary);
+}
+
+/* Loading skeletons (History / Prompts / Memory list fetches) */
+.skeleton-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+}
+.skeleton-row {
+  height: 52px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(
+    90deg,
+    var(--color-bg-tertiary) 25%,
+    var(--color-bg-secondary) 37%,
+    var(--color-bg-tertiary) 63%
+  );
+  background-size: 400% 100%;
+  animation: skeleton-shimmer 1.4s ease infinite;
+}
+@keyframes skeleton-shimmer {
+  from { background-position: 100% 0; }
+  to   { background-position: 0 0; }
 }
 .ai-suggestions {
   display: flex;
@@ -466,7 +490,7 @@
   background: rgba(0, 0, 0, 0.45);
   z-index: 200;
   backdrop-filter: blur(4px);
-  animation: mem-fade var(--duration-base) var(--easing-default);
+  animation: mem-fade var(--duration-normal) var(--easing-default);
 }
 
 .mem-panel {
@@ -483,8 +507,8 @@
   overflow-y: auto;
   padding: var(--space-6);
   gap: var(--space-5);
-  animation: mem-slide var(--duration-base) var(--easing-default);
-  box-shadow: var(--shadow-xl, -20px 0 40px rgba(0, 0, 0, 0.4));
+  animation: mem-slide var(--duration-normal) var(--easing-default);
+  box-shadow: var(--shadow-lg);
 }
 
 @keyframes mem-fade {
@@ -658,7 +682,7 @@
 }
 .mem-source--learned { color: var(--color-accent); }
 
-.mem-danger:hover { color: #ef4444 !important; }
+.mem-danger:hover { color: var(--color-status-error) !important; }
 
 /* ────────── OpenClaw decision badge ────────── */
 
@@ -725,13 +749,29 @@
   background: rgba(107, 63, 184, 0.10);
   border-color: rgba(107, 63, 184, 0.25);
 }
+/* Dark badge colors: driven by the in-app theme (data-theme); the OS
+   media query is only a fallback for users who haven't picked a theme. */
+[data-theme="dark"] .ai-claw-spend--frugal,
+[data-theme="midnight"] .ai-claw-spend--frugal,
+[data-theme="slate"] .ai-claw-spend--frugal {
+  color: #5fcf95;
+  background: rgba(95, 207, 149, 0.12);
+  border-color: rgba(95, 207, 149, 0.30);
+}
+[data-theme="dark"] .ai-claw-spend--premium,
+[data-theme="midnight"] .ai-claw-spend--premium,
+[data-theme="slate"] .ai-claw-spend--premium {
+  color: #b794f4;
+  background: rgba(183, 148, 244, 0.12);
+  border-color: rgba(183, 148, 244, 0.30);
+}
 @media (prefers-color-scheme: dark) {
-  .ai-claw-spend--frugal {
+  :root:not([data-theme]) .ai-claw-spend--frugal {
     color: #5fcf95;
     background: rgba(95, 207, 149, 0.12);
     border-color: rgba(95, 207, 149, 0.30);
   }
-  .ai-claw-spend--premium {
+  :root:not([data-theme]) .ai-claw-spend--premium {
     color: #b794f4;
     background: rgba(183, 148, 244, 0.12);
     border-color: rgba(183, 148, 244, 0.30);
@@ -1118,7 +1158,7 @@
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-medium);
   cursor: pointer;
-  transition: all var(--duration-fast) var(--easing-default);
+  transition: background-color var(--duration-fast) var(--easing-default), border-color var(--duration-fast) var(--easing-default), color var(--duration-fast) var(--easing-default), box-shadow var(--duration-fast) var(--easing-default), transform var(--duration-fast) var(--easing-default), opacity var(--duration-fast) var(--easing-default);
 }
 .ai-chip:hover { color: var(--color-text-primary); border-color: var(--color-text-secondary); }
 .ai-chip.is-active {
