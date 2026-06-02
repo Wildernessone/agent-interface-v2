@@ -792,3 +792,21 @@
   font-size: var(--font-size-xs);
   color: var(--color-text-tertiary);
 }
+
+/* Connection health-check (Agents tab) */
+.settings-conn-test {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-4);
+}
+.conn-result {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  font-family: var(--font-family-mono);
+  white-space: nowrap;
+}
+.conn-result--ok { color: var(--color-status-success); }
+.conn-result--bad { color: var(--color-status-error); }
+.conn-result--testing { color: var(--color-text-tertiary); }

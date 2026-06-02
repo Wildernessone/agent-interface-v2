@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useMemo, useCallback, memo } from 'react'
 import { useStore } from '../store/useStore'
+import { modelsToTry, isModelError } from '../config/models'
 import { buildSystemPrompt } from '../utils/buildSystemPrompt'
 import { VoiceEngine } from '../utils/voiceEngine'
 import Settings from './Settings'
@@ -54,6 +55,10 @@ async function authHeader() {
 }
 
 function classifyError(status, text) {
+  // Model retired/renamed/no-access — distinct from a bad key so the user gets
+  // an actionable message instead of "unexpected error". Checked before the
+  // generic 401/403 branch since some providers return 403 for missing access.
+  if (isModelError(status, text)) return "model_unavailable"
   if (status === 401 || status === 403) return "invalid_key"
   if (status === 429) return "rate_limited"
   if (status === 402) return "out_of_credits"
@@ -62,14 +67,34 @@ function classifyError(status, text) {
   return "unknown"
 }
 
+// POST to a proxy provider route, trying each model in turn. The client owns
+// the model id (see src/config/models.js); the worker honors body.model. If a
+// model is retired/renamed (model-not-found), we fall back to the next id
+// BEFORE any streaming starts — model errors surface on the initial response,
+// so retrying here is safe. Returns the first ok Response (body unconsumed),
+// or { res, text } for the last failure.
+async function postWithModelFallback(route, provider, buildBody, headers) {
+  const models = modelsToTry(provider)
+  const ids = models.length ? models : [undefined]  // fall back to worker default
+  let res = null, text = ''
+  for (let i = 0; i < ids.length; i++) {
+    res = await fetch(`${PROXY}/${route}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...headers, ...(await authHeader()) },
+      body: JSON.stringify(buildBody(ids[i])),
+    })
+    if (res.ok) return { res, text: '' }
+    text = await res.text().catch(() => '')
+    // Only keep trying on a model-not-found; bail on auth/rate/server errors.
+    if (!isModelError(res.status, text) || i === ids.length - 1) break
+  }
+  return { res, text }
+}
+
 async function streamClaude(key, messages, onChunk, onDone, onError) {
   try {
-    const res = await fetch(`${PROXY}/claude`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-api-key": key, ...(await authHeader()) },
-      body: JSON.stringify({ messages }),
-    })
-    if (!res.ok) { const t = await res.text(); onError?.(res.status, t); onDone(); return }
+    const { res, text: errText } = await postWithModelFallback('claude', 'claude', (model) => ({ messages, model }), { "x-api-key": key })
+    if (!res.ok) { onError?.(res.status, errText); onDone(); return }
     const data = await res.json()
     if (data.error) { onError?.(0, data.error?.message || "Claude error"); onDone(); return }
     const text = data.content?.[0]?.text || ""
@@ -92,12 +117,8 @@ async function streamClaude(key, messages, onChunk, onDone, onError) {
 
 async function streamOpenAI(key, messages, onChunk, onDone, onError) {
   try {
-    const res = await fetch(`${PROXY}/gpt`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${key}`, ...(await authHeader()) },
-      body: JSON.stringify({ messages }),
-    })
-    if (!res.ok) { const t = await res.text(); onError?.(res.status, t); onDone(); return }
+    const { res, text: errText } = await postWithModelFallback('gpt', 'gpt', (model) => ({ messages, model }), { "Authorization": `Bearer ${key}` })
+    if (!res.ok) { onError?.(res.status, errText); onDone(); return }
     const reader = res.body.getReader()
     const dec = new TextDecoder()
     let buf = ""
@@ -121,12 +142,8 @@ async function streamGemini(key, messages, onChunk, onDone, onError) {
     const contents = messages
       .filter(m => m.role !== "system")
       .map(m => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }))
-    const res = await fetch(`${PROXY}/gemini`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-api-key": key, ...(await authHeader()) },
-      body: JSON.stringify({ contents }),
-    })
-    if (!res.ok) { const t = await res.text(); onError?.(res.status, t); onDone(); return }
+    const { res, text: errText } = await postWithModelFallback('gemini', 'gemini', (model) => ({ contents, model }), { "x-api-key": key })
+    if (!res.ok) { onError?.(res.status, errText); onDone(); return }
     const reader = res.body.getReader()
     const dec = new TextDecoder()
     let buf = ""
@@ -151,12 +168,8 @@ async function streamGemini(key, messages, onChunk, onDone, onError) {
 
 async function streamGrok(key, messages, onChunk, onDone, onError) {
   try {
-    const res = await fetch(`${PROXY}/grok`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${key}`, ...(await authHeader()) },
-      body: JSON.stringify({ messages }),
-    })
-    if (!res.ok) { const t = await res.text(); onError?.(res.status, t); onDone(); return }
+    const { res, text: errText } = await postWithModelFallback('grok', 'grok', (model) => ({ messages, model }), { "Authorization": `Bearer ${key}` })
+    if (!res.ok) { onError?.(res.status, errText); onDone(); return }
     const reader = res.body.getReader()
     const dec = new TextDecoder()
     let buf = ""
@@ -1064,6 +1077,7 @@ const TurnRow = memo(function TurnRow({ turn, isActive, busy, onRetryLast, onExe
               turn.errorType === "rate_limited" ? `${label} hit its rate limit. Wait a moment and retry.` :
               turn.errorType === "out_of_credits" ? `Your ${label} account is out of credits.` :
               turn.errorType === "invalid_key" ? `Your ${label} API key isn't working — it may have expired.` :
+              turn.errorType === "model_unavailable" ? `${label}'s model is unavailable — it may have been retired or your account doesn't have access. Try another agent, or update the model in src/config/models.js.` :
               turn.errorType === "service_down" ? `${label} is having a service issue. Try again in a moment.` :
               turn.errorType === "network" ? `Couldn't reach ${label}. Check your connection and retry.` :
               turn.errorType === "orchestrator_down" ? `OpenClaw couldn't process this message. Retry, or verify your agent keys.` :
