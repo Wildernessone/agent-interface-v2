@@ -25,3 +25,8 @@ dist-ssr
 
 # Local env (secrets)
 .env
+
+# Local Claude Code agent state / installed skills — not part of the app
+.claude/skills/
+__pycache__/
+*.pyc
