@@ -190,7 +190,31 @@
 .ai-empty p {
   margin: 0 0 var(--space-7);
   font-size: var(--font-size-sm);
-  color: var(--color-text-tertiary);
+  color: var(--color-text-secondary);
+}
+
+/* Loading skeletons (History / Prompts / Memory list fetches) */
+.skeleton-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+}
+.skeleton-row {
+  height: 52px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(
+    90deg,
+    var(--color-bg-tertiary) 25%,
+    var(--color-bg-secondary) 37%,
+    var(--color-bg-tertiary) 63%
+  );
+  background-size: 400% 100%;
+  animation: skeleton-shimmer 1.4s ease infinite;
+}
+@keyframes skeleton-shimmer {
+  from { background-position: 100% 0; }
+  to   { background-position: 0 0; }
 }
 .ai-suggestions {
   display: flex;

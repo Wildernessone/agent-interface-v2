@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../utils/supabase'
 import { useStore } from '../store/useStore'
 import { useModalDismiss } from '../utils/useModalDismiss'
+import { SkeletonList } from './Skeleton'
 
 const BUILT_IN_TEMPLATES = [
   { id:"brainstorm",   name:"Brainstorm Session", category:"Creative",  prompt:"I want to brainstorm [TOPIC]. Give me diverse perspectives, challenge assumptions, and build on each other's ideas.", mode:"balanced" },
@@ -115,7 +116,7 @@ export default function PromptLibrary({ onUse, onClose }) {
         </div>
 
         <div className="sidebar-body">
-          {loading && <div className="sidebar-status">Loading…</div>}
+          {loading && <SkeletonList rows={6} />}
 
           {tab === "saved" && !loading && filtered.length === 0 && (
             <div className="sidebar-empty">

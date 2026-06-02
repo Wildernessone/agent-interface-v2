@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useStore } from '../store/useStore'
 import { useModalDismiss } from '../utils/useModalDismiss'
+import { SkeletonList } from './Skeleton'
 
 export default function HistorySidebar({ onClose }) {
   useModalDismiss(onClose)
@@ -70,7 +71,7 @@ export default function HistorySidebar({ onClose }) {
         </div>
 
         <div className="sidebar-body">
-          {loading && <div className="sidebar-status">Loading…</div>}
+          {loading && <SkeletonList rows={6} />}
 
           {!loading && conversations.length === 0 && (
             <div className="sidebar-empty">
