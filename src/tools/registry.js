@@ -68,18 +68,23 @@ export function readKey(settings, keySource) {
 
 // ── Image generation ──────────────────────────────────────────────
 
-// Valid DALL-E (gpt-image-1) sizes. Friendly aliases let the dispatcher
-// say "square" / "wide" / "tall" / "social" without remembering pixels.
+// Valid DALL-E 3 sizes. Friendly aliases let the dispatcher say "square" /
+// "wide" / "tall" / "social" without remembering pixels. (The /dalle worker
+// route now defaults to dall-e-3, which uses 1792x1024 / 1024x1792 for
+// landscape/portrait — not gpt-image-1's 1536-wide sizes. Legacy 1536 sizes
+// still resolve here and the worker remaps them, so older callers don't break.)
 const DALLE_SIZES = {
   square:    '1024x1024',
-  wide:      '1536x1024',  // landscape — slide covers, banners
-  tall:      '1024x1536',  // portrait — phone wallpapers, IG stories
+  wide:      '1792x1024',  // landscape — slide covers, banners
+  tall:      '1024x1792',  // portrait — phone wallpapers, IG stories
   social:    '1024x1024',  // IG post
-  story:     '1024x1536',
-  banner:    '1536x1024',
+  story:     '1024x1792',
+  banner:    '1792x1024',
   '1024x1024': '1024x1024',
-  '1536x1024': '1536x1024',
-  '1024x1536': '1024x1536',
+  '1792x1024': '1792x1024',
+  '1024x1792': '1024x1792',
+  '1536x1024': '1792x1024', // legacy gpt-image-1 wide → dall-e-3 wide
+  '1024x1536': '1024x1792', // legacy gpt-image-1 tall → dall-e-3 tall
 }
 function normalizeDalleSize(size) {
   if (!size) return '1024x1024'
@@ -91,13 +96,14 @@ const dalle = {
   name: 'DALL-E 3',
   category: 'image',
   capability: 'generate images from text prompts (sizes: square, wide, tall — for slide covers, banners, social posts)',
-  desc: 'OpenAI image generation (uses your OpenAI key). Sizes: square (1:1), wide (3:2), tall (2:3).',
+  desc: 'OpenAI image generation via dall-e-3 (uses your OpenAI key). Sizes: square (1:1), wide (landscape), tall (portrait).',
   keySource: 'agent.gpt',
   status: 'live',
   async run({ prompt, structuredInput, key, proxy }) {
     if (!key) throw new ToolError('dalle', 'missing_key', 'DALL-E uses your OpenAI key — add it in Settings → Agents → ChatGPT.')
     // Size can come from structuredInput or be inferred from a prompt keyword.
-    // Quality: 'high' (default), 'medium', 'low' — passed through to gpt-image-1.
+    // Quality: 'high' (default), 'medium', 'low'. The worker maps these to
+    // dall-e-3's 'hd'/'standard' (high→hd, else standard).
     const cfg = (typeof structuredInput === 'object' && structuredInput) || {}
     const size = normalizeDalleSize(cfg.size || cfg.aspect_ratio)
     const quality = ['high', 'medium', 'low'].includes(cfg.quality) ? cfg.quality : 'high'
@@ -1617,8 +1623,9 @@ const imagePerSlide = {
       try {
         const res = await proxy('dalle', { prompt: promptText, size, quality: 'high' }, { Authorization: `Bearer ${key}` })
         if (!res.ok) {
-          // Surface OpenAI's real message (e.g. org-verification required for
-          // gpt-image-1, invalid key, rate limit) instead of a bare status.
+          // Surface OpenAI's real message (invalid key, rate limit, content
+          // policy) instead of a bare status. The /dalle route now uses
+          // dall-e-3, so the gpt-image-1 org-verification 403 should be gone.
           const body = await res.text().catch(() => '')
           let msg = ''
           try { msg = JSON.parse(body)?.error?.message || '' } catch { msg = body }
