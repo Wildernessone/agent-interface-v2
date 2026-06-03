@@ -7,6 +7,7 @@
 
 import { supabase } from './supabase'
 import { pricingTableFor, sortByCost, pricingFor } from './agentPricing'
+import { makeIdleTimeout, isAbort } from './fetchTimeout'
 
 const PROXY = import.meta.env.VITE_PROXY_URL || "https://claude-proxy.jamesreed.workers.dev"
 
@@ -73,6 +74,10 @@ async function callOpenClaw(prompt, modelConfig) {
     "Your only job is to return ONE JSON object that follows the schema exactly. " +
     "Begin your response with `{` and end with `}`. No prose. No markdown. No code fences."
 
+  // Guard the orchestrate call against a hung proxy — a stall here blocks the
+  // ENTIRE turn (no agents respond until this returns). Idle timeout aborts a
+  // dead socket instead of spinning forever.
+  const t = makeIdleTimeout()
   try {
     let raw = ""
     if (modelConfig.provider === "claude") {
@@ -80,29 +85,34 @@ async function callOpenClaw(prompt, modelConfig) {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-api-key": modelConfig.key, ...(await authHeader()) },
         body: JSON.stringify({ messages: [{ role: "user", content: `${system}\n\n${prompt}` }], max_tokens: 2048 }),
+        signal: t.signal,
       })
       const data = await res.json()
-      if (!res.ok || data.error) return { decision: null, raw: data, error: `claude_${res.status}` }
+      if (!res.ok || data.error) { t.clear(); return { decision: null, raw: data, error: `claude_${res.status}` } }
       raw = data.content?.[0]?.text || ""
     } else if (modelConfig.provider === "gpt") {
       const res = await fetch(`${PROXY}/gpt`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${modelConfig.key}`, ...(await authHeader()) },
         body: JSON.stringify({ messages: [{ role: "user", content: `${system}\n\n${prompt}` }] }),
+        signal: t.signal,
       })
-      raw = await streamToText(res, "gpt")
+      raw = await streamToText(res, "gpt", t)
     } else if (modelConfig.provider === "gemini") {
       const res = await fetch(`${PROXY}/gemini`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-api-key": modelConfig.key, ...(await authHeader()) },
         body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: `${system}\n\n${prompt}` }] }] }),
+        signal: t.signal,
       })
-      raw = await streamToText(res, "gemini")
+      raw = await streamToText(res, "gemini", t)
     }
+    t.clear()
     const decision = extractJson(raw)
     return { decision, raw, error: decision ? null : "parse_failed" }
   } catch (e) {
-    return { decision: null, raw: null, error: e.message }
+    t.clear()
+    return { decision: null, raw: null, error: isAbort(e) ? "timeout" : e.message }
   }
 }
 
@@ -162,13 +172,14 @@ export async function askHelp({ question, history = [], knowledge = "", settings
   }
 }
 
-async function streamToText(res, kind) {
+async function streamToText(res, kind, timeout) {
   const reader = res.body.getReader()
   const dec = new TextDecoder()
   let buf = "", full = ""
   while (true) {
     const { done, value } = await reader.read()
     if (done) break
+    timeout?.bump()  // bytes arrived — reset the idle window
     buf += dec.decode(value, { stream: true })
     const lines = buf.split("\n"); buf = lines.pop()
     for (const l of lines) {
@@ -638,6 +649,9 @@ AUDIT TEST FOR THIS ROLE: ${audit}
 
 Return EXACTLY this JSON: {"passed": true|false, "reason": "<one short sentence>"}`
 
+  // Same hang guard as the orchestrate call — the audit runs inline on a turn,
+  // so a stalled socket would block the agent's response from finalizing.
+  const t = makeIdleTimeout()
   try {
     let raw = ""
     if (modelConfig.provider === "claude") {
@@ -645,9 +659,11 @@ Return EXACTLY this JSON: {"passed": true|false, "reason": "<one short sentence>
         method: "POST",
         headers: { "Content-Type": "application/json", "x-api-key": modelConfig.key, ...(await authHeader()) },
         body: JSON.stringify({ messages: [{ role: "user", content: prompt }] }),
+        signal: t.signal,
       })
       const data = await res.json()
       if (!res.ok || data.error) {
+        t.clear()
         console.warn("[OpenClaw audit] claude audit call failed — failing open", res.status, data?.error)
         return { passed: true, reason: `audit_error_claude_${res.status}`, audited: false }
       }
@@ -657,16 +673,19 @@ Return EXACTLY this JSON: {"passed": true|false, "reason": "<one short sentence>
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${modelConfig.key}`, ...(await authHeader()) },
         body: JSON.stringify({ messages: [{ role: "user", content: prompt }] }),
+        signal: t.signal,
       })
-      raw = await streamToText(res, "gpt")
+      raw = await streamToText(res, "gpt", t)
     } else if (modelConfig.provider === "gemini") {
       const res = await fetch(`${PROXY}/gemini`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-api-key": modelConfig.key, ...(await authHeader()) },
         body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: prompt }] }] }),
+        signal: t.signal,
       })
-      raw = await streamToText(res, "gemini")
+      raw = await streamToText(res, "gemini", t)
     }
+    t.clear()
     const parsed = extractJson(raw)
     if (parsed && typeof parsed.passed === "boolean") {
       return { passed: parsed.passed, reason: parsed.reason || "", audited: true }
@@ -674,8 +693,9 @@ Return EXACTLY this JSON: {"passed": true|false, "reason": "<one short sentence>
     console.warn("[OpenClaw audit] could not parse audit verdict — failing open", raw?.slice(0, 200))
     return { passed: true, reason: "audit_parse_failed", audited: false }
   } catch (e) {
-    console.warn("[OpenClaw audit] audit threw — failing open", e?.message)
-    return { passed: true, reason: "audit_exception", audited: false }
+    t.clear()
+    console.warn("[OpenClaw audit] audit threw — failing open", isAbort(e) ? "timeout" : e?.message)
+    return { passed: true, reason: isAbort(e) ? "audit_timeout" : "audit_exception", audited: false }
   }
 }
 

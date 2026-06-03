@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useMemo, useCallback, memo } from 'react'
 import { useStore } from '../store/useStore'
 import { modelsToTry, isModelError } from '../config/models'
+import { makeIdleTimeout, isAbort } from '../utils/fetchTimeout'
 import { buildSystemPrompt } from '../utils/buildSystemPrompt'
 import { VoiceEngine } from '../utils/voiceEngine'
 import Settings from './Settings'
@@ -95,16 +96,18 @@ function buildErrorDetail(status, msg, model) {
 // BEFORE any streaming starts — model errors surface on the initial response,
 // so retrying here is safe. Returns the first ok Response (body unconsumed),
 // or { res, text } for the last failure.
-async function postWithModelFallback(route, provider, buildBody, headers) {
+async function postWithModelFallback(route, provider, buildBody, headers, timeout) {
   const models = modelsToTry(provider)
   const ids = models.length ? models : [undefined]  // fall back to worker default
   let res = null, text = '', model
   for (let i = 0; i < ids.length; i++) {
     model = ids[i]
+    timeout?.bump()  // reset the idle window for each attempt
     res = await fetch(`${PROXY}/${route}`, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...headers, ...(await authHeader()) },
       body: JSON.stringify(buildBody(model)),
+      signal: timeout?.signal,
     })
     if (res.ok) return { res, text: '', model }
     text = await res.text().catch(() => '')
@@ -117,10 +120,12 @@ async function postWithModelFallback(route, provider, buildBody, headers) {
 }
 
 async function streamClaude(key, messages, onChunk, onDone, onError) {
+  const t = makeIdleTimeout()
   try {
-    const { res, text: errText, model } = await postWithModelFallback('claude', 'claude', (model) => ({ messages, model }), { "x-api-key": key })
-    if (!res.ok) { onError?.(res.status, errText, model); onDone(); return }
+    const { res, text: errText, model } = await postWithModelFallback('claude', 'claude', (model) => ({ messages, model }), { "x-api-key": key }, t)
+    if (!res.ok) { t.clear(); onError?.(res.status, errText, model); onDone(); return }
     const data = await res.json()
+    t.clear()
     if (data.error) { onError?.(0, data.error?.message || "Claude error"); onDone(); return }
     const text = data.content?.[0]?.text || ""
     if (!text) { onError?.(0, "Empty response from Claude"); onDone(); return }
@@ -137,19 +142,21 @@ async function streamClaude(key, messages, onChunk, onDone, onError) {
       onChunk((i === 0 ? "" : " ") + chunk)
       i += BATCH
     }, 50)
-  } catch(e) { onError?.(0, e.message); onDone() }
+  } catch(e) { t.clear(); onError?.(0, isAbort(e) ? 'timed out — no response for 90s' : e.message); onDone() }
 }
 
 async function streamOpenAI(key, messages, onChunk, onDone, onError) {
+  const t = makeIdleTimeout()
   try {
-    const { res, text: errText, model } = await postWithModelFallback('gpt', 'gpt', (model) => ({ messages, model }), { "Authorization": `Bearer ${key}` })
-    if (!res.ok) { onError?.(res.status, errText, model); onDone(); return }
+    const { res, text: errText, model } = await postWithModelFallback('gpt', 'gpt', (model) => ({ messages, model }), { "Authorization": `Bearer ${key}` }, t)
+    if (!res.ok) { t.clear(); onError?.(res.status, errText, model); onDone(); return }
     const reader = res.body.getReader()
     const dec = new TextDecoder()
     let buf = ""
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
+      t.bump()
       buf += dec.decode(value, { stream: true })
       const lines = buf.split("\n")
       buf = lines.pop()
@@ -158,23 +165,26 @@ async function streamOpenAI(key, messages, onChunk, onDone, onError) {
         try { const d = JSON.parse(l.slice(6)); const c = d.choices?.[0]?.delta?.content; if (c) onChunk(c) } catch {}
       }
     }
+    t.clear()
     onDone()
-  } catch(e) { onError?.(0, e.message); onDone() }
+  } catch(e) { t.clear(); onError?.(0, isAbort(e) ? 'timed out — stream stalled for 90s' : e.message); onDone() }
 }
 
 async function streamGemini(key, messages, onChunk, onDone, onError) {
+  const t = makeIdleTimeout()
   try {
     const contents = messages
       .filter(m => m.role !== "system")
       .map(m => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }))
-    const { res, text: errText, model } = await postWithModelFallback('gemini', 'gemini', (model) => ({ contents, model }), { "x-api-key": key })
-    if (!res.ok) { onError?.(res.status, errText, model); onDone(); return }
+    const { res, text: errText, model } = await postWithModelFallback('gemini', 'gemini', (model) => ({ contents, model }), { "x-api-key": key }, t)
+    if (!res.ok) { t.clear(); onError?.(res.status, errText, model); onDone(); return }
     const reader = res.body.getReader()
     const dec = new TextDecoder()
     let buf = ""
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
+      t.bump()
       buf += dec.decode(value, { stream: true })
       const lines = buf.split("\n")
       buf = lines.pop()
@@ -182,25 +192,28 @@ async function streamGemini(key, messages, onChunk, onDone, onError) {
         if (!l.startsWith("data: ")) continue
         try {
           const d = JSON.parse(l.slice(6))
-          const t = d.candidates?.[0]?.content?.parts?.[0]?.text
-          if (t) onChunk(t)
+          const txt = d.candidates?.[0]?.content?.parts?.[0]?.text
+          if (txt) onChunk(txt)
         } catch {}
       }
     }
+    t.clear()
     onDone()
-  } catch(e) { onError?.(0, e.message); onDone() }
+  } catch(e) { t.clear(); onError?.(0, isAbort(e) ? 'timed out — stream stalled for 90s' : e.message); onDone() }
 }
 
 async function streamGrok(key, messages, onChunk, onDone, onError) {
+  const t = makeIdleTimeout()
   try {
-    const { res, text: errText, model } = await postWithModelFallback('grok', 'grok', (model) => ({ messages, model }), { "Authorization": `Bearer ${key}` })
-    if (!res.ok) { onError?.(res.status, errText, model); onDone(); return }
+    const { res, text: errText, model } = await postWithModelFallback('grok', 'grok', (model) => ({ messages, model }), { "Authorization": `Bearer ${key}` }, t)
+    if (!res.ok) { t.clear(); onError?.(res.status, errText, model); onDone(); return }
     const reader = res.body.getReader()
     const dec = new TextDecoder()
     let buf = ""
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
+      t.bump()
       buf += dec.decode(value, { stream: true })
       const lines = buf.split("\n")
       buf = lines.pop()
@@ -209,8 +222,9 @@ async function streamGrok(key, messages, onChunk, onDone, onError) {
         try { const d = JSON.parse(l.slice(6)); const c = d.choices?.[0]?.delta?.content; if (c) onChunk(c) } catch {}
       }
     }
+    t.clear()
     onDone()
-  } catch(e) { onError?.(0, e.message); onDone() }
+  } catch(e) { t.clear(); onError?.(0, isAbort(e) ? 'timed out — stream stalled for 90s' : e.message); onDone() }
 }
 
 // Short human "when" for project-context previews: "today" / "3d ago" / "May 12".
