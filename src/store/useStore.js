@@ -349,8 +349,13 @@ export const useStore = create((set, get) => ({
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return null
+      // Stamp the active project so this memory stays scoped to it and doesn't
+      // contaminate other projects' prompts. No active project → null = global
+      // (a genuine user-level fact that applies everywhere). Callers that want
+      // an explicitly global save can clear the active project first.
+      const project_id = useStore.getState().activeProject?.id || null
       const { data } = await supabase.from("agent_memory").insert({
-        user_id: user.id, title, content, source,
+        user_id: user.id, title, content, source, project_id,
         created_at: new Date().toISOString()
       }).select().single()
       return data

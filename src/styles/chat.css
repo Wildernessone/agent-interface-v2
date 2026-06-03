@@ -1148,6 +1148,32 @@
   word-break: break-word;
 }
 
+/* Orchestrator notice — informational (not an error). Used by the brand-context
+   gate to ask for a brief. Accent border instead of error red. */
+.ai-avatar--claw {
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+}
+.ai-notice {
+  flex: 1;
+  padding: var(--space-4) var(--space-5);
+  background: var(--color-accent-soft);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-md);
+}
+.ai-notice-title {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-accent);
+  margin-bottom: var(--space-2);
+}
+.ai-notice-msg {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  line-height: var(--line-height-normal);
+  margin-bottom: var(--space-4);
+}
+
 .ai-tool-error {
   padding: var(--space-4) var(--space-5);
   background: var(--color-bg-secondary);

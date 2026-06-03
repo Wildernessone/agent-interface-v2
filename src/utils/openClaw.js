@@ -9,6 +9,7 @@ import { supabase } from './supabase'
 import { pricingTableFor, sortByCost, pricingFor } from './agentPricing'
 import { makeIdleTimeout, isAbort } from './fetchTimeout'
 import { TOOLS_BY_ID, readKey } from '../tools/registry'
+import { brandBriefFrom, buildRequiresBrandContext, brandContextBlockMessage } from './brandContext'
 
 const PROXY = import.meta.env.VITE_PROXY_URL || "https://claude-proxy.jamesreed.workers.dev"
 
@@ -247,7 +248,7 @@ ${pricingBlock}
 ${enabledAgents.length > 1 ? `Cheapest: ${cheapest}.  Most expensive: ${mostExpensive}.` : ''}
 
 TOOLS AVAILABLE: ${toolList || "none"}
-ACTIVE PROJECT: ${activeProject?.name || "none"}${activeProject?.description ? ` — ${activeProject.description}` : ""}
+ACTIVE PROJECT: ${activeProject?.name || "none"}${activeProject?.description ? ` — ${activeProject.description}` : (activeProject ? " — (NO brand brief on file — you do NOT know what this product is; do not invent it)" : "")}
 
 USER MEMORY:
 ${memorySummary || "none"}
@@ -317,6 +318,28 @@ ROLE ASSIGNMENT RULES
   table above as a guide — these are tendencies, not rules).
 - PRIOR ROUTING OUTCOMES are a TIEBREAKER, not an override. Sample sizes
   under 5 are noise.
+
+BRAND CONTEXT & HONESTY (this overrides eagerness to build)
+===========================================================
+- NEVER invent what a product/brand IS. If the ACTIVE PROJECT has no brand
+  brief and the user hasn't described the product, you do NOT know what it is.
+  A name alone ("Timberline Deal Tracker") tells you NOTHING about the market,
+  audience, or voice — do not guess it's real estate, SaaS, or anything else.
+- NEVER reference "prior context", "earlier sessions", "what we brainstormed",
+  or past discussions that aren't actually present. PRIOR AGENT DISCUSSION above
+  is the ONLY prior context you have. If it says "none" and no project brief is
+  shown, your "reasoning" MUST NOT claim any prior context — say plainly
+  "no prior context for this project".
+- requires_brand_context: set true when the build's OUTPUT must align to a
+  specific brand/product identity, voice, or positioning — ads, promos, sales
+  decks, pitch decks, landing pages, newsletters, social posts (IG/X/TikTok),
+  podcast/video scripts, taglines, marketing copy. Set false for neutral
+  artifacts: a spreadsheet of data, a code project, a generic how-to doc, a
+  research summary. When in doubt for anything marketing-shaped, set true.
+- brand_brief_in_message: set true ONLY when the user's CURRENT message itself
+  supplies real product context — what it is, who it's for, and/or its voice.
+  A long message about HOW to market (channels, tactics, tone instructions) is
+  NOT a brief if it never says WHAT the product actually is. Default false.
 
 DECISION TREE (first match wins)
 ================================
@@ -487,6 +510,8 @@ OUTPUT (return EXACTLY this JSON, no preface, no fence):
   "rounds": 1,
   "response_mode": "concise" | "balanced" | "detailed",
   "build_intent": "compile" | "research" | "create" | null,
+  "requires_brand_context": true | false,
+  "brand_brief_in_message": true | false,
   "deliverable": "<short folder name for build, or null in discuss>",
   "plan": { "steps": [{ "id": "...", "tool": "...", "needs": [], "input": "...", "label": "...", "output_schema": "slides" }] },
   "correction": { "detected": false, "what_was_wrong": null, "what_user_wants": null, "save_to_memory": false, "memory_entry": null },
@@ -686,7 +711,34 @@ export async function orchestrate({
     }
   }
 
-  decision.plan = { deliverable, steps }
+  // ── BRAND-CONTEXT HARD GATE ───────────────────────────────────────────
+  // Before any brand-facing build runs, require real brand context. Without
+  // it the panel fabricates an entire product identity from just a name (the
+  // "Timberline → invented real-estate platform" failure). The gate checks the
+  // ACTIVE PROJECT's brief, NOT how detailed the prompt is — a verbose prompt
+  // about HOW to market supplies nothing about WHAT is being marketed. The one
+  // escape is a brief pasted into the current message (brand_brief_in_message),
+  // which we then carry into the build as one-time context.
+  if (decision.mode === 'build' && steps.length > 0) {
+    const brandBrief = brandBriefFrom(activeProject)
+    const needsBrand = buildRequiresBrandContext({
+      requiresBrandFlag: typeof decision.requires_brand_context === 'boolean'
+        ? decision.requires_brand_context : null,
+      steps,
+    })
+    const briefInMessage = decision.brand_brief_in_message === true
+    if (needsBrand && !brandBrief && !briefInMessage) {
+      return blockedForBrandContext(activeProject)
+    }
+    // Carry whatever brand context we DO have into the build so the builder
+    // (agent_synth) writes from it instead of inventing. Project brief wins;
+    // otherwise the in-message brief is used for this build only.
+    const buildBrandContext = brandBrief || (briefInMessage ? userMessage : '')
+    if (buildBrandContext) decision.plan_brand_context = buildBrandContext
+  }
+
+  decision.plan = { deliverable, steps, brandContext: decision.plan_brand_context || null }
+  delete decision.plan_brand_context
 
   if (decision.mode === "build" && steps.length === 0) {
     decision.mode = "discuss"
@@ -695,6 +747,35 @@ export async function orchestrate({
   }
 
   return decision
+}
+
+// A brand-facing build was requested but no usable brand context exists. We do
+// NOT build (that would fabricate the product) and we do NOT run a discuss round
+// (the agents would fabricate too). The orchestrator responds asking for a brief.
+// TheInterface renders mode:"blocked" as a single orchestrator notice turn.
+function blockedForBrandContext(activeProject) {
+  const name = activeProject?.name || null
+  return {
+    mode: 'blocked',
+    spend_mode: 'balanced',
+    agents_to_respond: [],
+    role_assignments: {},
+    rounds: 0,
+    response_mode: 'balanced',
+    build_intent: null,
+    deliverable: null,
+    plan: { deliverable: null, steps: [], brandContext: null },
+    block: {
+      reason: 'needs_brand_context',
+      projectName: name,
+      hasProject: !!activeProject,
+      message: brandContextBlockMessage(name),
+    },
+    correction: { detected: false },
+    reasoning: name
+      ? `Build needs brand context but "${name}" has no usable brief — asked for one instead of fabricating the product.`
+      : `Build needs brand context but no project is active and no brief was provided — asked for one instead of fabricating the product.`,
+  }
 }
 
 function defaultDecision(enabledAgents, voiceMode) {

@@ -866,7 +866,7 @@ const agentSynth = {
   keySource: 'agent.claude',  // prefers Claude key; falls back below if missing
   status: 'live',
   hidden: true,  // not shown in Settings — it's a build-internal tool
-  async run({ prompt, settings, outputSchema }) {
+  async run({ prompt, settings, outputSchema, brandContext }) {
     // Pick whichever orchestration model the user has — Claude → GPT → Gemini
     const cfg =
       settings?.agents?.claude?.key ? { provider: 'claude', key: settings.agents.claude.key } :
@@ -899,7 +899,14 @@ WRONG voiceover_script: "Scene 1 shows a person frustrated at multiple browser t
 RIGHT voiceover_script: "Stop juggling four AI tools. Agent Interface gives you Claude, ChatGPT, Gemini, and Grok — working together, debating each other, building real files. One prompt. Every angle covered."`
       : `\nReturn clean JSON only — no markdown fences, no prose around it.`
 
-    const fullPrompt = `${prompt}${schemaHint}`
+    // Brand context (from the active project's brief, or one pasted into the
+    // message) is prepended as authoritative source material so the panel writes
+    // ON-brand instead of inventing the product. The build gate guarantees this
+    // is present for any brand-facing build; for neutral builds it's empty.
+    const brandBlock = brandContext
+      ? `BRAND CONTEXT — the output MUST align to this. Use ONLY these facts about the product/brand; do NOT invent its market, audience, features, or backstory beyond what's stated here:\n${String(brandContext).slice(0, 2000)}\n\n`
+      : ''
+    const fullPrompt = `${brandBlock}${prompt}${schemaHint}`
 
     // Worker requires the Supabase auth header — same shape the
     // orchestrator uses. Without it, the Worker returns 401.

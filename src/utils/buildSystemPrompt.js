@@ -1,7 +1,7 @@
 import { ROLE_POOL } from './openClaw'
 import { TOOLS_BY_ID } from '../tools/registry'
 
-export function buildSystemPrompt({ activeAgentIds=[], enabledTools={}, mode="concise", round=1, totalRounds=1, agentId="claude", voiceMode=false, memoryContext="", projectContext="", leadAgent=null, role=null, skills=null, useSkills=true }) {
+export function buildSystemPrompt({ activeAgentIds=[], enabledTools={}, mode="concise", round=1, totalRounds=1, agentId="claude", voiceMode=false, memoryContext="", projectContext="", projectName="", projectBrief="", leadAgent=null, role=null, skills=null, useSkills=true }) {
   const AGENT_NAMES = { claude:"Claude (Anthropic)", gpt:"ChatGPT (OpenAI)", gemini:"Gemini (Google)", grok:"Grok (xAI)" }
   const otherAgents = activeAgentIds.filter(id => id !== agentId).map(id => AGENT_NAMES[id] || id)
   const lines = []
@@ -29,6 +29,24 @@ export function buildSystemPrompt({ activeAgentIds=[], enabledTools={}, mode="co
     lines.push(`\nEARLIER IN THIS PROJECT (prior conversations, summarized — not the current one):`)
     lines.push(projectContext)
     lines.push(`\nThese are past discussions in the same project. Build on them for continuity when relevant; don't recap them unprompted, and don't treat them as the current question.`)
+  } else {
+    // No prior-conversation context loaded. State it explicitly so the panel
+    // can't invent "earlier sessions" or "what we brainstormed" — the exact
+    // failure that made agents cite a brainstorm that never happened.
+    lines.push(`\nNo prior conversations from this project are loaded. Do NOT reference earlier sessions, past brainstorms, or "what we discussed before" — there is no such context here. Reason only from the current message and what's explicitly provided above.`)
+  }
+
+  // BRAND BRIEF — the active project's description, the authoritative source of
+  // truth for WHAT the product is, who it's for, and its voice. Without this an
+  // agent handed only a name will fabricate the whole product (the "Timberline
+  // → invented real-estate platform" failure). Inject it so the panel writes
+  // from real facts; when it's absent, forbid guessing.
+  if (projectBrief) {
+    lines.push(`\nBRAND BRIEF FOR ${(projectName || 'THIS PROJECT').toUpperCase()} (authoritative — this is what the product actually is):`)
+    lines.push(projectBrief)
+    lines.push(`\nGround everything you say about this product in this brief. Do NOT contradict it or invent facts (market, audience, features, history) beyond what it states. If something isn't covered, say you don't have that detail rather than making it up.`)
+  } else if (projectName) {
+    lines.push(`\nACTIVE PROJECT: "${projectName}" — but NO brand brief is on file. You do NOT know what this product is, who it's for, or its market. Do NOT infer it from the name. If the user's message doesn't tell you, say you need a product description rather than inventing one.`)
   }
 
   // SKILLS — user-curated knowledge from Drive/Agent Interface/Skills/.
