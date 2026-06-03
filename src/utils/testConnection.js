@@ -28,8 +28,9 @@ export async function testConnection(provider, key) {
 
   const auth = await authHeader()
   const ids = modelsToTry(provider)
-  let status = 0, text = ''
+  let status = 0, text = '', triedModel
   for (const model of (ids.length ? ids : [undefined])) {
+    triedModel = model
     try {
       const res = await fetch(`${PROXY}/${cfg.path}`, {
         method: 'POST',
@@ -54,5 +55,12 @@ export async function testConnection(provider, key) {
     status >= 500 ? 'provider down' :
     status === 0 ? 'network error' :
     `error ${status}`
-  return { ok: false, reason, status }
+  // `detail` = the provider's own message (dug out of its JSON if present), so
+  // Settings can show e.g. "grok-4 — model does not exist" instead of just
+  // "model unavailable". This is how we diagnose which model x.ai rejects.
+  let human
+  try { const j = JSON.parse(text); human = j?.error?.message || j?.error || j?.message || '' } catch { human = text }
+  if (typeof human !== 'string') human = ''
+  const detail = String(human).replace(/\s+/g, ' ').trim().slice(0, 200) || null
+  return { ok: false, reason, status, model: triedModel, detail }
 }
