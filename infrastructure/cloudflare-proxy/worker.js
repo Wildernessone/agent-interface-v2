@@ -28,6 +28,55 @@
 
 const PER_MINUTE_LIMIT = 60
 
+// Build the OpenAI /images/generations payload for the /dalle route.
+//
+// DEFAULT MODEL IS dall-e-3, deliberately: gpt-image-1 requires the OpenAI
+// organization to be ID-verified and otherwise 403s ("your organization must
+// be verified to use the model `gpt-image-1`"), which silently killed every
+// ad/per-slide image build. dall-e-3 needs no verification. A verified org can
+// opt back in by passing model:'gpt-image-1'.
+//
+// The two models have DIFFERENT vocabularies, so we translate the gpt-image-1
+// -style { size, quality } the client still sends:
+//   - sizes: dall-e-3 only accepts 1024x1024 / 1792x1024 / 1024x1792
+//   - quality: dall-e-3 wants 'standard' | 'hd' (not high/medium/low)
+//   - response_format: dall-e-3 defaults to a hosted URL that expires in ~1h;
+//     we force 'b64_json' so the build pipeline gets an inline data: image
+//     (ad_render's browser-side ffmpeg can't fetch expiring remote URLs).
+//     gpt-image-1 always returns b64 and REJECTS response_format, so we omit it.
+export function buildImageRequest(body = {}) {
+  const wantsGptImage = body.model === 'gpt-image-1'
+  const prompt = body.prompt
+  if (wantsGptImage) {
+    const SIZES = new Set(['1024x1024', '1536x1024', '1024x1536'])
+    const QUALITIES = new Set(['high', 'medium', 'low'])
+    return {
+      model: 'gpt-image-1',
+      prompt,
+      n: 1,
+      size: SIZES.has(body.size) ? body.size : '1024x1024',
+      quality: QUALITIES.has(body.quality) ? body.quality : 'high',
+    }
+  }
+  // dall-e-3 (default). Map both the dall-e-3-native and the legacy
+  // gpt-image-1 sizes the client may send.
+  const SIZE_MAP = {
+    '1024x1024': '1024x1024',
+    '1792x1024': '1792x1024',
+    '1024x1792': '1024x1792',
+    '1536x1024': '1792x1024', // legacy "wide"
+    '1024x1536': '1024x1792', // legacy "tall"
+  }
+  return {
+    model: 'dall-e-3',
+    prompt,
+    n: 1,
+    size: SIZE_MAP[body.size] || '1024x1024',
+    quality: body.quality === 'high' || body.quality === 'hd' ? 'hd' : 'standard',
+    response_format: 'b64_json',
+  }
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url)
@@ -222,18 +271,10 @@ const ROUTES = {
     const auth = req.headers.get('Authorization')
     if (!auth) return new Response(JSON.stringify({ error: 'missing_provider_key' }), { status: 400 })
     const body = await req.json()
-    const ALLOWED_SIZES = new Set(['1024x1024', '1536x1024', '1024x1536'])
-    const ALLOWED_QUALITIES = new Set(['high', 'medium', 'low'])
     return fetch('https://api.openai.com/v1/images/generations', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: auth },
-      body: JSON.stringify({
-        model: 'gpt-image-1',
-        prompt: body.prompt,
-        n: 1,
-        size: ALLOWED_SIZES.has(body.size) ? body.size : '1024x1024',
-        quality: ALLOWED_QUALITIES.has(body.quality) ? body.quality : 'high',
-      }),
+      body: JSON.stringify(buildImageRequest(body)),
     })
   },
 
