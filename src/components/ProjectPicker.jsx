@@ -5,16 +5,32 @@ import { useModalDismiss } from '../utils/useModalDismiss'
 /**
  * Slim project picker that lives in the header next to the brand.
  * Shows the current project name; clicking opens a small dropdown to
- * switch project, create a new one, or clear the active project.
+ * switch project, create a new one, or EDIT an existing one's brand brief.
+ *
+ * The brief lives in project.description, which the dispatcher injects into
+ * every agent's system prompt (project-context injection) — so a real brief
+ * here is what keeps builds on-brand instead of hallucinating. The form offers
+ * a labelled template to make a good brief easy to write; editing an existing
+ * project is how a brief gets onto projects created before this existed.
  */
+const BRIEF_TEMPLATE = `What it is:
+Audience:
+Voice & tone:
+Differentiator:
+Avoid: `
+
 export default function ProjectPicker() {
-  const { activeProject, projects, loadProjects, createProject, setActiveProject } = useStore()
+  const { activeProject, projects, loadProjects, createProject, updateProject, setActiveProject } = useStore()
   const [open, setOpen] = useState(false)
   const [creating, setCreating] = useState(false)
+  const [editingId, setEditingId] = useState(null)   // null = new project; id = editing that one
   const [newName, setNewName] = useState("")
   const [newDesc, setNewDesc] = useState("")
   const [busy, setBusy] = useState(false)
-  useModalDismiss(() => { setOpen(false); setCreating(false) }, { active: open })
+
+  const resetForm = () => { setCreating(false); setEditingId(null); setNewName(""); setNewDesc("") }
+
+  useModalDismiss(() => { setOpen(false); resetForm() }, { active: open })
 
   useEffect(() => {
     loadProjects()
@@ -30,13 +46,20 @@ export default function ProjectPicker() {
     setOpen(false)
   }
 
-  const handleCreate = async () => {
+  const startNew = () => { setEditingId(null); setNewName(""); setNewDesc(""); setCreating(true) }
+  const startEdit = (p) => { setEditingId(p.id); setNewName(p.name || ""); setNewDesc(p.description || ""); setCreating(true) }
+
+  const handleSave = async () => {
     if (!newName.trim()) return
     setBusy(true)
-    const project = await createProject(newName.trim(), newDesc.trim())
+    const result = editingId
+      ? await updateProject(editingId, { name: newName.trim(), description: newDesc.trim() })
+      : await createProject(newName.trim(), newDesc.trim())
     setBusy(false)
-    if (project) {
-      setNewName(""); setNewDesc(""); setCreating(false); setOpen(false)
+    if (result) {
+      if (!editingId) setActiveProject(result)  // creating: switch to it
+      resetForm()
+      setOpen(false)
     }
   }
 
@@ -60,7 +83,7 @@ export default function ProjectPicker() {
 
       {open && (
         <>
-          <div className="proj-overlay" onClick={() => { setOpen(false); setCreating(false) }}/>
+          <div className="proj-overlay" onClick={() => { setOpen(false); resetForm() }}/>
           <div className="proj-menu">
             {!creating && (
               <>
@@ -69,16 +92,22 @@ export default function ProjectPicker() {
                   <span className="proj-item-sub">Outputs save flat to Drive</span>
                 </button>
                 {projects.map(p => (
-                  <button
-                    key={p.id}
-                    className={`proj-item${activeProject?.id === p.id ? " is-active" : ""}`}
-                    onClick={() => handleSelect(p)}
-                  >
-                    <span className="proj-item-name">{p.name}</span>
-                    {p.description && <span className="proj-item-sub">{p.description}</span>}
-                  </button>
+                  <div key={p.id} className={`proj-item-row${activeProject?.id === p.id ? " is-active" : ""}`}>
+                    <button
+                      className="proj-item proj-item--select"
+                      onClick={() => handleSelect(p)}
+                    >
+                      <span className="proj-item-name">{p.name}</span>
+                      {p.description
+                        ? <span className="proj-item-sub">{p.description.replace(/\s+/g, ' ').slice(0, 80)}</span>
+                        : <span className="proj-item-sub proj-item-sub--empty">No brand brief — add one ↗</span>}
+                    </button>
+                    <button className="proj-item-edit" onClick={() => startEdit(p)} title={`Edit ${p.name} brand brief`} aria-label={`Edit ${p.name}`}>
+                      Edit
+                    </button>
+                  </div>
                 ))}
-                <button className="proj-create-trigger" onClick={() => setCreating(true)}>
+                <button className="proj-create-trigger" onClick={startNew}>
                   + New project
                 </button>
               </>
@@ -86,28 +115,36 @@ export default function ProjectPicker() {
 
             {creating && (
               <div className="proj-create">
-                <label className="settings-label">New project</label>
+                <label className="settings-label">{editingId ? "Edit project" : "New project"}</label>
                 <input
                   className="settings-input"
                   placeholder="Name (e.g. Salt+Pine Coffee launch)"
                   value={newName}
                   onChange={e => setNewName(e.target.value)}
-                  onKeyDown={e => { if (e.key === "Enter") handleCreate() }}
                   autoFocus
                 />
-                <input
-                  className="settings-input"
-                  placeholder="Description (optional)"
+                <textarea
+                  className="settings-input proj-brief-input"
+                  placeholder={"Brand brief — what it is, who it's for, the voice, what to avoid.\nThis is fed to the agents on every build, so a real brief keeps outputs on-brand."}
                   value={newDesc}
                   onChange={e => setNewDesc(e.target.value)}
+                  rows={6}
                 />
+                <div className="proj-brief-hint">
+                  <span>Injected into agent context on every build.</span>
+                  {!newDesc.trim() && (
+                    <button type="button" className="proj-brief-template" onClick={() => setNewDesc(BRIEF_TEMPLATE)}>
+                      Insert template
+                    </button>
+                  )}
+                </div>
                 <div className="proj-create-actions">
-                  <button className="ai-btn" onClick={() => { setCreating(false); setNewName(""); setNewDesc("") }}>Cancel</button>
+                  <button className="ai-btn" onClick={resetForm}>Cancel</button>
                   <button
                     className="ai-btn ai-btn--primary"
-                    onClick={handleCreate}
+                    onClick={handleSave}
                     disabled={!newName.trim() || busy}
-                  >{busy ? "Creating…" : "Create"}</button>
+                  >{busy ? "Saving…" : editingId ? "Save" : "Create"}</button>
                 </div>
               </div>
             )}
