@@ -1612,10 +1612,44 @@ const gcal = {
   },
 }
 
-// ── image_per_slide — DALL-E per slide for synced visuals ─────────
+// Image-provider fallback chain. DALL-E is the default; if it fails for a
+// transient/account reason (billing hard-limit, quota/429, content policy,
+// org verification) we transparently try the OTHER providers the user has
+// keys for — Stable Diffusion → Flux → Ideogram → Recraft — so one provider
+// being down or out of credit doesn't kill an image step (the failure mode
+// that produced empty ad/deck builds tonight). Providers without a key are
+// skipped. Returns the first successful { type:'image', url, ... } tagged with
+// the provider that produced it; throws a combined ToolError if every
+// available provider fails.
+const IMAGE_PROVIDER_ORDER = ['dalle', 'stability', 'flux', 'ideogram', 'recraft']
+
+async function generateImageWithFallback({ prompt, structuredInput, settings, proxy }) {
+  const errors = []
+  let anyKey = false
+  for (const id of IMAGE_PROVIDER_ORDER) {
+    const tool = TOOLS_BY_ID[id]
+    const key = readKey(settings, tool?.keySource)
+    if (!key) continue
+    anyKey = true
+    try {
+      const out = await tool.run({ prompt, structuredInput, key, proxy, settings })
+      if (out?.url) return { ...out, provider: id, fellBackFrom: errors.map(e => e.id) }
+      errors.push({ id, error: 'no image returned' })
+    } catch (e) {
+      errors.push({ id, error: e?.message || String(e) })
+    }
+  }
+  const reason = !anyKey
+    ? 'no image provider key configured (add OpenAI, Stability, Flux, Ideogram, or Recraft in Settings)'
+    : errors.map(e => `${e.id}: ${e.error}`).join(' | ')
+  throw new ToolError('image_per_slide', 'all_providers_failed', reason)
+}
+
+// ── image_per_slide — one image per slide, with provider fallback ─────────
 // Same pattern as narrate_per_slide: takes slides[] and produces N
 // images (one per slide). Saves a bundle so downstream steps can sync
-// them with pptxgen or video tools.
+// them with pptxgen or video tools. Each slide runs through
+// generateImageWithFallback (DALL-E → SD → Flux → Ideogram → Recraft).
 //
 // Input: { slides: [{title, prompt?}], style?, size? }
 //   - If a slide has its own 'prompt', use it.
@@ -1630,37 +1664,36 @@ const imagePerSlide = {
   keySource: 'agent.gpt',
   status: 'live',
   hidden: true,
-  async run({ structuredInput, key, proxy }) {
-    if (!key) throw new ToolError('image_per_slide', 'missing_key', 'image_per_slide uses your OpenAI key.')
+  async run({ structuredInput, key, proxy, settings }) {
     const data = typeof structuredInput === 'string' ? JSON.parse(structuredInput) : structuredInput
     const slides = Array.isArray(data?.slides) ? data.slides : []
     if (slides.length === 0) throw new ToolError('image_per_slide', 'no_slides', 'No slides to illustrate.')
 
     const style = data?.style || 'clean, modern, editorial photography'
     const size = normalizeDalleSize(data?.size || 'wide')
+    // The fallback reads each provider's key from settings. Inside a build,
+    // buildExecutor passes the full settings; if only the bare OpenAI `key` is
+    // supplied (standalone use), synthesize a minimal settings so DALL-E works.
+    const effSettings = settings || { agents: { gpt: { key } } }
 
+    const providersUsed = new Set()
     const files = []
     for (let i = 0; i < slides.length; i++) {
       const s = slides[i]
       const promptText = (s.prompt || `${s.title || 'cover image'}. Style: ${style}`).slice(0, 900)
       try {
-        const res = await proxy('dalle', { prompt: promptText, size, quality: 'high' }, { Authorization: `Bearer ${key}` })
-        if (!res.ok) {
-          // Surface OpenAI's real message (invalid key, rate limit, content
-          // policy) instead of a bare status. The /dalle route now uses
-          // dall-e-3, so the gpt-image-1 org-verification 403 should be gone.
-          const body = await res.text().catch(() => '')
-          let msg = ''
-          try { msg = JSON.parse(body)?.error?.message || '' } catch { msg = body }
-          files.push({ error: `dalle_${res.status}${msg ? `: ${msg.slice(0, 160)}` : ''}`, filename: `slide-${i + 1}.png` })
-          continue
-        }
-        const json = await res.json()
-        const b64 = json.data?.[0]?.b64_json
-        const url = json.data?.[0]?.url
-        const final = b64 ? `data:image/png;base64,${b64}` : url
-        if (!final) { files.push({ error: 'no_image', filename: `slide-${i + 1}.png` }); continue }
-        files.push({ url: final, filename: `slide-${String(i + 1).padStart(2, '0')}.png`, prompt: promptText })
+        // Multi-provider fallback (PR #32): DALL-E → stability → flux → ideogram
+        // → recraft, first success wins. The DALL-E provider calls proxy('dalle'),
+        // which the worker now translates to dall-e-3 (PR #30) — so this inherits
+        // the org-verification fix AND survives a single provider being broke.
+        const out = await generateImageWithFallback({
+          prompt: promptText,
+          structuredInput: { prompt: promptText, size, quality: 'high' },
+          settings: effSettings,
+          proxy,
+        })
+        providersUsed.add(out.provider)
+        files.push({ url: out.url, filename: `slide-${String(i + 1).padStart(2, '0')}.png`, prompt: promptText, provider: out.provider })
       } catch (e) {
         files.push({ error: e.message || 'unknown', filename: `slide-${i + 1}.png` })
       }
@@ -1675,7 +1708,7 @@ const imagePerSlide = {
       type: 'image_bundle',
       tool: 'image_per_slide',
       files,
-      meta: { slideCount: slides.length, successful, failed: slides.length - successful, size, style },
+      meta: { slideCount: slides.length, successful, failed: slides.length - successful, size, style, providers: [...providersUsed] },
     }
   },
 }
