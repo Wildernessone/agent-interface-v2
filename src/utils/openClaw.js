@@ -8,6 +8,7 @@
 import { supabase } from './supabase'
 import { pricingTableFor, sortByCost, pricingFor } from './agentPricing'
 import { makeIdleTimeout, isAbort } from './fetchTimeout'
+import { TOOLS_BY_ID, readKey } from '../tools/registry'
 
 const PROXY = import.meta.env.VITE_PROXY_URL || "https://claude-proxy.jamesreed.workers.dev"
 
@@ -462,6 +463,13 @@ BUILD-INTERNAL TOOLS (always available in build mode):
 - twilio ({to:"+E.164", from:"+E.164", body} → sends an SMS via the user's Twilio account; needs Twilio credentials)
 - stripe ({name, amount, currency?:"usd", description?, after_completion_url?} → Stripe payment link; amount in dollars (49.99) or cents (4999); test mode auto-detected from sk_test_ key)
 
+CREDENTIAL-GATED INTERNAL TOOLS: stripe, twilio, notion, suno, stable_audio,
+elevenlabs_music, openai_tts and image_per_slide each need the user's own key,
+and gmail/gsheets/gcal need a connected Google account. Only include one of
+these in a plan if the user has plainly asked for that capability — any such
+step is automatically DROPPED if the credential is missing, so don't build a
+chain that depends on one unless it's clearly wanted.
+
 MUSIC ROUTING: when a build needs music, PREFER stable_audio for instrumental
 ad/video backing tracks and ambient; PREFER elevenlabs_music when the user wants
 vocals or a song-like track. Only use suno when the user EXPLICITLY asks for it
@@ -608,7 +616,28 @@ export async function orchestrate({
     'stable_audio', 'elevenlabs_music', 'capcut_bundle', 'ad_render',
     'gmail', 'gsheets', 'gcal', 'notion', 'twilio', 'stripe',
   ])
-  const isToolAllowed = (toolId) => BUILD_INTERNAL_TOOLS.has(toolId) || !!enabledTools?.[toolId]
+  // Gate every step on whether it can ACTUALLY run, so the build plan never
+  // includes a step that's doomed to fail at runtime for a missing credential.
+  // Previously build-internal tools were allowed unconditionally — so a plan
+  // could contain e.g. a `stripe` step with no Stripe key, which then 500s
+  // mid-build. Now:
+  //   • non-internal tools → must be user-enabled (unchanged)
+  //   • agent_synth → needs ANY orchestration model (claude/gpt/gemini), not
+  //     just its nominal keySource (it falls back internally) — don't drop it
+  //     for a GPT-only user or every build breaks
+  //   • other internal tools with a pasted-key keySource (stripe, twilio,
+  //     notion, suno, stable_audio, elevenlabs_music, openai_tts,
+  //     image_per_slide) → require that key
+  //   • keyless internal tools (pptxgen, xlsxgen, ad_render, …) and the Google-
+  //     OAuth ones (gmail/gsheets/gcal, keySource null) → allowed; the OAuth
+  //     ones still fail gracefully at run time if the user hasn't connected.
+  const isToolAllowed = (toolId) => {
+    if (!BUILD_INTERNAL_TOOLS.has(toolId)) return !!enabledTools?.[toolId]
+    if (toolId === 'agent_synth') return !!selectOrchestrationModel(settings)
+    const keySource = TOOLS_BY_ID[toolId]?.keySource
+    if (keySource) return !!readKey(settings, keySource)
+    return true
+  }
 
   let steps = []
   let deliverable = decision.deliverable || null
