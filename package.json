@@ -8,6 +8,7 @@
     "build": "vite build",
     "lint": "eslint .",
     "smoke": "node scripts/smoke.mjs",
+    "smoke:nostorage": "node scripts/smoke-build-no-storage.mjs",
     "smoke:live": "node scripts/smoke-live.mjs",
     "preview": "vite preview"
   },
