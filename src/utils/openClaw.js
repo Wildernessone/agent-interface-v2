@@ -410,6 +410,26 @@ DECISION TREE (first match wins)
        (agent_synth, pptxgen, docgen, pdfgen, narrate_per_slide, gmail)
      → Internal tools always available. See BUILD-INTERNAL TOOLS section below.
 
+BUILD INTENT — set "build_intent" on EVERY build (it tunes how agent_synth is fed):
+- "compile"  → the panel JUST discussed this and the user wants it organized into
+   an artifact. Triggers: "put this/that in a spreadsheet", "compile what we
+   talked about", "make a doc from what we just discussed", "build a deck from
+   the above", "organize the above", "turn this into a …" — i.e. the ask points
+   BACK at the conversation ("this", "that", "the above", "what we discussed")
+   AND there was prior discussion. The FIRST agent_synth step must ORGANIZE the
+   prior discussion, not generate from scratch — the executor will inject the
+   actual discussion transcript into that step, so write its input as a short
+   instruction like "Organize the panel's key points about <topic> into the
+   <schema> the user asked for; do not add new information." Keep it tight.
+- "research" → the artifact needs current/external info the panel doesn't have.
+   Triggers: "research X", "find current X", "what are X this year", "look up X",
+   "latest X". Plan's FIRST step is a search tool (perplexity or exa) if one is
+   in TOOLS AVAILABLE, then agent_synth to organize, then the generator.
+- "create"   → pure generation; panel hasn't discussed it and no research needed.
+   Triggers: "write me a poem about X", "draft an email about X", "make a deck
+   pitching X". Standard agent_synth from the prompt with an adequate budget.
+   This is the default when none of the above fit.
+
 4. Otherwise:
      → mode = "discuss", plan = []
      → agents_to_respond = 2-3 from AGENTS CONNECTED, biased by spend_mode
@@ -458,6 +478,7 @@ OUTPUT (return EXACTLY this JSON, no preface, no fence):
   "role_assignments": { "<agent_id>": "<role_id>" },
   "rounds": 1,
   "response_mode": "concise" | "balanced" | "detailed",
+  "build_intent": "compile" | "research" | "create" | null,
   "deliverable": "<short folder name for build, or null in discuss>",
   "plan": { "steps": [{ "id": "...", "tool": "...", "needs": [], "input": "...", "label": "...", "output_schema": "slides" }] },
   "correction": { "detected": false, "what_was_wrong": null, "what_user_wants": null, "save_to_memory": false, "memory_entry": null },
@@ -465,6 +486,46 @@ OUTPUT (return EXACTLY this JSON, no preface, no fence):
   "reasoning": "one sentence: why this mode, these agents, this spend tier"
 }
 `.trim()
+}
+
+// COMPILE-mode source material. When a build follows a substantive panel
+// discussion and the user asks to "organize / put this in / compile what we
+// discussed", agent_synth must work FROM the conversation, not from scratch.
+// This packs the relevant prior turns into a compact (~3-4K char) source block
+// that gets prepended to the first agent_synth step's input. We send the real
+// transcript we already hold in memory rather than asking the dispatcher LLM to
+// reproduce it — keeps the round-trip cheap and the source verbatim.
+function buildCompileDigest({ agentResponses = [], conversationHistory = [], userMessage = "" }) {
+  // Most recent response per agent (later entries overwrite → keep latest).
+  const latestByAgent = new Map()
+  for (const r of agentResponses) {
+    if (!r?.text) continue
+    latestByAgent.set(r.agent || 'agent', r.text)
+  }
+  const discussion = [...latestByAgent.entries()]
+    .map(([agent, text]) => `${String(agent).toUpperCase()}: "${text.trim().slice(0, 800)}"`)
+    .join("\n\n")
+  if (!discussion) return null
+
+  // The question that prompted the discussion = the user turn BEFORE this build
+  // trigger. conversationHistory already includes the trigger as its last user
+  // entry, so take the previous one.
+  const userTurns = conversationHistory.filter(m => m.role === 'user')
+  const priorQuestion = userTurns.length > 1
+    ? userTurns[userTurns.length - 2].content
+    : (userTurns[0]?.content || '')
+
+  return [
+    "PRIOR PANEL DISCUSSION (organize ONLY this material into the requested",
+    "schema; do NOT add external information):",
+    "",
+    priorQuestion ? `Q: "${String(priorQuestion).slice(0, 600)}"` : "",
+    priorQuestion ? "" : null,
+    discussion,
+    "",
+    "USER'S ASK:",
+    `"${userMessage}"`,
+  ].filter(l => l !== null).join("\n")
 }
 
 export async function orchestrate({
@@ -567,6 +628,35 @@ export async function orchestrate({
   }
   const validIds = new Set(steps.map(s => s.id))
   steps = steps.map(s => ({ ...s, needs: s.needs.filter(n => validIds.has(n)) }))
+
+  // COMPILE mode: the build organizes what the panel JUST discussed. The
+  // dispatcher can't reliably copy the transcript into the step input (token
+  // waste + lossy), so we inject the real prior discussion here — into the
+  // FIRST agent_synth step, the one that has no upstream needs[] (i.e. it's
+  // generating, not transforming another step's output). Without this, that
+  // step regenerates the content from scratch: it burns tokens on broad topics
+  // and produces weaker output on narrow ones.
+  let buildIntent = ['compile', 'research', 'create'].includes(decision.build_intent)
+    ? decision.build_intent : null
+  // Heuristic fallback if the dispatcher didn't classify: a build that points
+  // back at the conversation ("this", "the above", "what we discussed") AND
+  // follows a real discussion is a compile.
+  if (!buildIntent && decision.mode === 'build' && hasPriorDiscussion &&
+      /\b(this|that|these|those|above|what we|we just|we talked|we discussed|the discussion)\b/i.test(userMessage)) {
+    buildIntent = 'compile'
+  }
+  decision.build_intent = buildIntent
+
+  if (decision.mode === 'build' && buildIntent === 'compile' && hasPriorDiscussion) {
+    const digest = buildCompileDigest({ agentResponses, conversationHistory, userMessage })
+    if (digest) {
+      const firstSynth = steps.find(s => s.tool === 'agent_synth' && (!s.needs || s.needs.length === 0))
+      if (firstSynth) {
+        firstSynth.input = `${digest}\n\nTASK:\n${firstSynth.input || 'Organize the discussion above into the requested format. Do not add new information.'}`
+      }
+    }
+  }
+
   decision.plan = { deliverable, steps }
 
   if (decision.mode === "build" && steps.length === 0) {
