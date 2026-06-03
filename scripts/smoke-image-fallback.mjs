@@ -57,6 +57,15 @@ try {
   } catch (e) { err = e }
   check('3: throws when every available provider fails', err instanceof ToolError)
   check('3: error names the real DALL-E billing cause', /billing hard limit/i.test(err?.message || ''), err?.message?.slice(0, 120))
+
+  // ── Standalone `dalle` tool now falls back too (and must NOT recurse) ──
+  const dalle = TOOLS_BY_ID['dalle']
+  const d1 = await dalle.run({ prompt: 'a buck at dawn', key: 'g', proxy: makeProxy({ dalleOk: false }),
+    settings: { agents: { gpt: { key: 'g' } }, toolKeys: { stability: 'sk-x' } } })
+  check('dalle: standalone falls through to Stability on a DALL-E failure', d1?.type === 'image' && d1.provider === 'stability', d1?.provider)
+  const d2 = await dalle.run({ prompt: 'a buck at dawn', key: 'g', proxy: makeProxy({ dalleOk: true }),
+    settings: { agents: { gpt: { key: 'g' } } } })
+  check('dalle: standalone uses DALL-E when healthy (no recursion/hang)', d2?.type === 'image' && d2.provider === 'dalle', d2?.provider)
 } catch (e) {
   check('harness ran without throwing', false, e.stack || e.message)
 } finally {

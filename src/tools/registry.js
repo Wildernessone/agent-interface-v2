@@ -91,6 +91,29 @@ function normalizeDalleSize(size) {
   return DALLE_SIZES[String(size).toLowerCase()] || '1024x1024'
 }
 
+// One raw DALL-E call (no fallback). Extracted as a hoisted declaration so
+// generateImageWithFallback can invoke DALL-E WITHOUT recursing through the
+// dalle tool's run() — which now delegates to the fallback.
+async function dalleGenerateOnce({ prompt, structuredInput, key, proxy }) {
+  if (!key) throw new ToolError('dalle', 'missing_key', 'DALL-E uses your OpenAI key — add it in Settings → Agents → ChatGPT.')
+  // Size can come from structuredInput or be inferred from a prompt keyword.
+  // Quality: 'high' (default), 'medium', 'low'.
+  const cfg = (typeof structuredInput === 'object' && structuredInput) || {}
+  const size = normalizeDalleSize(cfg.size || cfg.aspect_ratio)
+  const quality = ['high', 'medium', 'low'].includes(cfg.quality) ? cfg.quality : 'high'
+  const realPrompt = (cfg.prompt || prompt || '').slice(0, 900)
+
+  const res = await proxy('dalle', { prompt: realPrompt, size, quality }, { Authorization: `Bearer ${key}` })
+  if (!res.ok) throw new ToolError('dalle', 'bad_response', await res.text().catch(() => `status ${res.status}`))
+  const data = await res.json()
+  if (data.error) throw new ToolError('dalle', 'bad_response', data.error?.message || 'DALL-E error')
+  const b64 = data.data?.[0]?.b64_json
+  const url = data.data?.[0]?.url
+  const out = b64 ? `data:image/png;base64,${b64}` : url
+  if (!out) throw new ToolError('dalle', 'bad_response', 'DALL-E returned no image.')
+  return { type: 'image', url: out, prompt: realPrompt, tool: 'dalle', meta: { size, quality } }
+}
+
 const dalle = {
   id: 'dalle',
   name: 'DALL-E 3',
@@ -99,25 +122,17 @@ const dalle = {
   desc: 'OpenAI image generation via dall-e-3 (uses your OpenAI key). Sizes: square (1:1), wide (landscape), tall (portrait).',
   keySource: 'agent.gpt',
   status: 'live',
-  async run({ prompt, structuredInput, key, proxy }) {
-    if (!key) throw new ToolError('dalle', 'missing_key', 'DALL-E uses your OpenAI key — add it in Settings → Agents → ChatGPT.')
-    // Size can come from structuredInput or be inferred from a prompt keyword.
-    // Quality: 'high' (default), 'medium', 'low'. The worker maps these to
-    // dall-e-3's 'hd'/'standard' (high→hd, else standard).
+  // Standalone image generation now has the same provider fallback as the build
+  // pipeline: a DALL-E billing/quota/policy failure transparently tries the
+  // other image providers the user has keys for (see generateImageWithFallback).
+  // The /dalle route is translated to dall-e-3 by the worker (PR #30).
+  async run({ prompt, structuredInput, key, proxy, settings }) {
     const cfg = (typeof structuredInput === 'object' && structuredInput) || {}
-    const size = normalizeDalleSize(cfg.size || cfg.aspect_ratio)
-    const quality = ['high', 'medium', 'low'].includes(cfg.quality) ? cfg.quality : 'high'
     const realPrompt = (cfg.prompt || prompt || '').slice(0, 900)
-
-    const res = await proxy('dalle', { prompt: realPrompt, size, quality }, { Authorization: `Bearer ${key}` })
-    if (!res.ok) throw new ToolError('dalle', 'bad_response', await res.text().catch(() => `status ${res.status}`))
-    const data = await res.json()
-    if (data.error) throw new ToolError('dalle', 'bad_response', data.error?.message || 'DALL-E error')
-    const b64 = data.data?.[0]?.b64_json
-    const url = data.data?.[0]?.url
-    const out = b64 ? `data:image/png;base64,${b64}` : url
-    if (!out) throw new ToolError('dalle', 'bad_response', 'DALL-E returned no image.')
-    return { type: 'image', url: out, prompt: realPrompt, tool: 'dalle', meta: { size, quality } }
+    // Build/runTool pass full settings (every provider key); if only the bare
+    // OpenAI key arrived, synthesize a minimal settings so DALL-E still runs.
+    const effSettings = settings || { agents: { gpt: { key } } }
+    return generateImageWithFallback({ prompt: realPrompt, structuredInput: { ...cfg, prompt: realPrompt }, settings: effSettings, proxy })
   },
 }
 
@@ -1632,7 +1647,12 @@ async function generateImageWithFallback({ prompt, structuredInput, settings, pr
     if (!key) continue
     anyKey = true
     try {
-      const out = await tool.run({ prompt, structuredInput, key, proxy, settings })
+      // Route DALL-E through the raw single-call so we don't recurse into the
+      // dalle tool's run() (which itself delegates here). Other providers have
+      // no fallback wrapper, so calling their run() directly is safe.
+      const out = id === 'dalle'
+        ? await dalleGenerateOnce({ prompt, structuredInput, key, proxy })
+        : await tool.run({ prompt, structuredInput, key, proxy, settings })
       if (out?.url) return { ...out, provider: id, fellBackFrom: errors.map(e => e.id) }
       errors.push({ id, error: 'no image returned' })
     } catch (e) {
