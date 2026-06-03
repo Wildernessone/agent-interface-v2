@@ -28,7 +28,7 @@
  */
 
 import { TOOLS_BY_ID, readKey, ToolError } from '../tools/registry'
-import { saveToCloud } from './cloudStorage'
+import { saveToCloud, pickProvider } from './cloudStorage'
 import { supabase } from './supabase'
 
 // Substitute {stepId} (and {stepId.field}) in a string with the resolved
@@ -111,12 +111,25 @@ function buildFolderName(deliverable) {
  * that downstream steps interpolate into their inputs.
  *
  * @param plan {object}        — { deliverable, steps[] }
- * @param ctx  {object}        — { settings, project, proxy }
+ * @param ctx  {object}        — { settings, project, proxy, hasStorage? }
+ *                                hasStorage: whether a cloud storage provider
+ *                                is connected. If omitted we resolve it once
+ *                                via pickProvider(). When false, file outputs
+ *                                are kept inline instead of being marked
+ *                                save_failed (see the per-step handling below).
  * @param onStep {function}    — called with (stepId, status) for UI updates
  *                                status ∈ 'started' | 'done' | 'failed'
  */
 export async function runBuild(plan, ctx, onStep = () => {}) {
   const { settings, project, proxy } = ctx
+  // Resolve storage availability ONCE for the whole build. Previously every
+  // saveToCloud() call re-ran pickProvider() (a Supabase round-trip per file);
+  // more importantly, saveToCloud returns null for BOTH "no storage connected"
+  // and "save errored", which the loop below could not tell apart — so a user
+  // with no Drive/Dropbox saw every file step fail and lost the output. We now
+  // distinguish the two: no storage → keep the output inline; storage present
+  // but save failed → surface the failure as before.
+  const hasStorage = ctx.hasStorage !== undefined ? ctx.hasStorage : !!(await pickProvider())
   const stepOutputs = {}
   const files = []
   const errors = []
@@ -173,36 +186,54 @@ export async function runBuild(plan, ctx, onStep = () => {}) {
 
       // File-bearing single output (image/audio/video/document) → save once
       if (output && (output.type === 'image' || output.type === 'audio' || output.type === 'video' || output.type === 'document')) {
-        const saved = await saveToCloud({
-          ...output,
-          prompt: step.label || output.prompt || step.id,
-        }, buildProject)
+        if (!hasStorage) {
+          // No cloud storage connected. The generation succeeded, so keep the
+          // output inline (it carries a data: URL) rather than failing the
+          // step and throwing the result away. The build card surfaces these
+          // as downloads and nudges the user to connect storage to persist.
+          files.push({
+            stepId: step.id,
+            label: step.label || step.id,
+            output,
+            savedLink: null,
+            savedProvider: null,
+            unsaved: true,
+          })
+          // stepOutputs[step.id] already holds the raw output (set above), so
+          // downstream steps interpolate the data: URL directly.
+        } else {
+          const saved = await saveToCloud({
+            ...output,
+            prompt: step.label || output.prompt || step.id,
+          }, buildProject)
 
-        // Silent save failure was a real bug — if the cloud save didn't
-        // land, the step is NOT done. Mark it failed with a clear reason
-        // so the user sees the issue instead of a misleading checkmark.
-        if (!saved) {
-          errors.push({ stepId: step.id, error: 'save_failed' })
-          onStep(step.id, 'failed', 'save_failed')
-          continue
-        }
+          // Silent save failure was a real bug — if the cloud save didn't
+          // land (and storage IS connected), the step is NOT done. Mark it
+          // failed with a clear reason so the user sees the issue instead of
+          // a misleading checkmark.
+          if (!saved) {
+            errors.push({ stepId: step.id, error: 'save_failed' })
+            onStep(step.id, 'failed', 'save_failed')
+            continue
+          }
 
-        files.push({
-          stepId: step.id,
-          label: step.label || step.id,
-          output,
-          savedLink: saved.webViewLink || null,
-          savedProvider: saved.provider || null,
-        })
-        // First successful save tells us where the build folder lives —
-        // capture for the folder link UI.
-        if (!folderLink && saved.folderLink) {
-          folderLink = saved.folderLink
-          folderProvider = saved.provider
+          files.push({
+            stepId: step.id,
+            label: step.label || step.id,
+            output,
+            savedLink: saved.webViewLink || null,
+            savedProvider: saved.provider || null,
+          })
+          // First successful save tells us where the build folder lives —
+          // capture for the folder link UI.
+          if (!folderLink && saved.folderLink) {
+            folderLink = saved.folderLink
+            folderProvider = saved.provider
+          }
+          // Merge savedLink back into the cached output so downstream steps
+          // can reference {step.savedLink} in their interpolated input.
+          stepOutputs[step.id] = { ...output, savedLink: saved.webViewLink, savedProvider: saved.provider }
         }
-        // Merge savedLink back into the cached output so downstream steps
-        // can reference {step.savedLink} in their interpolated input.
-        stepOutputs[step.id] = { ...output, savedLink: saved.webViewLink, savedProvider: saved.provider }
       }
 
       // Bundle outputs (per-slide narration, image series, etc.) — save each
@@ -210,7 +241,19 @@ export async function runBuild(plan, ctx, onStep = () => {}) {
       // type ({audio,image,document}_bundle) tells us what to save each
       // child as; the rest of the loop is identical.
       const bundleType = output?.type?.endsWith('_bundle') ? output.type.replace('_bundle', '') : null
-      if (bundleType && Array.isArray(output.files)) {
+      if (bundleType && Array.isArray(output.files) && !hasStorage) {
+        // No cloud storage — keep the whole bundle inline (each child carries
+        // its own url). Surfaced as per-file downloads in the build card.
+        files.push({
+          stepId: step.id,
+          label: `${step.label || step.id} (${output.files.length} files)`,
+          output,
+          savedLinks: output.files.map(() => null),
+          savedProvider: null,
+          unsaved: true,
+        })
+        // stepOutputs[step.id] already holds the raw bundle for downstream use.
+      } else if (bundleType && Array.isArray(output.files)) {
         const savedLinks = []
         let anySaved = false
         for (const child of output.files) {
@@ -266,21 +309,24 @@ export async function runBuild(plan, ctx, onStep = () => {}) {
   }
 
   // Persist a metadata.json into the build folder so users can see
-  // what was generated and how (without needing to open every file)
+  // what was generated and how (without needing to open every file).
+  // Skipped when there's no storage — there's no folder to write it into.
   try {
-    const metadata = {
-      deliverable: plan.deliverable,
-      created_at: new Date().toISOString(),
-      files: files.map(f => ({ stepId: f.stepId, label: f.label, link: f.savedLink })),
-      errors,
+    if (hasStorage) {
+      const metadata = {
+        deliverable: plan.deliverable,
+        created_at: new Date().toISOString(),
+        files: files.map(f => ({ stepId: f.stepId, label: f.label, link: f.savedLink })),
+        errors,
+      }
+      await saveToCloud({
+        type: 'document',
+        url: 'data:application/json;base64,' + btoa(JSON.stringify(metadata, null, 2)),
+        tool: 'build',
+        prompt: 'metadata',
+        filename: 'metadata.json',
+      }, buildProject)
     }
-    await saveToCloud({
-      type: 'document',
-      url: 'data:application/json;base64,' + btoa(JSON.stringify(metadata, null, 2)),
-      tool: 'build',
-      prompt: 'metadata',
-      filename: 'metadata.json',
-    }, buildProject)
   } catch {}
 
   return {

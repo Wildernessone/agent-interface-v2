@@ -11,7 +11,7 @@ import { orchestrate, getProactiveNotices, processCorrection, ROLE_POOL, shouldA
 import { detectSignalsFromUserMessage, logSignals, logAuditFail, getRecentRolePerformance } from '../utils/roleSignals'
 import { logUsage, logError, checkTierLimits } from '../utils/telemetry'
 import { track } from '../utils/track'
-import { saveToCloud } from '../utils/cloudStorage'
+import { saveToCloud, pickProvider } from '../utils/cloudStorage'
 import { TOOLS_BY_ID, ToolError, readKey } from '../tools/registry'
 import { runBuild } from '../utils/buildExecutor'
 import { friendlyError, buildSummary, extractSlideTitles } from '../utils/buildErrors'
@@ -652,9 +652,13 @@ export default function TheInterface() {
       cost,
     })
 
+    // Resolve storage availability once so runBuild can keep outputs inline
+    // (instead of failing every file step) when no Drive/Dropbox is connected.
+    const hasStorage = !!(await pickProvider())
+
     const result = await runBuild(
       planToRun,
-      { settings, project: activeProject, proxy: proxyFetch },
+      { settings, project: activeProject, proxy: proxyFetch, hasStorage },
       (stepId, status, reason) => {
         updateBuildTurn(buildTurnId, {
           steps: (s) => (s || []).map(x => x.id === stepId ? { ...x, status, reason } : x),
@@ -1046,11 +1050,39 @@ const TurnRow = memo(function TurnRow({ turn, isActive, busy, onRetryLast, onExe
                 )}
                 {done && turn.files?.length > 0 && (
                   <div className="ai-build-files">
-                    <span>{turn.files.length} file{turn.files.length === 1 ? '' : 's'} bundled</span>
-                    {folderHref && (
+                    <span>{turn.files.length} file{turn.files.length === 1 ? '' : 's'} {folderHref ? 'bundled' : 'generated'}</span>
+                    {folderHref ? (
                       <a className="ai-build-folder-link" href={folderHref} target="_blank" rel="noreferrer">
                         Open folder ↗
                       </a>
+                    ) : (
+                      <>
+                        <div className="ai-build-downloads">
+                          {turn.files.flatMap(f => {
+                            const out = f.output
+                            // Bundle output — one download per child file.
+                            if (Array.isArray(out?.files)) {
+                              return out.files
+                                .filter(c => c?.url && !c.error)
+                                .map((c, i) => (
+                                  <a key={`${f.stepId}-${i}`} href={c.url} download={c.filename || undefined}
+                                     className="ai-build-download">{c.filename || `${f.label} ${i + 1}`} ↓</a>
+                                ))
+                            }
+                            // Single-file output.
+                            if (out?.url) {
+                              return [
+                                <a key={f.stepId} href={out.url} download={out.filename || undefined}
+                                   className="ai-build-download">{f.label} ↓</a>,
+                              ]
+                            }
+                            return []
+                          })}
+                        </div>
+                        <div className="ai-build-unsaved-note">
+                          Not saved to cloud — connect Drive or Dropbox in Settings → Storage to keep these.
+                        </div>
+                      </>
                     )}
                   </div>
                 )}
