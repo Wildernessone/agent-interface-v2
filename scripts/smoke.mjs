@@ -167,16 +167,25 @@ try {
     if (String(url).includes('/claude')) return { ok: true, status: 200, json: async () => ({ content: [{ text: JSON.stringify(CANNED) }] }) }
     return { ok: true, status: 200, json: async () => ({}), text: async () => '' }
   }
-  // suno NOT in enabledTools and not build-internal → must be filtered out;
-  // stable_audio IS build-internal → must survive.
+  // suno NOT in enabledTools and not build-internal → must be filtered out.
+  // stable_audio IS build-internal but KEY-GATED (tool_keys.stability, PR #31):
+  // with the key it survives; without it, it's dropped.
   const decision = await orchestrate({
     userMessage: 'build me a 30s ad now', enabledAgents: ['claude'],
-    enabledTools: {}, settings: { agents: { claude: { key: 'sk-test' } } },
+    enabledTools: {}, settings: { agents: { claude: { key: 'sk-test' } }, toolKeys: { stability: 'sk-test' } },
   })
   const tools = decision.plan.steps.map(s => s.tool)
   check('dispatcher: build mode preserved', decision.mode === 'build')
-  check('dispatcher: build-internal stable_audio survives', tools.includes('stable_audio'))
+  check('dispatcher: key-gated stable_audio survives WITH its key', tools.includes('stable_audio'))
   check('dispatcher: keyless/non-internal suno filtered out', !tools.includes('suno'), `plan: ${tools.join(' -> ')}`)
+
+  // Same plan, NO stability key → stable_audio must be dropped (PR #31 gating).
+  const decisionNoKey = await orchestrate({
+    userMessage: 'build me a 30s ad now', enabledAgents: ['claude'],
+    enabledTools: {}, settings: { agents: { claude: { key: 'sk-test' } } },
+  })
+  const toolsNoKey = decisionNoKey.plan.steps.map(s => s.tool)
+  check('dispatcher: key-gated stable_audio dropped WITHOUT its key', !toolsNoKey.includes('stable_audio'), `plan: ${toolsNoKey.join(' -> ')}`)
 } finally {
   await server.close()
 }
