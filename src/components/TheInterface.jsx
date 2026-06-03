@@ -423,6 +423,13 @@ export default function TheInterface() {
     // path below MUST reset it (see the resets before each early return and at
     // the end), otherwise sending locks up permanently.
     if ((!text && attachments.length === 0) || busy || sendingRef.current) return
+    // No usable agent (none enabled with a key) — don't silently no-op or fire
+    // a doomed orchestrate call. Prompt the user to connect one. Checked before
+    // sendingRef/setInput so the typed message is preserved for after they add a key.
+    if (activeAgents.length === 0) {
+      addErrorTurn("orchestrator", "no_agents")
+      return
+    }
     sendingRef.current = true
     try {
     if (!overrideText) setInput("")
@@ -1157,6 +1164,7 @@ const TurnRow = memo(function TurnRow({ turn, isActive, busy, onRetryLast, onExe
               turn.errorType === "network" ? `Couldn't reach ${label}. Check your connection and retry.` :
               turn.errorType === "orchestrator_down" ? `OpenClaw couldn't process this message. Retry, or verify your agent keys.` :
               turn.errorType === "free_tier_limit" ? `You've reached the free-tier daily limit. Upgrade to Pro for unlimited messages.` :
+              turn.errorType === "no_agents" ? `No AI agents are connected yet. Add a provider API key (Claude, GPT, Gemini, or Grok) in Settings, then send your message again.` :
               `${label} returned an unexpected error. Retry, or check Settings.`
             )
             const billingUrl = agent?.id==="claude"?"https://console.anthropic.com":agent?.id==="gpt"?"https://platform.openai.com/account/billing":agent?.id==="gemini"?"https://aistudio.google.com/app/plan":"https://console.x.ai"
@@ -1167,7 +1175,7 @@ const TurnRow = memo(function TurnRow({ turn, isActive, busy, onRetryLast, onExe
                   : <div className="ai-avatar ai-avatar--error">!</div>
                 }
                 <div className="ai-error" role="alert">
-                  <div className="ai-error-title">{label} isn't responding</div>
+                  <div className="ai-error-title">{turn.errorType === "no_agents" ? "Connect an agent to get started" : `${label} isn't responding`}</div>
                   <div className="ai-error-msg">{message}</div>
                   {turn.detail && (
                     <details className="ai-error-detail">
@@ -1176,7 +1184,9 @@ const TurnRow = memo(function TurnRow({ turn, isActive, busy, onRetryLast, onExe
                     </details>
                   )}
                   <div className="ai-actions">
-                    <button className="ai-btn ai-btn--primary" onClick={onRetryLast}>Retry</button>
+                    {turn.errorType === "no_agents"
+                      ? <button className="ai-btn ai-btn--primary" onClick={onOpenSettings}>Add a key</button>
+                      : <button className="ai-btn ai-btn--primary" onClick={onRetryLast}>Retry</button>}
                     {turn.errorType === "out_of_credits" && agent && (
                       <a className="ai-btn" href={billingUrl} target="_blank" rel="noreferrer">Add credits</a>
                     )}
