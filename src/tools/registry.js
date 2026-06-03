@@ -888,48 +888,69 @@ RIGHT voiceover_script: "Stop juggling four AI tools. Agent Interface gives you 
       ? { 'x-supabase-auth': `Bearer ${session.access_token}` }
       : {}
 
+    // Hard ceiling per attempt. Without it a hung proxy/socket leaves the
+    // build step stuck on ◐ "in progress" indefinitely (observed: 16 min) —
+    // tool.run() neither resolves nor rejects, so runBuild never emits
+    // done/failed. AbortController guarantees the call returns within the
+    // window so a hang surfaces as a timeout error in the build card.
+    const SYNTH_TIMEOUT_MS = 90_000
+
     // One provider call. Returns raw text; throws an Error with .status
     // on HTTP failure so the retry loop can decide whether to try again.
+    // A timeout aborts and throws an error flagged `.timeout` (no .status),
+    // which the retry loop treats as non-transient so it fails fast.
     const callOnce = async () => {
-      if (cfg.provider === 'claude') {
-        const res = await fetch(`${PROXY}/claude`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-api-key': cfg.key, ...supaAuth },
-          // 4K fits any outline (slides[] or sections[]) and finishes
-          // well inside Cloudflare's ~100s wall. 8K gens were hitting
-          // 524 timeouts in real testing.
-          body: JSON.stringify({ model: modelFor('claude'), messages: [{ role: 'user', content: fullPrompt }], max_tokens: 4096 }),
-        })
-        if (!res.ok) { const e = new Error(`claude_${res.status}`); e.status = res.status; throw e }
-        const data = await res.json()
-        return data.content?.[0]?.text || ''
-      } else if (cfg.provider === 'gpt') {
-        const res = await fetch(`${PROXY}/gpt`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.key}`, ...supaAuth },
-          body: JSON.stringify({ model: modelFor('gpt'), messages: [{ role: 'user', content: fullPrompt }], max_tokens: 4096 }),
-        })
-        if (!res.ok) { const e = new Error(`gpt_${res.status}`); e.status = res.status; throw e }
-        return res.text()
-      } else {
-        const res = await fetch(`${PROXY}/gemini`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-api-key': cfg.key, ...supaAuth },
-          body: JSON.stringify({
-            model: modelFor('gemini'),
-            contents: [{ role: 'user', parts: [{ text: fullPrompt }] }],
-            generationConfig: { maxOutputTokens: 4096 },
-          }),
-        })
-        if (!res.ok) { const e = new Error(`gemini_${res.status}`); e.status = res.status; throw e }
-        return res.text()
+      const ctrl = new AbortController()
+      const timer = setTimeout(() => ctrl.abort(), SYNTH_TIMEOUT_MS)
+      try {
+        if (cfg.provider === 'claude') {
+          const res = await fetch(`${PROXY}/claude`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-api-key': cfg.key, ...supaAuth },
+            signal: ctrl.signal,
+            // 4K fits any outline (slides[] or sections[]) and finishes
+            // well inside Cloudflare's ~100s wall. 8K gens were hitting
+            // 524 timeouts in real testing.
+            body: JSON.stringify({ model: modelFor('claude'), messages: [{ role: 'user', content: fullPrompt }], max_tokens: 4096 }),
+          })
+          if (!res.ok) { const e = new Error(`claude_${res.status}`); e.status = res.status; throw e }
+          const data = await res.json()
+          return data.content?.[0]?.text || ''
+        } else if (cfg.provider === 'gpt') {
+          const res = await fetch(`${PROXY}/gpt`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.key}`, ...supaAuth },
+            signal: ctrl.signal,
+            body: JSON.stringify({ model: modelFor('gpt'), messages: [{ role: 'user', content: fullPrompt }], max_tokens: 4096 }),
+          })
+          if (!res.ok) { const e = new Error(`gpt_${res.status}`); e.status = res.status; throw e }
+          return res.text()
+        } else {
+          const res = await fetch(`${PROXY}/gemini`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-api-key': cfg.key, ...supaAuth },
+            signal: ctrl.signal,
+            body: JSON.stringify({
+              model: modelFor('gemini'),
+              contents: [{ role: 'user', parts: [{ text: fullPrompt }] }],
+              generationConfig: { maxOutputTokens: 4096 },
+            }),
+          })
+          if (!res.ok) { const e = new Error(`gemini_${res.status}`); e.status = res.status; throw e }
+          return res.text()
+        }
+      } catch (e) {
+        if (e?.name === 'AbortError') { const te = new Error('synth_timeout_90s'); te.timeout = true; throw te }
+        throw e
+      } finally {
+        clearTimeout(timer)
       }
     }
 
     // Retry transient failures up to 3x with backoff. Cloudflare 524
     // (timeout), 529 (overloaded), and 5xx upstream blips are usually
     // self-healing within a few seconds. Hard errors (auth, bad request)
-    // fail fast.
+    // and timeouts fail fast.
     const TRANSIENT = new Set([429, 500, 502, 503, 524, 529])
     let raw = ''
     let lastErr = null
@@ -940,12 +961,14 @@ RIGHT voiceover_script: "Stop juggling four AI tools. Agent Interface gives you 
         break
       } catch (e) {
         lastErr = e
-        if (!TRANSIENT.has(e.status)) break
+        if (e.timeout || !TRANSIENT.has(e.status)) break
         await new Promise(r => setTimeout(r, 1500 * (attempt + 1)))
       }
     }
     if (lastErr) {
-      const friendly = (lastErr.status === 524 || lastErr.status === 529)
+      const friendly = lastErr.timeout
+        ? 'the model took over 90s and was stopped — try again'
+        : (lastErr.status === 524 || lastErr.status === 529)
         ? 'the model timed out — try again'
         : lastErr.message
       throw new ToolError('agent_synth', 'bad_response', friendly)
