@@ -30,6 +30,7 @@
 import { TOOLS_BY_ID, readKey, ToolError } from '../tools/registry'
 import { saveToCloud, pickProvider } from './cloudStorage'
 import { supabase } from './supabase'
+import { brandBriefFrom } from './brandContext'
 
 // Substitute {stepId} (and {stepId.field}) in a string with the resolved
 // outputs of previously-completed steps. Whole-string substitutions can
@@ -130,6 +131,12 @@ export async function runBuild(plan, ctx, onStep = () => {}) {
   // distinguish the two: no storage → keep the output inline; storage present
   // but save failed → surface the failure as before.
   const hasStorage = ctx.hasStorage !== undefined ? ctx.hasStorage : !!(await pickProvider())
+  // Brand context to feed the builder (agent_synth) so it writes ON-brand
+  // instead of inventing the product. The dispatcher attaches the real brief to
+  // plan.brandContext (project brief, or a brief pasted into the message for a
+  // one-off build); fall back to the active project's brief defensively (e.g. a
+  // Retry re-running a stored plan that predates this field).
+  const brandContext = plan.brandContext || brandBriefFrom(project) || ''
   const stepOutputs = {}
   const files = []
   const errors = []
@@ -180,6 +187,7 @@ export async function runBuild(plan, ctx, onStep = () => {}) {
         proxy,
         outputSchema: step.output_schema || null,
         label: step.label,
+        brandContext,
       })
 
       stepOutputs[step.id] = output

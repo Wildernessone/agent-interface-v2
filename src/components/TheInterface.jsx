@@ -15,6 +15,7 @@ import { track } from '../utils/track'
 import { saveToCloud, pickProvider } from '../utils/cloudStorage'
 import { TOOLS_BY_ID, ToolError, readKey } from '../tools/registry'
 import { runBuild } from '../utils/buildExecutor'
+import { brandBriefFrom } from '../utils/brandContext'
 import { friendlyError, buildSummary, extractSlideTitles } from '../utils/buildErrors'
 import { estimateBuildCents, formatCents } from '../utils/buildCost'
 import { ingestFile, formatIngested } from '../utils/fileIngestion'
@@ -314,6 +315,17 @@ export default function TheInterface() {
     () => AGENTS.filter(a => settings.agents[a.id]?.enabled && settings.agents[a.id]?.key),
     [settings.agents]
   )
+
+  // Project-scoped memory: a memory row tagged to a project (project_id) must
+  // NOT bleed into a different project's prompts — that's cross-contamination
+  // (Project A's facts surfacing in Project B). Rows with no project_id are
+  // genuinely global (user-level preferences) and apply everywhere. With no
+  // active project, only global rows are in scope. (Rows predate the project_id
+  // column → undefined → treated as global, so this is backward-safe.)
+  const scopedMemory = useMemo(
+    () => agentMemory.filter(m => m.project_id == null || m.project_id === activeProject?.id),
+    [agentMemory, activeProject?.id]
+  )
   // A tool toggled "on" but missing its API key is effectively unusable — if we
   // hand it to the dispatcher it plans a step that fails at runtime (the Suno
   // problem). Require both the toggle AND a resolvable key before exposing it.
@@ -470,7 +482,7 @@ export default function TheInterface() {
         agentResponses: recentAgentResponses,
         enabledAgents: selected.map(a => a.id),
         enabledTools,
-        memory: agentMemory,
+        memory: scopedMemory,
         activeProject,
         previousRoleAssignments: previousRolesRef.current,
         previousSpendMode: previousSpendModeRef.current,
@@ -481,6 +493,24 @@ export default function TheInterface() {
     } catch(e) {
       logError("orchestrate", e)
       addErrorTurn("orchestrator", "orchestrator_down")
+      return
+    }
+
+    // BRAND-CONTEXT GATE: the dispatcher refused a brand-facing build because
+    // there's no usable brand context. Respond AS the orchestrator asking for a
+    // brief — do NOT run agents or a build (either would fabricate the product).
+    if (clawDecision?.mode === 'blocked') {
+      addTurn({
+        id: `notice-${Date.now()}`,
+        type: 'notice',
+        kind: clawDecision.block?.reason || 'blocked',
+        message: clawDecision.block?.message || '',
+        canEditProject: !!clawDecision.block?.hasProject,
+      })
+      logUsage({
+        kind: 'orchestrate', provider: 'openclaw', model: 'openclaw', success: true,
+        metadata: { mode: 'blocked', reason: clawDecision.block?.reason || 'blocked', is_build: false },
+      })
       return
     }
 
@@ -551,8 +581,8 @@ export default function TheInterface() {
         const role = clawDecision?.role_assignments?.[agent.id] || null
         addTurn({ id, type: "agent", agent: agent.id, role, text: "", directed: !targets.includes("all") })
 
-        const memoryContext = agentMemory.length > 0
-          ? agentMemory.slice(0, 8).map(m => `[${m.title}]: ${m.content.slice(0, 300)}`).join("\n")
+        const memoryContext = scopedMemory.length > 0
+          ? scopedMemory.slice(0, 8).map(m => `[${m.title}]: ${m.content.slice(0, 300)}`).join("\n")
           : ""
 
         // Compact prior-project context: title + one-line preview + when, for up
@@ -579,6 +609,8 @@ export default function TheInterface() {
           activeAgentIds: selected.map(a => a.id),
           enabledTools, mode: activeResponseMode, round: round + 1, totalRounds,
           agentId: agent.id, voiceMode, memoryContext, projectContext, role,
+          projectName: activeProject?.name || "",
+          projectBrief: brandBriefFrom(activeProject),
           skills, useSkills: agentUseSkills,
         })
 
@@ -678,7 +710,7 @@ export default function TheInterface() {
     const plan = clawDecision?.plan
     const steps = plan?.steps || []
     if (steps.length > 0) {
-      await executeBuild({ deliverable: plan.deliverable, steps })
+      await executeBuild({ deliverable: plan.deliverable, steps, brandContext: plan.brandContext || null })
     }
     } finally {
       sendingRef.current = false
@@ -707,7 +739,7 @@ export default function TheInterface() {
     const hasStorage = !!(await pickProvider())
 
     const result = await runBuild(
-      planToRun,
+      { ...planToRun, brandContext: planToRun.brandContext || null },
       { settings, project: activeProject, proxy: proxyFetch, hasStorage },
       (stepId, status, reason) => {
         updateBuildTurn(buildTurnId, {
@@ -1052,6 +1084,26 @@ const TurnRow = memo(function TurnRow({ turn, isActive, busy, onRetryLast, onExe
             <div key={turn.id} className="ai-turn ai-tool-card">
               <div className="ai-tool-label">{turn.output?.tool || "tool"}</div>
               <ToolOutput output={turn.output} />
+            </div>
+          )
+          // Orchestrator notice (not an error) — e.g. a brand-facing build was
+          // held for lack of context. Renders as an OpenClaw bubble with the
+          // ask; the CTA opens the active project's brief editor.
+          if (turn.type === "notice") return (
+            <div key={turn.id} className="ai-turn ai-turn--agent">
+              <div className="ai-avatar ai-avatar--claw">⚙</div>
+              <div className="ai-notice" role="status">
+                <div className="ai-notice-title">OpenClaw</div>
+                <div className="ai-notice-msg">{turn.message}</div>
+                {turn.canEditProject && (
+                  <div className="ai-actions">
+                    <button className="ai-btn ai-btn--primary"
+                      onClick={() => window.dispatchEvent(new CustomEvent('openclaw:edit_project'))}>
+                      Add a brand brief
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           )
           if (turn.type === "build") {

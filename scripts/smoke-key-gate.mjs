@@ -15,9 +15,13 @@ const check = (name, cond, detail = '') => {
 
 // A plan the dispatcher might emit: synth → xlsx, plus a stripe step and a
 // per-slide image step (both credential-gated).
+// requires_brand_context:false keeps the brand-context gate (smoke-brand-gate)
+// out of the way — this test is about CREDENTIAL gating, not brand context.
+// Without the flag the gate would block s4 (image_per_slide is brand-facing).
 const decision = JSON.stringify({
   mode: 'build', spend_mode: 'balanced', agents_to_respond: [], rounds: 1,
   response_mode: 'concise', build_intent: 'create', deliverable: 'Pro tier kit',
+  requires_brand_context: false,
   plan: { steps: [
     { id: 's1', tool: 'agent_synth', needs: [], output_schema: 'spreadsheet', input: 'tabulate the tiers' },
     { id: 's2', tool: 'xlsxgen', needs: ['s1'], input: '{s1}' },

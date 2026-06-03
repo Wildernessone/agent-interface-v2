@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useStore } from '../store/useStore'
 import { useModalDismiss } from '../utils/useModalDismiss'
+import { BRIEF_TEMPLATE } from '../utils/brandContext'
 
 /**
  * Slim project picker that lives in the header next to the brand.
@@ -12,12 +13,10 @@ import { useModalDismiss } from '../utils/useModalDismiss'
  * here is what keeps builds on-brand instead of hallucinating. The form offers
  * a labelled template to make a good brief easy to write; editing an existing
  * project is how a brief gets onto projects created before this existed.
+ *
+ * BRIEF_TEMPLATE is shared with the brand-context gate (utils/brandContext) so
+ * the form and the gate agree on what an "unfilled template" looks like.
  */
-const BRIEF_TEMPLATE = `What it is:
-Audience:
-Voice & tone:
-Differentiator:
-Avoid: `
 
 export default function ProjectPicker() {
   const { activeProject, projects, loadProjects, createProject, updateProject, setActiveProject } = useStore()
@@ -34,6 +33,22 @@ export default function ProjectPicker() {
 
   useEffect(() => {
     loadProjects()
+  }, [])
+
+  // The brand-context gate's notice ("Add a brand brief") dispatches this so the
+  // user lands directly in the active project's brief editor instead of hunting
+  // for the menu. No active project → just open the picker to create/select one.
+  useEffect(() => {
+    const handler = () => {
+      const proj = useStore.getState().activeProject
+      setOpen(true)
+      setEditingId(proj?.id || null)
+      setNewName(proj?.name || "")
+      setNewDesc(proj?.description || "")
+      setCreating(true)
+    }
+    window.addEventListener('openclaw:edit_project', handler)
+    return () => window.removeEventListener('openclaw:edit_project', handler)
   }, [])
 
   const handleSelect = (project) => {
