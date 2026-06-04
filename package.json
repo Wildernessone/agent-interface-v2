@@ -18,6 +18,9 @@
     "smoke:entitlements": "node scripts/smoke-entitlements.mjs",
     "smoke:nostorage": "node scripts/smoke-build-no-storage.mjs",
     "smoke:live": "node scripts/smoke-live.mjs",
+    "e2e": "playwright test",
+    "e2e:public": "playwright test --project=public",
+    "e2e:ui": "playwright test --ui",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -38,6 +41,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.60.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
