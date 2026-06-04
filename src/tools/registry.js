@@ -1448,6 +1448,10 @@ const mdgen = {
       url,
       filename: `${(label || 'post').replace(/[^a-z0-9-_ ]/gi, '').trim() || 'post'}.md`,
       tool: 'mdgen',
+      // Human-readable content (no YAML frontmatter) so the build card can
+      // preview it inline — otherwise a one-step text deliverable like an IG
+      // caption is only readable by opening the saved .md in Drive.
+      text: `# ${title}\n\n${body}\n`,
       meta: { sectionCount: sections.length, wordCount: body.split(/\s+/).filter(Boolean).length },
     }
   },
