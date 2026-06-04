@@ -11,6 +11,7 @@
     "smoke:brandgate": "node scripts/smoke-brand-gate.mjs",
     "smoke:textonly": "node scripts/smoke-textonly-output.mjs",
     "smoke:orchfallback": "node scripts/smoke-orchestrator-fallback.mjs",
+    "smoke:stress": "node scripts/smoke-build-stress.mjs",
     "smoke:nostorage": "node scripts/smoke-build-no-storage.mjs",
     "smoke:live": "node scripts/smoke-live.mjs",
     "preview": "vite preview"
