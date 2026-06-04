@@ -216,6 +216,42 @@ export async function runBuild(plan, ctx, onStep = () => {}) {
   // it as a Markdown document so it's readable inline and downloadable.
   const consumedStepIds = new Set((plan.steps || []).flatMap(s => s.needs || []))
 
+  // Surface an agent_synth step's content as a readable + downloadable Markdown
+  // deliverable (inline preview + .md). Used for a TERMINAL synth (no generator
+  // after it) AND as a RESCUE when a synth's generator step failed — so
+  // successful writing work is never thrown away. Idempotent per step.
+  const surfaceSynth = async (step, output, note = '') => {
+    if (!output || typeof output !== 'object') return
+    if (files.some(f => f.stepId === step.id)) return
+    const md = synthToMarkdown(output)
+    if (!md) return
+    const base = (step.label || plan.deliverable || 'output').replace(/[<>:"/\\|?*]/g, '').slice(0, 60).trim() || 'output'
+    const doc = {
+      type: 'document',
+      tool: 'agent_synth',
+      filename: `${base}.md`,
+      url: `data:text/markdown;charset=utf-8,${encodeURIComponent(md)}`,
+      text: md,
+      prompt: step.label || 'Synthesized text',
+    }
+    let saved = null
+    if (hasStorage) {
+      saved = await saveToCloud(doc, buildProject)
+      if (saved && !folderLink && saved.folderLink) {
+        folderLink = saved.folderLink
+        folderProvider = saved.provider
+      }
+    }
+    files.push({
+      stepId: step.id,
+      label: `${step.label || step.id}${note}`,
+      output: doc,
+      savedLink: saved?.webViewLink || null,
+      savedProvider: saved?.provider || null,
+      unsaved: !saved,
+    })
+  }
+
   for (const step of ordered) {
     const depFailed = (step.needs || []).some(d => errors.some(e => e.stepId === d))
     if (depFailed) {
@@ -365,41 +401,11 @@ export async function runBuild(plan, ctx, onStep = () => {}) {
         })
       }
 
-      // Terminal agent_synth → surface its text. The raw object stays in
-      // stepOutputs (untouched, for any interpolation); we ADD a Markdown
-      // document so the user can read the copy inline and download it, instead
-      // of the build reporting "No files produced yet". Only when nothing
-      // consumes this step (a generator like mdgen/pptxgen would otherwise
-      // produce the real deliverable and carry the text forward).
-      if (step.tool === 'agent_synth' && !consumedStepIds.has(step.id) && output && typeof output === 'object') {
-        const md = synthToMarkdown(output)
-        if (md) {
-          const safe = (step.label || plan.deliverable || 'output').replace(/[<>:"/\\|?*]/g, '').slice(0, 60).trim() || 'output'
-          const doc = {
-            type: 'document',
-            tool: 'agent_synth',
-            filename: `${safe}.md`,
-            url: `data:text/markdown;charset=utf-8,${encodeURIComponent(md)}`,
-            text: md,            // inline preview in the build card
-            prompt: step.label || 'Synthesized text',
-          }
-          let saved = null
-          if (hasStorage) {
-            saved = await saveToCloud(doc, buildProject)
-            if (saved && !folderLink && saved.folderLink) {
-              folderLink = saved.folderLink
-              folderProvider = saved.provider
-            }
-          }
-          files.push({
-            stepId: step.id,
-            label: step.label || step.id,
-            output: doc,
-            savedLink: saved?.webViewLink || null,
-            savedProvider: saved?.provider || null,
-            unsaved: !saved,
-          })
-        }
+      // Terminal agent_synth (nothing consumes it) → surface its text so the
+      // build doesn't report "No files produced yet". A generator after it
+      // would otherwise carry the content into the real deliverable.
+      if (step.tool === 'agent_synth' && !consumedStepIds.has(step.id)) {
+        await surfaceSynth(step, output)
       }
 
       onStep(step.id, 'done', null, output)
@@ -407,6 +413,25 @@ export async function runBuild(plan, ctx, onStep = () => {}) {
       const reason = e instanceof ToolError ? e.message : String(e.message || e)
       errors.push({ stepId: step.id, error: reason })
       onStep(step.id, 'failed', reason)
+    }
+  }
+
+  // CONTENT RESCUE — never throw away successful writing work. If an
+  // agent_synth step succeeded but EVERY step that consumed it failed (e.g.
+  // agent_synth wrote the deck copy, then pptxgen died), its content would
+  // otherwise vanish — the user gets "the generator failed" and nothing else.
+  // Surface that content as a Markdown fallback so they still walk away with
+  // the words. Only fires when the content is genuinely orphaned (all direct
+  // consumers failed) — a successful consumer means the content was delivered.
+  for (const step of (plan.steps || [])) {
+    if (step.tool !== 'agent_synth') continue
+    const succeeded = stepOutputs[step.id] != null && !errors.some(e => e.stepId === step.id)
+    if (!succeeded) continue
+    if (files.some(f => f.stepId === step.id)) continue        // already surfaced (terminal)
+    const consumers = (plan.steps || []).filter(s => (s.needs || []).includes(step.id))
+    if (consumers.length === 0) continue                       // terminal handled in-loop
+    if (consumers.every(c => errors.some(e => e.stepId === c.id))) {
+      await surfaceSynth(step, stepOutputs[step.id], ' — content (the generator step failed)')
     }
   }
 
