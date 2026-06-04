@@ -154,6 +154,31 @@
 
 /* ────────── Thread ────────── */
 
+/* Trial downgrade warning — a calm upsell bar above the thread, shown only in
+   the few days before a step-down. */
+.trial-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  background: var(--color-accent-soft);
+  border-bottom: 1px solid var(--color-accent);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+}
+.trial-banner-text { flex: 1; min-width: 0; line-height: var(--line-height-normal); }
+.trial-banner-actions { display: flex; align-items: center; gap: var(--space-2); flex-shrink: 0; }
+.trial-banner-dismiss {
+  border: none;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-lg);
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 var(--space-1);
+}
+.trial-banner-dismiss:hover { color: var(--color-text-primary); }
+
 .ai-thread {
   flex: 1;
   overflow-y: auto;

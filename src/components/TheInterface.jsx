@@ -26,6 +26,7 @@ import ToolOutput from './ToolOutput'
 import OnboardingPanel from './OnboardingPanel'
 import ProjectPicker from './ProjectPicker'
 import MemoryPanel from './MemoryPanel'
+import TrialBanner from './TrialBanner'
 
 const AGENTS = [
   { id:"claude",  name:"Claude",  color:"var(--color-agent-claude)", avatar:"C" },
@@ -905,6 +906,8 @@ export default function TheInterface() {
           ))}
         </div>
       )}
+
+      <TrialBanner onUpgrade={onOpenSettings} />
 
       <main ref={scrollRef} className="ai-thread">
         {turns.length === 0 && activeAgents.length === 0 && !skippedOnboarding && (
