@@ -21,6 +21,8 @@ const server = await createServer({ root: process.cwd(), logLevel: 'error', opti
 
 // Nothing here should hit the network.
 globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({}), text: async () => '' })
+// Node has no URL.createObjectURL — mdgen (real, browser-side) calls it.
+globalThis.URL.createObjectURL = () => 'blob:fake'
 
 try {
   const reg = await server.ssrLoadModule('/src/tools/registry.js')
@@ -86,6 +88,22 @@ try {
   synthReturn = {}
   const e = await runBuild(terminalPlan(), ctxNoStore, () => {})
   check('E: empty object yields a file with JSON fallback text', e.files.length === 1 && typeof e.files[0].output.text === 'string')
+
+  // ── Case F: agent_synth → REAL mdgen → mdgen carries inline text ────
+  // When the dispatcher routes a text deliverable through mdgen, the .md is the
+  // file; mdgen must still expose readable text so the build card previews it
+  // inline (not only "Open folder ↗"). agent_synth here is consumed → its own
+  // synth doc is NOT added; only mdgen's file, and that file carries .text.
+  synthReturn = { title: 'Elk Week', sections: [{ heading: 'Caption', body: 'No fake markdowns. Tracked fresh this morning.' }] }
+  const fPlan = { deliverable: 'IG caption', steps: [
+    { id: 's1', tool: 'agent_synth', needs: [], output_schema: 'post', input: 'draft', label: 'Write caption' },
+    { id: 's2', tool: 'mdgen', needs: ['s1'], input: '{s1}', label: 'Package as markdown' },
+  ] }
+  const f = await runBuild(fPlan, ctxNoStore, () => {})
+  check('F: one file (mdgen), no duplicate synth doc', f.files.length === 1 && f.files[0].stepId === 's2')
+  check('F: mdgen output carries inline text', !!f.files[0]?.output?.text)
+  check('F: text is the readable caption', /No fake markdowns/.test(f.files[0]?.output?.text || ''))
+  check('F: inline text omits YAML frontmatter', !/^---/.test((f.files[0]?.output?.text || '').trim()))
 } finally {
   await server.close()
 }
