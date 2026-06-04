@@ -1069,6 +1069,31 @@
   overflow-y: auto;
 }
 
+/* Action results (email sent, sheet/event/payment-link/notion created) —
+   a confirmation row with an optional link, since there's no file to download. */
+.ai-build-action-results {
+  padding: var(--space-3) 0;
+  border-top: 1px dashed var(--color-border-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.ai-build-action-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+.ai-build-action-summary { color: var(--color-status-success, var(--color-text-primary)); }
+.ai-build-action-link {
+  color: var(--color-accent);
+  font-weight: var(--font-weight-medium);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.ai-build-action-link:hover { text-decoration: underline; }
+
 .ai-build-files {
   display: flex;
   align-items: center;
