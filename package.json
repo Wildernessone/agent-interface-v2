@@ -13,6 +13,7 @@
     "smoke:orchfallback": "node scripts/smoke-orchestrator-fallback.mjs",
     "smoke:stress": "node scripts/smoke-build-stress.mjs",
     "smoke:actions": "node scripts/smoke-build-actions.mjs",
+    "smoke:errclass": "node scripts/smoke-error-classify.mjs",
     "smoke:nostorage": "node scripts/smoke-build-no-storage.mjs",
     "smoke:live": "node scripts/smoke-live.mjs",
     "preview": "vite preview"
