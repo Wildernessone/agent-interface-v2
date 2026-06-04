@@ -16,6 +16,7 @@ import { saveToCloud, pickProvider } from '../utils/cloudStorage'
 import { TOOLS_BY_ID, ToolError, readKey } from '../tools/registry'
 import { runBuild } from '../utils/buildExecutor'
 import { brandBriefFrom } from '../utils/brandContext'
+import { entitlements, capAgents, capTools, capNudge } from '../utils/entitlements'
 import { friendlyError, buildSummary, extractSlideTitles } from '../utils/buildErrors'
 import { estimateBuildCents, formatCents } from '../utils/buildCost'
 import { ingestFile, formatIngested } from '../utils/fileIngestion'
@@ -269,7 +270,7 @@ export default function TheInterface() {
   // skills is the per-agent knowledge loaded from Drive at sign-in.
   // We thread it into buildSystemPrompt so every agent call picks up
   // whatever the user has dropped into Drive/Agent Interface/Skills/.
-  const { settings, turns, activeAgentId, voiceMode, addTurn, addToolTurn, updateToolTurn, updateBuildTurn, setTurnText, finishTurn, addErrorTurn, addToolErrorTurn, clearTurns, setVoiceMode, saveConversation, saveStatus, conversationId, loadMemory, saveMemory, resetTurnForRetry, activeProject, projects, loadProjects, createProject, setActiveProject, skills, renameConversation, loadProjectConversations, justCreatedConversationId } = useStore()
+  const { settings, turns, activeAgentId, voiceMode, addTurn, addToolTurn, updateToolTurn, updateBuildTurn, setTurnText, finishTurn, addErrorTurn, addToolErrorTurn, clearTurns, setVoiceMode, saveConversation, saveStatus, conversationId, loadMemory, saveMemory, resetTurnForRetry, activeProject, projects, loadProjects, createProject, setActiveProject, skills, renameConversation, loadProjectConversations, justCreatedConversationId, billing } = useStore()
   
   const handleVoiceToggle = () => {
     if (!voiceMode) {
@@ -310,6 +311,8 @@ export default function TheInterface() {
   // Stick the last spend_mode across turns so a frugal brainstorm stays
   // frugal until the user signals otherwise (build it, "use the best", etc).
   const previousSpendModeRef = useRef(null)
+  // Show the tier-cap upgrade nudge at most once per session so it never nags.
+  const tierNudgeShownRef = useRef(false)
 
   const activeAgents = useMemo(
     () => AGENTS.filter(a => settings.agents[a.id]?.enabled && settings.agents[a.id]?.key),
@@ -465,7 +468,22 @@ export default function TheInterface() {
     const signals = detectSignalsFromUserMessage(text, previousRolesRef.current)
     if (signals.length) logSignals(signals, conversationId)
 
-    const selected = targets.includes("all") ? activeAgents : activeAgents.filter(a => targets.includes(a.id))
+    const baseSelected = targets.includes("all") ? activeAgents : activeAgents.filter(a => targets.includes(a.id))
+
+    // ── TIER ENFORCEMENT (hard caps by the user's effective plan) ────────
+    // How many agents talk at once, how many tools are active, whether memory
+    // is available — the real, unbypassable gate (UI lock badges come later).
+    // Storage is gated in executeBuild. capTools flips the over-limit tools off
+    // so orchestrate + the agent prompts only ever see allowed tools.
+    const ent = entitlements(billing)
+    const { agents: selected, trimmed: agentsTrimmed } = capAgents(baseSelected, ent)
+    const { tools: allowedTools, trimmed: toolsTrimmed } = capTools(enabledTools, ent)
+    const allowedMemory = ent.memory ? scopedMemory : []
+    const nudge = capNudge({ agentsTrimmed, toolsTrimmed }, ent)
+    if (nudge && !tierNudgeShownRef.current) {
+      tierNudgeShownRef.current = true
+      addTurn({ id: `tier-${Date.now()}`, type: 'notice', kind: 'tier_limit', message: nudge })
+    }
 
     const recentAgentResponses = turns
       .filter(t => t.type === "agent" && t.text)
@@ -481,8 +499,8 @@ export default function TheInterface() {
         conversationHistory: conversationRef.current,
         agentResponses: recentAgentResponses,
         enabledAgents: selected.map(a => a.id),
-        enabledTools,
-        memory: scopedMemory,
+        enabledTools: allowedTools,
+        memory: allowedMemory,
         activeProject,
         previousRoleAssignments: previousRolesRef.current,
         previousSpendMode: previousSpendModeRef.current,
@@ -581,8 +599,8 @@ export default function TheInterface() {
         const role = clawDecision?.role_assignments?.[agent.id] || null
         addTurn({ id, type: "agent", agent: agent.id, role, text: "", directed: !targets.includes("all") })
 
-        const memoryContext = scopedMemory.length > 0
-          ? scopedMemory.slice(0, 8).map(m => `[${m.title}]: ${m.content.slice(0, 300)}`).join("\n")
+        const memoryContext = allowedMemory.length > 0
+          ? allowedMemory.slice(0, 8).map(m => `[${m.title}]: ${m.content.slice(0, 300)}`).join("\n")
           : ""
 
         // Compact prior-project context: title + one-line preview + when, for up
@@ -607,7 +625,7 @@ export default function TheInterface() {
 
         const baseSystemPrompt = buildSystemPrompt({
           activeAgentIds: selected.map(a => a.id),
-          enabledTools, mode: activeResponseMode, round: round + 1, totalRounds,
+          enabledTools: allowedTools, mode: activeResponseMode, round: round + 1, totalRounds,
           agentId: agent.id, voiceMode, memoryContext, projectContext, role,
           projectName: activeProject?.name || "",
           projectBrief: brandBriefFrom(activeProject),
@@ -736,7 +754,8 @@ export default function TheInterface() {
 
     // Resolve storage availability once so runBuild can keep outputs inline
     // (instead of failing every file step) when no Drive/Dropbox is connected.
-    const hasStorage = !!(await pickProvider())
+    // Cloud storage is a Standard/Pro entitlement — Free builds stay inline.
+    const hasStorage = entitlements(billing).storage ? !!(await pickProvider()) : false
 
     const result = await runBuild(
       { ...planToRun, brandContext: planToRun.brandContext || null },

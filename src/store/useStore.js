@@ -70,6 +70,10 @@ export const useStore = create((set, get) => ({
 
   settings: DEFAULT_SETTINGS,
   settingsLoaded: false,
+  // Server-authoritative billing/entitlement row (null until loadSettings runs).
+  // null is treated as a fresh Pro trial by the entitlement layer so we never
+  // wrongly gate a user mid-load.
+  billing: null,
   _saveTimer: null,
 
   updateSetting: (key, value) => {
@@ -128,6 +132,15 @@ export const useStore = create((set, get) => ({
               Object.entries(s?.enabled_tools || {}).map(([id, v]) => [id, { enabled: !!v?.enabled }])
             ),
             toolKeys: k?.tool_keys || {},
+          },
+          // Billing/entitlement fields — read by the tier-enforcement layer.
+          // Kept separate from `settings` (user-editable prefs) since these are
+          // server-authoritative and drive hard caps.
+          billing: {
+            subscription_tier: s?.subscription_tier || 'free',
+            subscription_status: s?.subscription_status || null,
+            trial_starts_at: s?.trial_starts_at || null,
+            subscription_period_end: s?.subscription_period_end || null,
           },
           settingsLoaded: true,
         }))
