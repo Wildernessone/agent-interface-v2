@@ -1208,6 +1208,7 @@ const TurnRow = memo(function TurnRow({ turn, isActive, busy, onRetryLast, onExe
             const label = isOrchestrator ? "OpenClaw" : agent?.name
             const message = (
               turn.errorType === "rate_limited" ? `${label} hit its rate limit. Wait a moment and retry.` :
+              turn.errorType === "quota_exceeded" ? `Your ${label} quota is used up — a free-tier or plan limit has been reached, so retrying now won't help. Add billing to your ${label} account, switch to another agent, or wait for the quota to reset.` :
               turn.errorType === "out_of_credits" ? `Your ${label} account is out of credits.` :
               turn.errorType === "invalid_key" ? `Your ${label} API key isn't working — it may have expired.` :
               turn.errorType === "model_unavailable" ? `${label}'s model is currently unavailable — it may have been retired, or your account doesn't have access. Try a different agent, or check that your ${label} plan includes it.` :
@@ -1238,9 +1239,14 @@ const TurnRow = memo(function TurnRow({ turn, isActive, busy, onRetryLast, onExe
                   <div className="ai-actions">
                     {turn.errorType === "no_agents"
                       ? <button className="ai-btn ai-btn--primary" onClick={onOpenSettings}>Add a key</button>
+                      : turn.errorType === "quota_exceeded"
+                      ? <button className="ai-btn ai-btn--primary" onClick={onOpenSettings}>Switch agent</button>
                       : <button className="ai-btn ai-btn--primary" onClick={onRetryLast}>Retry</button>}
                     {turn.errorType === "out_of_credits" && agent && (
                       <a className="ai-btn" href={billingUrl} target="_blank" rel="noreferrer">Add credits</a>
+                    )}
+                    {turn.errorType === "quota_exceeded" && agent && (
+                      <a className="ai-btn" href={billingUrl} target="_blank" rel="noreferrer">Add billing</a>
                     )}
                     {turn.errorType === "invalid_key" && (
                       <button className="ai-btn" onClick={onOpenSettings}>Fix key</button>

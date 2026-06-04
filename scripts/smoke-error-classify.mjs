@@ -28,6 +28,14 @@ try {
   // invalid_key — so the user is told to switch agents, not "fix your key".
   check('404 "model not found" → model_unavailable', classifyError(404, 'The model `grok-3` does not exist') === 'model_unavailable')
   check('model error outranks 403', classifyError(403, 'model `gpt-9` not found or you do not have access') === 'model_unavailable')
+
+  // 429 splits: a transient rate-limit (retry works) vs an exhausted quota
+  // (retrying now won't help — must add billing / switch / wait for reset).
+  check('429 transient rate-limit → rate_limited', classifyError(429, 'Rate limit exceeded, please try again in 20s') === 'rate_limited')
+  check('429 empty → rate_limited (default)', classifyError(429, '') === 'rate_limited')
+  check('429 Gemini free-tier exhausted → quota_exceeded', classifyError(429, 'Resource has been exhausted (e.g. check quota).') === 'quota_exceeded')
+  check('429 OpenAI insufficient_quota → quota_exceeded', classifyError(429, 'You exceeded your current quota, please check your plan and billing details. code: insufficient_quota') === 'quota_exceeded')
+  check('429 free tier mention → quota_exceeded', classifyError(429, 'Quota exceeded for the free tier') === 'quota_exceeded')
 } finally {
   await server.close()
 }

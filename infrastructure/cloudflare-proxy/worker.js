@@ -260,7 +260,7 @@ const ROUTES = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: auth },
       body: JSON.stringify({
-        model: body.model || 'grok-3',
+        model: body.model || 'grok-4.3',   // x.ai retired grok-3/grok-2 (2026-05-15); match src/config/models.js
         messages: body.messages,
         stream: true,
       }),
