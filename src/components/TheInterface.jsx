@@ -1111,6 +1111,11 @@ const TurnRow = memo(function TurnRow({ turn, isActive, busy, onRetryLast, onExe
             const folderHref = turn.folderLink || turn.files?.find(f => f.savedLink)?.savedLink
             const summary = done ? buildSummary({ deliverable: turn.deliverable, files: turn.files, errors: turn.errors }) : null
             const slideTitles = done ? extractSlideTitles(turn.files) : []
+            // Action results (email/sheet/event/payment-link) are surfaced in
+            // their own row, not as downloadable files — keep them out of the
+            // file count + downloads so an action-only build doesn't claim
+            // "1 file generated" with nothing to download.
+            const fileItems = (turn.files || []).filter(f => f.output?.type !== 'action')
             return (
               <div key={turn.id} className="ai-turn ai-build-card">
                 <div className="ai-build-header">
@@ -1160,9 +1165,25 @@ const TurnRow = memo(function TurnRow({ turn, isActive, busy, onRetryLast, onExe
                     ))}
                   </div>
                 )}
-                {done && turn.files?.length > 0 && (
+                {/* Action results (sheet/event/payment-link/notion/email/SMS sent)
+                    carry a summary + optional link but no downloadable file — show
+                    them as a confirmation row with the link, or the build looks
+                    empty ("done" with nothing to click). */}
+                {done && turn.files?.some(f => f.output?.type === 'action') && (
+                  <div className="ai-build-action-results">
+                    {turn.files.filter(f => f.output?.type === 'action').map(f => (
+                      <div key={f.stepId} className="ai-build-action-row">
+                        <span className="ai-build-action-summary">✓ {f.output.summary || f.label}</span>
+                        {f.output.link && (
+                          <a className="ai-build-action-link" href={f.output.link} target="_blank" rel="noreferrer">Open ↗</a>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {done && fileItems.length > 0 && (
                   <div className="ai-build-files">
-                    <span>{turn.files.length} file{turn.files.length === 1 ? '' : 's'} {folderHref ? 'bundled' : 'generated'}</span>
+                    <span>{fileItems.length} file{fileItems.length === 1 ? '' : 's'} {folderHref ? 'bundled' : 'generated'}</span>
                     {folderHref ? (
                       <a className="ai-build-folder-link" href={folderHref} target="_blank" rel="noreferrer">
                         Open folder ↗
@@ -1170,7 +1191,7 @@ const TurnRow = memo(function TurnRow({ turn, isActive, busy, onRetryLast, onExe
                     ) : (
                       <>
                         <div className="ai-build-downloads">
-                          {turn.files.flatMap(f => {
+                          {fileItems.flatMap(f => {
                             const out = f.output
                             // Bundle output — one download per child file.
                             if (Array.isArray(out?.files)) {
