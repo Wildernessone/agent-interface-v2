@@ -1037,6 +1037,38 @@
 }
 .ai-build-slides-list li { padding: 1px 0; }
 
+/* Inline text preview for a terminal agent_synth deliverable (IG caption,
+   short copy) — the build produced readable text, not a binary file. */
+.ai-build-text {
+  padding: var(--space-3) 0;
+  border-top: 1px dashed var(--color-border-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.ai-build-text-label {
+  font-family: var(--font-family-mono);
+  font-size: 10px;
+  letter-spacing: var(--letter-spacing-wide);
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  margin-bottom: var(--space-2);
+}
+.ai-build-text-body {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-bg-secondary);
+  border-radius: var(--radius-sm);
+  font-family: inherit;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+  line-height: var(--line-height-normal);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
 .ai-build-files {
   display: flex;
   align-items: center;

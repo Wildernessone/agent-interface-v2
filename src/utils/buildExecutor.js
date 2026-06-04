@@ -96,6 +96,56 @@ function buildFolderName(deliverable) {
   return `${date} — ${safe}`
 }
 
+// Render an agent_synth result to readable Markdown. agent_synth always returns
+// a parsed object (it requires JSON), shaped by its output_schema — document,
+// post, slides, storyboard, spreadsheet — or an arbitrary object when no schema
+// was set (the IG-caption / short-copy case). Handles the known shapes, then
+// falls back to flattening top-level string/array fields, then to pretty JSON
+// so nothing is ever lost.
+function synthToMarkdown(out) {
+  if (out == null) return ''
+  if (typeof out === 'string') return out.trim()
+  const lines = []
+  const pushBlock = (b) => {
+    if (b == null) return
+    if (typeof b === 'string') { lines.push(b, ''); return }
+    if (b.heading || b.title) lines.push(`## ${b.heading || b.title}`)
+    if (typeof b.body === 'string') lines.push(b.body)
+    if (Array.isArray(b.paragraphs)) b.paragraphs.forEach(p => lines.push(String(p), ''))
+    if (Array.isArray(b.bullets)) b.bullets.forEach(x => lines.push(`- ${x}`))
+    if (Array.isArray(b.items)) b.items.forEach(x => lines.push(`- ${x}`))
+    if (b.notes) lines.push('', `_${b.notes}_`)
+    lines.push('')
+  }
+
+  if (out.title) lines.push(`# ${out.title}`, '')
+
+  if (Array.isArray(out.sections)) out.sections.forEach(pushBlock)
+  else if (Array.isArray(out.slides)) out.slides.forEach((s, i) => pushBlock({ heading: s.title || `Slide ${i + 1}`, bullets: s.bullets, notes: s.notes }))
+  else if (Array.isArray(out.scenes)) {
+    out.scenes.forEach((s, i) => pushBlock({ heading: s.title || `Scene ${i + 1}`, body: s.prompt, items: s.on_screen_text ? [s.on_screen_text] : [] }))
+    if (out.voiceover_script) pushBlock({ heading: 'Voiceover', body: out.voiceover_script })
+  } else if (Array.isArray(out.sheets)) {
+    out.sheets.forEach(sh => {
+      lines.push(`## ${sh.name || 'Sheet'}`)
+      ;(sh.rows || []).forEach(r => lines.push(`| ${(Array.isArray(r) ? r : [r]).join(' | ')} |`))
+      lines.push('')
+    })
+  } else {
+    // Generic object (no recognized schema) — flatten top-level fields. This is
+    // the IG-caption / "variations" shape: {captions:[...]} or {variation_1:"…"}.
+    for (const [k, v] of Object.entries(out)) {
+      if (k === 'title') continue
+      if (typeof v === 'string') lines.push(`## ${k}`, v, '')
+      else if (Array.isArray(v)) { lines.push(`## ${k}`); v.forEach(x => pushBlock(x)) }
+      else if (v && typeof v === 'object') pushBlock({ heading: k, body: JSON.stringify(v) })
+    }
+  }
+
+  const md = lines.join('\n').replace(/\n{3,}/g, '\n\n').trim()
+  return md || JSON.stringify(out, null, 2)
+}
+
 /**
  * Run a build plan. Returns:
  *   {
@@ -158,6 +208,13 @@ export async function runBuild(plan, ctx, onStep = () => {}) {
   } catch (e) {
     return { deliverable: plan.deliverable, folderName, files: [], errors: [{ stepId: '_plan', error: e.message }], stepOutputs, folderLink: null }
   }
+
+  // Steps whose output another step depends on. A TERMINAL agent_synth (one no
+  // other step consumes) is a text deliverable with no generator after it —
+  // e.g. "write me an IG caption". Its JSON output otherwise vanishes ("No
+  // files produced yet") because it isn't a file/bundle/action type. We surface
+  // it as a Markdown document so it's readable inline and downloadable.
+  const consumedStepIds = new Set((plan.steps || []).flatMap(s => s.needs || []))
 
   for (const step of ordered) {
     const depFailed = (step.needs || []).some(d => errors.some(e => e.stepId === d))
@@ -306,6 +363,43 @@ export async function runBuild(plan, ctx, onStep = () => {}) {
           savedLink: null,
           savedProvider: null,
         })
+      }
+
+      // Terminal agent_synth → surface its text. The raw object stays in
+      // stepOutputs (untouched, for any interpolation); we ADD a Markdown
+      // document so the user can read the copy inline and download it, instead
+      // of the build reporting "No files produced yet". Only when nothing
+      // consumes this step (a generator like mdgen/pptxgen would otherwise
+      // produce the real deliverable and carry the text forward).
+      if (step.tool === 'agent_synth' && !consumedStepIds.has(step.id) && output && typeof output === 'object') {
+        const md = synthToMarkdown(output)
+        if (md) {
+          const safe = (step.label || plan.deliverable || 'output').replace(/[<>:"/\\|?*]/g, '').slice(0, 60).trim() || 'output'
+          const doc = {
+            type: 'document',
+            tool: 'agent_synth',
+            filename: `${safe}.md`,
+            url: `data:text/markdown;charset=utf-8,${encodeURIComponent(md)}`,
+            text: md,            // inline preview in the build card
+            prompt: step.label || 'Synthesized text',
+          }
+          let saved = null
+          if (hasStorage) {
+            saved = await saveToCloud(doc, buildProject)
+            if (saved && !folderLink && saved.folderLink) {
+              folderLink = saved.folderLink
+              folderProvider = saved.provider
+            }
+          }
+          files.push({
+            stepId: step.id,
+            label: step.label || step.id,
+            output: doc,
+            savedLink: saved?.webViewLink || null,
+            savedProvider: saved?.provider || null,
+            unsaved: !saved,
+          })
+        }
       }
 
       onStep(step.id, 'done', null, output)

@@ -1150,6 +1150,16 @@ const TurnRow = memo(function TurnRow({ turn, isActive, busy, onRetryLast, onExe
                     </ol>
                   </div>
                 )}
+                {done && turn.files?.some(f => f.output?.text) && (
+                  <div className="ai-build-text">
+                    {turn.files.filter(f => f.output?.text).map(f => (
+                      <div key={f.stepId} className="ai-build-text-block">
+                        <div className="ai-build-text-label">{f.label}</div>
+                        <pre className="ai-build-text-body">{f.output.text}</pre>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 {done && turn.files?.length > 0 && (
                   <div className="ai-build-files">
                     <span>{turn.files.length} file{turn.files.length === 1 ? '' : 's'} {folderHref ? 'bundled' : 'generated'}</span>
