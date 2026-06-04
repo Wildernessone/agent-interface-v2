@@ -8,7 +8,7 @@ import Settings from './Settings'
 import HelpDrawer from './HelpDrawer'
 import { exportConversation } from '../utils/exportConversation'
 import HistorySidebar from './HistorySidebar'
-import { orchestrate, getProactiveNotices, processCorrection, ROLE_POOL, shouldAudit, auditResponse, buildRetryReminder } from '../utils/openClaw'
+import { orchestrate, getProactiveNotices, processCorrection, ROLE_POOL, shouldAudit, auditResponse, buildRetryReminder, defaultDecision } from '../utils/openClaw'
 import { detectSignalsFromUserMessage, logSignals, logAuditFail, getRecentRolePerformance } from '../utils/roleSignals'
 import { logUsage, logError, checkTierLimits } from '../utils/telemetry'
 import { track } from '../utils/track'
@@ -491,9 +491,17 @@ export default function TheInterface() {
         voiceMode,
       })
     } catch(e) {
+      // NEVER kill the turn. The orchestrator is a router, not the answer — if it
+      // throws (network blip, unexpected error), fall back to a plain discuss
+      // round with the selected agents so the user still gets a response instead
+      // of a dead end. We log it for telemetry and note it in the decision so the
+      // claw card shows "answered directly" rather than masking the degradation.
       logError("orchestrate", e)
-      addErrorTurn("orchestrator", "orchestrator_down")
-      return
+      logUsage({ kind: 'orchestrate', provider: 'openclaw', model: 'openclaw', success: false, errorType: 'orchestrator_fallback' })
+      clawDecision = {
+        ...defaultDecision(selected.map(a => a.id), voiceMode),
+        reasoning: "Smart routing was briefly unavailable — answering directly with your agents.",
+      }
     }
 
     // BRAND-CONTEXT GATE: the dispatcher refused a brand-facing build because

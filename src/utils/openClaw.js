@@ -778,7 +778,7 @@ function blockedForBrandContext(activeProject) {
   }
 }
 
-function defaultDecision(enabledAgents, voiceMode) {
+export function defaultDecision(enabledAgents, voiceMode) {
   return {
     mode: "discuss",
     spend_mode: 'balanced',
