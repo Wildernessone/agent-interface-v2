@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useMemo, useCallback, memo } from 'react'
 import { useStore } from '../store/useStore'
 import { modelsToTry, isModelError } from '../config/models'
 import { makeIdleTimeout, isAbort } from '../utils/fetchTimeout'
+import { classifyError } from '../utils/errorClassify'
 import { buildSystemPrompt } from '../utils/buildSystemPrompt'
 import { VoiceEngine } from '../utils/voiceEngine'
 import Settings from './Settings'
@@ -56,18 +57,6 @@ async function authHeader() {
   return session?.access_token ? { 'x-supabase-auth': `Bearer ${session.access_token}` } : {}
 }
 
-function classifyError(status, text) {
-  // Model retired/renamed/no-access — distinct from a bad key so the user gets
-  // an actionable message instead of "unexpected error". Checked before the
-  // generic 401/403 branch since some providers return 403 for missing access.
-  if (isModelError(status, text)) return "model_unavailable"
-  if (status === 401 || status === 403) return "invalid_key"
-  if (status === 429) return "rate_limited"
-  if (status === 402) return "out_of_credits"
-  if (status >= 500) return "service_down"
-  if (status === 0) return "network"
-  return "unknown"
-}
 
 // Distill a provider's raw error response into one short diagnostic line for
 // the error card: "<model> · <provider's own message>". Providers usually
@@ -1221,12 +1210,13 @@ const TurnRow = memo(function TurnRow({ turn, isActive, busy, onRetryLast, onExe
               turn.errorType === "rate_limited" ? `${label} hit its rate limit. Wait a moment and retry.` :
               turn.errorType === "out_of_credits" ? `Your ${label} account is out of credits.` :
               turn.errorType === "invalid_key" ? `Your ${label} API key isn't working — it may have expired.` :
-              turn.errorType === "model_unavailable" ? `${label}'s model is unavailable — it may have been retired or your account doesn't have access. Try another agent, or update the model in src/config/models.js.` :
+              turn.errorType === "model_unavailable" ? `${label}'s model is currently unavailable — it may have been retired, or your account doesn't have access. Try a different agent, or check that your ${label} plan includes it.` :
               turn.errorType === "service_down" ? `${label} is having a service issue. Try again in a moment.` :
               turn.errorType === "network" ? `Couldn't reach ${label}. Check your connection and retry.` :
               turn.errorType === "orchestrator_down" ? `OpenClaw couldn't process this message. Retry, or verify your agent keys.` :
               turn.errorType === "free_tier_limit" ? `You've reached the free-tier daily limit. Upgrade to Pro for unlimited messages.` :
               turn.errorType === "no_agents" ? `No AI agents are connected yet. Add a provider API key (Claude, GPT, Gemini, or Grok) in Settings, then send your message again.` :
+              turn.errorType === "attachment_failed" ? `Couldn't read that attachment. Try a different file (PDF, image, or text), or remove it and send again.` :
               `${label} returned an unexpected error. Retry, or check Settings.`
             )
             const billingUrl = agent?.id==="claude"?"https://console.anthropic.com":agent?.id==="gpt"?"https://platform.openai.com/account/billing":agent?.id==="gemini"?"https://aistudio.google.com/app/plan":"https://console.x.ai"
@@ -1254,6 +1244,9 @@ const TurnRow = memo(function TurnRow({ turn, isActive, busy, onRetryLast, onExe
                     )}
                     {turn.errorType === "invalid_key" && (
                       <button className="ai-btn" onClick={onOpenSettings}>Fix key</button>
+                    )}
+                    {turn.errorType === "model_unavailable" && (
+                      <button className="ai-btn" onClick={onOpenSettings}>Switch agent</button>
                     )}
                     {turn.errorType === "free_tier_limit" && (
                       <button className="ai-btn ai-btn--primary" onClick={onOpenSettings}>Upgrade</button>
