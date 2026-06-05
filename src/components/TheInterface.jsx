@@ -262,12 +262,34 @@ export default function TheInterface() {
   // whatever the user has dropped into Drive/Agent Interface/Skills/.
   const { settings, turns, activeAgentId, voiceMode, addTurn, addToolTurn, updateToolTurn, updateBuildTurn, setTurnText, finishTurn, addErrorTurn, addToolErrorTurn, clearTurns, setVoiceMode, saveConversation, saveStatus, conversationId, loadMemory, saveMemory, resetTurnForRetry, activeProject, projects, loadProjects, createProject, setActiveProject, skills, renameConversation, loadProjectConversations, justCreatedConversationId, billing } = useStore()
   
+  // "Voice activates next message" badge shown when toggled ON mid-response.
+  const [voiceJustEnabled, setVoiceJustEnabled] = useState(false)
+  const voiceBadgeTimer = useRef(null)
+
   const handleVoiceToggle = () => {
     if (!voiceMode) {
       voiceRef.current = new VoiceEngine(settings)
+      // Prime the audio channel INSIDE the click gesture so the browser allows
+      // programmatic speech later (autoplay policy: speech must follow a user
+      // gesture). A silent utterance opens the channel.
+      try {
+        const primer = new SpeechSynthesisUtterance(' ')
+        primer.volume = 0
+        window.speechSynthesis.cancel()
+        window.speechSynthesis.speak(primer)
+      } catch { /* speechSynthesis unavailable — VoiceEngine handles fallback */ }
+      // A response in flight can't be retro-played (its gesture window closed),
+      // so tell the user voice kicks in on the next message.
+      if (activeAgentId) {
+        setVoiceJustEnabled(true)
+        if (voiceBadgeTimer.current) clearTimeout(voiceBadgeTimer.current)
+        voiceBadgeTimer.current = setTimeout(() => setVoiceJustEnabled(false), 10000)
+      }
     } else {
       voiceRef.current?.stopSpeaking()
       voiceRef.current?.stopListening()
+      setVoiceJustEnabled(false)
+      if (voiceBadgeTimer.current) clearTimeout(voiceBadgeTimer.current)
     }
     setVoiceMode(!voiceMode)
   }
@@ -438,6 +460,15 @@ export default function TheInterface() {
     sendingRef.current = true
     try {
     if (!overrideText) setInput("")
+
+    // Voice: re-anchor the audio gesture on this fresh user action (a paused
+    // synth from a prior turn won't speak otherwise), and clear the
+    // "voice next message" hint now that the next message is being sent.
+    if (useStore.getState().voiceMode) { try { window.speechSynthesis.resume() } catch { /* no synth */ } }
+    if (voiceJustEnabled) {
+      setVoiceJustEnabled(false)
+      if (voiceBadgeTimer.current) clearTimeout(voiceBadgeTimer.current)
+    }
 
     const limit = await checkTierLimits()
     if (!limit.allowed) {
@@ -716,7 +747,10 @@ export default function TheInterface() {
             tokensOut: cleanResultText.length / 4 | 0, success: true,
             metadata: { role: role || null, ...auditMeta },
           })
-          if (voiceMode && voiceRef.current) {
+          // Read voiceMode LIVE, not the closure captured at sendMessage start —
+          // so a mid-response toggle ON starts speaking this turn's later agents
+          // (and a toggle OFF stops them).
+          if (useStore.getState().voiceMode && voiceRef.current) {
             await new Promise(r => voiceRef.current.speak(cleanResultText.slice(0, 400), agent.id, r))
           }
         }
@@ -878,12 +912,17 @@ export default function TheInterface() {
               )}
             </div>
           )}
-          <IconButton title={voiceMode ? "Voice mode on" : "Voice mode off"} onClick={handleVoiceToggle} active={voiceMode}>
-            {voiceMode
-              ? <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M9 3L5.5 5.5H3V10.5H5.5L9 13V3Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/><path d="M11.5 5.5C12.5 6.5 12.5 9.5 11.5 10.5M13 4C14.5 5.5 14.5 10.5 13 12" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>
-              : <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M9 3L5.5 5.5H3V10.5H5.5L9 13V3Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/><path d="M11.5 6L14 8.5M14 6L11.5 8.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>
-            }
-          </IconButton>
+          <span className="voice-btn-wrap">
+            <IconButton title={voiceMode ? "Voice mode on" : "Voice mode off"} onClick={handleVoiceToggle} active={voiceMode}>
+              {voiceMode
+                ? <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M9 3L5.5 5.5H3V10.5H5.5L9 13V3Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/><path d="M11.5 5.5C12.5 6.5 12.5 9.5 11.5 10.5M13 4C14.5 5.5 14.5 10.5 13 12" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>
+                : <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M9 3L5.5 5.5H3V10.5H5.5L9 13V3Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/><path d="M11.5 6L14 8.5M14 6L11.5 8.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>
+              }
+            </IconButton>
+            {voiceJustEnabled && (
+              <span className="voice-next-badge" role="status">Voice activates next message</span>
+            )}
+          </span>
           <IconButton title="Need help?" onClick={() => setShowHelp(true)} active={showHelp}>
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.2"/><path d="M6.3 6.2C6.3 5.3 7 4.7 8 4.7C9 4.7 9.7 5.3 9.7 6.1C9.7 7.6 8 7.3 8 9" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/><circle cx="8" cy="11.2" r="0.7" fill="currentColor"/></svg>
           </IconButton>

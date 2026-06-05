@@ -46,6 +46,25 @@
 
 /* ────────── Icon button ────────── */
 
+/* Voice "activates next message" hint — a small pill under the voice icon,
+   shown when voice is toggled on mid-response. */
+.voice-btn-wrap { position: relative; display: inline-flex; }
+.voice-next-badge {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  white-space: nowrap;
+  padding: var(--space-1) var(--space-2);
+  background: var(--color-accent);
+  color: #fff;
+  font-size: 10px;
+  font-weight: var(--font-weight-medium);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  z-index: 20;
+  pointer-events: none;
+}
+
 .ai-iconbtn {
   display: inline-flex;
   align-items: center;
