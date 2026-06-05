@@ -12,11 +12,15 @@ import HistorySidebar from './HistorySidebar'
 import { orchestrate, getProactiveNotices, processCorrection, ROLE_POOL, shouldAudit, auditResponse, buildRetryReminder, defaultDecision, generateBuildOptions, carryActionSteps } from '../utils/openClaw'
 import BuildOptionsTurn from './BuildOptionsTurn'
 import OptionsCard from './OptionsCard'
+import SuggestedPrompts from './SuggestedPrompts'
+import ProjectBriefDetectedCard from './ProjectBriefDetectedCard'
 import RoundtableLogo from './RoundtableLogo'
+import { suggestPrompts } from '../utils/suggestPrompts'
+import { classifyProjectBrief, briefToDescription } from '../utils/classifyProjectBrief'
 import { detectSignalsFromUserMessage, logSignals, logAuditFail, getRecentRolePerformance } from '../utils/roleSignals'
 import { logUsage, logError, checkTierLimits } from '../utils/telemetry'
 import { track } from '../utils/track'
-import { saveToCloud, pickProvider } from '../utils/cloudStorage'
+import { saveToCloud, pickProvider, listStorageConnections } from '../utils/cloudStorage'
 import { TOOLS_BY_ID, ToolError, readKey } from '../tools/registry'
 import { runBuild } from '../utils/buildExecutor'
 import { brandBriefFrom } from '../utils/brandContext'
@@ -263,7 +267,14 @@ export default function TheInterface() {
   // skills is the per-agent knowledge loaded from Drive at sign-in.
   // We thread it into buildSystemPrompt so every agent call picks up
   // whatever the user has dropped into Drive/Agent Interface/Skills/.
-  const { settings, turns, activeAgentId, voiceMode, addTurn, addToolTurn, updateToolTurn, updateBuildTurn, setTurnText, finishTurn, addErrorTurn, addToolErrorTurn, clearTurns, setVoiceMode, saveConversation, saveStatus, conversationId, loadMemory, saveMemory, resetTurnForRetry, activeProject, projects, loadProjects, createProject, setActiveProject, skills, renameConversation, loadProjectConversations, justCreatedConversationId, billing } = useStore()
+  const { settings, turns, activeAgentId, voiceMode, addTurn, addToolTurn, updateToolTurn, updateBuildTurn, setTurnText, finishTurn, addErrorTurn, addToolErrorTurn, clearTurns, setVoiceMode, saveConversation, saveStatus, conversationId, loadMemory, saveMemory, resetTurnForRetry, activeProject, projects, loadProjects, createProject, setActiveProject, skills, renameConversation, loadProjectConversations, loadConversations, moveConversation, justCreatedConversationId, billing } = useStore()
+
+  // State-aware suggested prompts for the empty / short-conversation state.
+  const [suggestions, setSuggestions] = useState([])
+  // Project-brief auto-detect state, per conversation. Tracks dismissal so we
+  // don't re-prompt, allowing ONE re-offer if a substantially different brief
+  // (different name) appears later in the same conversation.
+  const briefStateRef = useRef({ dismissed: false, lastName: null, reoffered: false })
   
   // "Voice activates next message" badge shown when toggled ON mid-response.
   const [voiceJustEnabled, setVoiceJustEnabled] = useState(false)
@@ -401,6 +412,41 @@ export default function TheInterface() {
     return () => { cancelled = true }
   }, [activeProject?.id, conversationId, loadProjectConversations])
 
+  // New conversation → reset the project-brief detection state so a fresh chat
+  // can offer to save a brief again.
+  useEffect(() => { briefStateRef.current = { dismissed: false, lastName: null, reoffered: false } }, [conversationId])
+
+  // State-aware suggested prompts. Recomputes on sign-in/project switch/new
+  // conversation, and when a short conversation goes idle (so the panel can
+  // suggest grounded next steps). Skips long/active conversations entirely.
+  useEffect(() => {
+    let cancelled = false
+    const userTurns = turns.filter(t => t.type === 'user').length
+    const isEmpty = turns.length === 0
+    const idleShort = !busy && userTurns >= 2 && userTurns <= 5
+    if (!isEmpty && !idleShort) { setSuggestions([]); return }
+    ;(async () => {
+      const [recentRaw, storageConnections] = await Promise.all([
+        loadConversations().catch(() => []),
+        listStorageConnections().catch(() => []),
+      ])
+      const transcript = isEmpty ? null : turns
+        .filter(t => (t.type === 'user' || t.type === 'agent') && t.text)
+        .slice(-8)
+        .map(t => ({ role: t.type === 'user' ? 'user' : 'assistant', agent: t.agent, text: t.text }))
+      const result = await suggestPrompts({
+        activeProject,
+        recentConversations: (recentRaw || []).slice(0, 10),
+        settings, skills, storageConnections,
+        activeAgents,
+        activeConvoTranscript: transcript,
+      })
+      if (!cancelled) setSuggestions(result)
+    })()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [turns.length, busy, activeProject?.id, conversationId, skills?.loadedAt, activeAgents.length])
+
   // Smart title: once a conversation is first created, generate a concise title
   // from the opening exchange via the cheapest model (Gemini). One call per
   // conversation — justCreatedConversationId is a one-shot marker we clear after
@@ -491,6 +537,16 @@ export default function TheInterface() {
 
     const signals = detectSignalsFromUserMessage(text, previousRolesRef.current)
     if (signals.length) logSignals(signals, conversationId)
+
+    // PROJECT-BRIEF AUTO-DETECT: a long message with no active project may be a
+    // brand brief. Classify in the background (cheap fast model) so we can offer
+    // to remember it as a project. Doesn't block the panel; awaited at the end
+    // so the card lands BELOW the panel's response. Skipped once dismissed-and-
+    // re-offered for this conversation (see briefStateRef).
+    const bs = briefStateRef.current
+    const briefPromise = (text.length > 150 && !activeProject && !(bs.dismissed && bs.reoffered))
+      ? classifyProjectBrief(text, settings).catch(() => null)
+      : null
 
     const baseSelected = targets.includes("all") ? activeAgents : activeAgents.filter(a => targets.includes(a.id))
 
@@ -791,6 +847,22 @@ export default function TheInterface() {
     } else if (clawDecision?.mode === 'build' && steps.length > 0) {
       await executeBuild({ deliverable: plan.deliverable, steps, brandContext: plan.brandContext || null })
     }
+
+    // Surface the project-brief offer AFTER the panel responded (awaited here so
+    // it appends below the response). High-confidence briefs only; never when a
+    // project got set mid-turn, and respecting dismissal / one re-offer rule.
+    if (briefPromise) {
+      const det = await briefPromise
+      const st = briefStateRef.current
+      const nm = det?.extracted?.name || ''
+      const qualifies = det?.is_project_brief && det.confidence > 0.7 && !useStore.getState().activeProject
+      const allowed = !st.dismissed || (!st.reoffered && nm && nm !== st.lastName)
+      if (qualifies && allowed) {
+        if (st.dismissed) st.reoffered = true
+        st.lastName = nm
+        addTurn({ id: `brief-${Date.now()}`, type: 'project_brief', extracted: det.extracted })
+      }
+    }
     } finally {
       sendingRef.current = false
     }
@@ -879,6 +951,32 @@ export default function TheInterface() {
   }, [])
   const onBuildSomethingDifferent = useCallback((textVal) => fnRefs.current.sendMessage(textVal), [])
   const onOpenSettings = useCallback(() => setShowSettings(true), [])
+
+  // Suggested-prompt click. Setup cards route to settings; starters just
+  // populate the composer (so the user finishes the thought); the rest auto-send.
+  const onPickSuggestion = useCallback((s) => {
+    if (s.action) { setShowSettings(true); return }
+    const text = s.prompt || s.label || ''
+    setInput(text)
+    if (s.send) { fnRefs.current.sendMessage(text); setInput('') }
+    else setTimeout(() => document.querySelector('textarea')?.focus(), 50)
+  }, [])
+
+  // Project-brief detected card actions. Stable identities for memoized rows.
+  const onSaveBrief = useCallback(async (extracted) => {
+    const proj = await createProject(extracted?.name || 'Untitled project', briefToDescription(extracted))
+    if (proj) {
+      const cid = useStore.getState().conversationId
+      if (cid) moveConversation(cid, proj.id)   // setActiveProject already done by createProject
+    }
+    return proj
+  }, [createProject, moveConversation])
+  const onDismissBrief = useCallback(() => { briefStateRef.current.dismissed = true }, [])
+  const onEditBrief = useCallback((extracted) => {
+    window.dispatchEvent(new CustomEvent('openclaw:edit_project', {
+      detail: { prefill: { name: extracted?.name || '', description: briefToDescription(extracted) } },
+    }))
+  }, [])
 
   const toggleTarget = (id) => {
     if (id === "all") { setTargets(["all"]); return }
@@ -1010,17 +1108,7 @@ export default function TheInterface() {
               </button>
             )}
             <div className="ai-suggestions">
-              <OptionsCard
-                keyboard={false}
-                title="Try one of these"
-                options={[
-                  { title: "Launch my coffee roastery Q4 campaign." },
-                  { title: "Research the best espresso machine under $1,500." },
-                  { title: "Make a 30-second hero ad for the new grinder." },
-                  { title: "Turn this PDF into a pitch deck." },
-                ]}
-                onSelect={(o) => { setInput(o.title); setTimeout(() => document.querySelector('textarea')?.focus(), 50) }}
-              />
+              <SuggestedPrompts suggestions={suggestions} onPick={onPickSuggestion} />
             </div>
           </div>
         )}
@@ -1036,8 +1124,19 @@ export default function TheInterface() {
             onBuildOption={onBuildOption}
             onBuildSomethingDifferent={onBuildSomethingDifferent}
             onOpenSettings={onOpenSettings}
+            onSaveBrief={onSaveBrief}
+            onDismissBrief={onDismissBrief}
+            onEditBrief={onEditBrief}
           />
         ))}
+
+        {/* Mid-conversation: grounded next-step suggestions once a short
+            conversation goes idle (stage 2 — generated from the transcript). */}
+        {turns.length > 0 && !busy && suggestions.length > 0 && (
+          <div className="ai-suggestions ai-suggestions--inline">
+            <SuggestedPrompts suggestions={suggestions} onPick={onPickSuggestion} title="Where to next" />
+          </div>
+        )}
       </main>
 
       <footer className="ai-composer">
@@ -1144,7 +1243,7 @@ export default function TheInterface() {
   )
 }
 
-const TurnRow = memo(function TurnRow({ turn, isActive, busy, onRetryLast, onExecuteBuild, onBuildOption, onBuildSomethingDifferent, onOpenSettings }) {
+const TurnRow = memo(function TurnRow({ turn, isActive, busy, onRetryLast, onExecuteBuild, onBuildOption, onBuildSomethingDifferent, onOpenSettings, onSaveBrief, onDismissBrief, onEditBrief }) {
           if (turn.type === "user") return (
             <div key={turn.id} className="ai-turn ai-turn--user">
               <div className="ai-user-bubble">{turn.text}</div>
@@ -1217,6 +1316,15 @@ const TurnRow = memo(function TurnRow({ turn, isActive, busy, onRetryLast, onExe
                 )}
               </div>
             </div>
+          )
+          if (turn.type === "project_brief") return (
+            <ProjectBriefDetectedCard
+              key={turn.id}
+              extracted={turn.extracted}
+              onSave={onSaveBrief}
+              onDismiss={onDismissBrief}
+              onEdit={onEditBrief}
+            />
           )
           if (turn.type === "build_options") return (
             <BuildOptionsTurn

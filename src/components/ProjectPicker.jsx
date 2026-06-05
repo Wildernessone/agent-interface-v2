@@ -71,12 +71,22 @@ export default function ProjectPicker() {
   // user lands directly in the active project's brief editor instead of hunting
   // for the menu. No active project → just open the picker to create/select one.
   useEffect(() => {
-    const handler = () => {
+    const handler = (e) => {
       const proj = useStore.getState().activeProject
+      // The brief-detected card's "Edit before saving" passes a prefill for a
+      // NEW project (no active project yet); the gate's notice has no detail and
+      // edits the active project.
+      const pf = e?.detail?.prefill
       setOpen(true)
-      setEditingId(proj?.id || null)
-      setNewName(proj?.name || "")
-      setNewDesc(proj?.description || "")
+      if (proj) {
+        setEditingId(proj.id)
+        setNewName(proj.name || "")
+        setNewDesc(proj.description || "")
+      } else {
+        setEditingId(null)
+        setNewName(pf?.name || "")
+        setNewDesc(pf?.description || "")
+      }
       setIntakePath('paste')
       setCreating(true)
     }
