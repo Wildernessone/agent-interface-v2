@@ -420,7 +420,7 @@ function Footer() {
   return (
     <footer className="lp-footer">
       <RoundtableLogo size={44} pulse={false} />
-      <div className="lp-footer-domain">agent-interface.app</div>
+      <div className="lp-footer-domain">agentinterface.app</div>
       <div className="lp-footer-tag">Agent Interface · One interface. All your AI.</div>
     </footer>
   )
