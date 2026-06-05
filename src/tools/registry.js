@@ -896,7 +896,7 @@ const agentSynth = {
 The "prompt" fields drive an image generator — they are visual descriptions of what's on screen.
 The "voiceover_script" is the OPPOSITE: it is what a narrator SPEAKS over the ad. It MUST be persuasive marketing copy that sells the product to a viewer — NOT a description of what's on screen, and NOT the scene prompts concatenated. Write it as pure spoken language: no scene labels, no stage directions, no "[VO]:" tags. Pace it for the total duration at ~150 words/minute (a 30-second ad ≈ 75 words).
 WRONG voiceover_script: "Scene 1 shows a person frustrated at multiple browser tabs. The screen then splits into four panels."
-RIGHT voiceover_script: "Stop juggling four AI tools. Agent Interface gives you Claude, ChatGPT, Gemini, and Grok — working together, debating each other, building real files. One prompt. Every angle covered."`
+RIGHT voiceover_script: "Stop juggling four AI tools. Agent Interface gives you Claude, ChatGPT, Gemini, and Grok — working together, debating each other, building real files. One interface. All your AI."`
       : `\nReturn clean JSON only — no markdown fences, no prose around it.`
 
     // Brand context (from the active project's brief, or one pasted into the
