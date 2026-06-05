@@ -14,7 +14,7 @@ import { useEffect, useState, useCallback } from 'react'
  * somethingDifferent: { label?, placeholder?, onSubmit(text) }  (optional escape)
  * onDismiss()                    — fired on Esc (optional).
  */
-export default function OptionsCard({ options = [], onSelect, somethingDifferent, onDismiss, title }) {
+export default function OptionsCard({ options = [], onSelect, somethingDifferent, onDismiss, title, keyboard = true }) {
   const [focus, setFocus] = useState(0)
   const [expanded, setExpanded] = useState(null)
   const [diffOpen, setDiffOpen] = useState(false)
@@ -34,9 +34,10 @@ export default function OptionsCard({ options = [], onSelect, somethingDifferent
   }, [focus, total, diffOpen])
 
   useEffect(() => {
+    if (!keyboard) return
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onKey])
+  }, [onKey, keyboard])
 
   function pick(i) {
     if (somethingDifferent && i === options.length) { setDiffOpen(true); return }

@@ -11,6 +11,7 @@ import { exportConversation } from '../utils/exportConversation'
 import HistorySidebar from './HistorySidebar'
 import { orchestrate, getProactiveNotices, processCorrection, ROLE_POOL, shouldAudit, auditResponse, buildRetryReminder, defaultDecision, generateBuildOptions } from '../utils/openClaw'
 import BuildOptionsTurn from './BuildOptionsTurn'
+import OptionsCard from './OptionsCard'
 import RoundtableLogo from './RoundtableLogo'
 import { detectSignalsFromUserMessage, logSignals, logAuditFail, getRecentRolePerformance } from '../utils/roleSignals'
 import { logUsage, logError, checkTierLimits } from '../utils/telemetry'
@@ -1002,14 +1003,17 @@ export default function TheInterface() {
               </button>
             )}
             <div className="ai-suggestions">
-              {[
-                "Launch my coffee roastery Q4 campaign.",
-                "Research the best espresso machine under $1,500.",
-                "Make a 30-second hero ad for the new grinder.",
-                "Turn this PDF into a pitch deck.",
-              ].map(q => (
-                <button key={q} onClick={() => setInput(q)}>{q}</button>
-              ))}
+              <OptionsCard
+                keyboard={false}
+                title="Try one of these"
+                options={[
+                  { title: "Launch my coffee roastery Q4 campaign." },
+                  { title: "Research the best espresso machine under $1,500." },
+                  { title: "Make a 30-second hero ad for the new grinder." },
+                  { title: "Turn this PDF into a pitch deck." },
+                ]}
+                onSelect={(o) => { setInput(o.title); setTimeout(() => document.querySelector('textarea')?.focus(), 50) }}
+              />
             </div>
           </div>
         )}
@@ -1328,16 +1332,29 @@ const TurnRow = memo(function TurnRow({ turn, isActive, busy, onRetryLast, onExe
                     )}
                   </div>
                 )}
-                {done && turn.plan && (turn.errors?.length > 0 || turn.files?.length > 0) && (
+                {done && turn.plan && turn.errors?.length > 0 && (
                   <div className="ai-build-actions">
-                    <button
-                      className="ai-btn ai-btn--small"
-                      onClick={() => onExecuteBuild(turn.plan)}
-                      disabled={busy}
-                      title="Re-run this exact build plan"
-                    >
-                      ↻ Retry build
-                    </button>
+                    <OptionsCard
+                      keyboard={false}
+                      title="Some steps failed — what next?"
+                      options={[
+                        { title: 'Retry exactly', description: 'Re-run the same plan' },
+                        { title: 'Try smaller scope', description: 'Just the writing — skip the heavy generators' },
+                        { title: 'Leave it', description: 'Keep what succeeded' },
+                      ]}
+                      onSelect={(_, i) => {
+                        if (i === 0) onExecuteBuild(turn.plan)
+                        else if (i === 1) {
+                          const synth = (turn.plan.steps || []).filter(s => s.tool === 'agent_synth')
+                          onExecuteBuild({ ...turn.plan, steps: synth.length ? synth : (turn.plan.steps || []).slice(0, 1) })
+                        }
+                      }}
+                    />
+                  </div>
+                )}
+                {done && turn.plan && !turn.errors?.length && turn.files?.length > 0 && (
+                  <div className="ai-build-actions">
+                    <button className="ai-btn ai-btn--small" onClick={() => onExecuteBuild(turn.plan)} disabled={busy} title="Re-run this build">↻ Rebuild</button>
                   </div>
                 )}
               </div>
