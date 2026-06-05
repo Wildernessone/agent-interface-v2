@@ -16,6 +16,7 @@
     "smoke:errclass": "node scripts/smoke-error-classify.mjs",
     "smoke:tiers": "node scripts/smoke-tiers.mjs",
     "smoke:entitlements": "node scripts/smoke-entitlements.mjs",
+    "smoke:panelfirst": "node scripts/smoke-panel-first.mjs",
     "smoke:nostorage": "node scripts/smoke-build-no-storage.mjs",
     "smoke:live": "node scripts/smoke-live.mjs",
     "e2e": "playwright test",

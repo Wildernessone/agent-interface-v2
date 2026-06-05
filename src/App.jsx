@@ -1,4 +1,5 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
+import { Routes, Route, Navigate } from 'react-router-dom'
 import { supabase } from './utils/supabase'
 import { useStore } from './store/useStore'
 import { initTelemetry, identifyUser } from './utils/telemetry'
@@ -9,12 +10,16 @@ import { applyTheme } from './utils/applyTheme'
 import { trackSessionStart, trackLogin, setTrackUser } from './utils/track'
 import AuthScreen from './components/AuthScreen'
 import TheInterface from './components/TheInterface'
+import Landing from './components/Landing'
 import './App.css'
 
 initTelemetry()
 
 export default function App() {
   const { user, setUser, setSession, loadSettings, settings, loadSkills } = useStore()
+  // Don't route until the first session check resolves, so a logged-in visitor
+  // hitting "/" goes straight to /app instead of flashing the landing.
+  const [authReady, setAuthReady] = useState(false)
 
   // Live-apply theme + accent + font + bubble whenever settings change
   useEffect(() => { applyTheme(settings) }, [settings?.themeId, settings?.accent, settings?.fontSize, settings?.bubbleStyle])
@@ -37,7 +42,8 @@ export default function App() {
         // agents pick them up on the next system-prompt build.
         loadSkills()
       }
-    })
+      setAuthReady(true)
+    }).catch(() => setAuthReady(true))
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
@@ -57,6 +63,15 @@ export default function App() {
     return () => subscription.unsubscribe()
   }, [])
 
-  if (!user) return <AuthScreen />
-  return <TheInterface />
+  // Blank during the first auth check (avoids a landing/app flash).
+  if (!authReady) return <div className="app-boot" />
+
+  return (
+    <Routes>
+      <Route path="/" element={user ? <Navigate to="/app" replace /> : <Landing />} />
+      <Route path="/login" element={user ? <Navigate to="/app" replace /> : <AuthScreen />} />
+      <Route path="/app" element={user ? <TheInterface /> : <Navigate to="/login" replace />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  )
 }

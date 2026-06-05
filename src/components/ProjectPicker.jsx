@@ -2,6 +2,19 @@ import { useState, useEffect } from 'react'
 import { useStore } from '../store/useStore'
 import { useModalDismiss } from '../utils/useModalDismiss'
 import { BRIEF_TEMPLATE } from '../utils/brandContext'
+import { TOOLS_BY_ID } from '../tools/registry'
+import OptionsCard from './OptionsCard'
+
+const GUIDED_Q = [
+  ['what', 'What is it?', 'A daily-refreshed deal tracker for serious hunters…'],
+  ['audience', "Who is it for?", 'Committed backcountry hunters who buy premium gear'],
+  ['voice', 'Voice and tone?', 'Rugged, terse, plainspoken — a fellow hunter, not a marketer'],
+  ['diff', 'What makes it different?', 'Honesty about price — the actual lowest live price'],
+  ['avoid', 'What to avoid?', 'Hype words, fake urgency, exclamation marks'],
+]
+const assembleGuided = (g) => GUIDED_Q
+  .map(([k, label]) => (g[k]?.trim() ? `${label.replace('?', ':')} ${g[k].trim()}` : ''))
+  .filter(Boolean).join('\n')
 
 /**
  * Slim project picker that lives in the header next to the brand.
@@ -19,15 +32,34 @@ import { BRIEF_TEMPLATE } from '../utils/brandContext'
  */
 
 export default function ProjectPicker() {
-  const { activeProject, projects, loadProjects, createProject, updateProject, setActiveProject } = useStore()
+  const { activeProject, projects, loadProjects, createProject, updateProject, setActiveProject, settings } = useStore()
   const [open, setOpen] = useState(false)
   const [creating, setCreating] = useState(false)
   const [editingId, setEditingId] = useState(null)   // null = new project; id = editing that one
   const [newName, setNewName] = useState("")
   const [newDesc, setNewDesc] = useState("")
   const [busy, setBusy] = useState(false)
+  // New-project intake path: null = chooser, then 'paste' | 'guided' | 'url'.
+  const [intakePath, setIntakePath] = useState(null)
+  const [guided, setGuided] = useState({})
+  const [url, setUrl] = useState("")
+  const [fetching, setFetching] = useState("")
 
-  const resetForm = () => { setCreating(false); setEditingId(null); setNewName(""); setNewDesc("") }
+  const resetForm = () => { setCreating(false); setEditingId(null); setNewName(""); setNewDesc(""); setIntakePath(null); setGuided({}); setUrl(""); setFetching("") }
+
+  // Pull a brief from a URL via the user's Firecrawl key, into the brief field.
+  const fetchFromUrl = async () => {
+    const key = settings?.toolKeys?.firecrawl
+    if (!key) { setFetching('Add a Firecrawl key in Settings → Tools to pull from a URL, or paste the brief instead.'); return }
+    if (!/^https?:\/\//i.test(url.trim())) { setFetching('Enter a full URL (https://…).'); return }
+    setFetching('Fetching…')
+    try {
+      const out = await TOOLS_BY_ID.firecrawl.run({ prompt: url.trim(), key, settings })
+      const text = (out?.text || out?.content || out?.markdown || '').toString().trim()
+      if (text) { setNewDesc(text.slice(0, 4000)); setIntakePath('paste'); setFetching('') }
+      else setFetching("Couldn't read that page — paste the brief instead.")
+    } catch { setFetching("Couldn't reach that URL — paste the brief instead.") }
+  }
 
   useModalDismiss(() => { setOpen(false); resetForm() }, { active: open })
 
@@ -45,6 +77,7 @@ export default function ProjectPicker() {
       setEditingId(proj?.id || null)
       setNewName(proj?.name || "")
       setNewDesc(proj?.description || "")
+      setIntakePath('paste')
       setCreating(true)
     }
     window.addEventListener('openclaw:edit_project', handler)
@@ -61,8 +94,8 @@ export default function ProjectPicker() {
     setOpen(false)
   }
 
-  const startNew = () => { setEditingId(null); setNewName(""); setNewDesc(""); setCreating(true) }
-  const startEdit = (p) => { setEditingId(p.id); setNewName(p.name || ""); setNewDesc(p.description || ""); setCreating(true) }
+  const startNew = () => { setEditingId(null); setNewName(""); setNewDesc(""); setIntakePath(null); setGuided({}); setUrl(""); setCreating(true) }
+  const startEdit = (p) => { setEditingId(p.id); setNewName(p.name || ""); setNewDesc(p.description || ""); setIntakePath('paste'); setCreating(true) }
 
   const handleSave = async () => {
     if (!newName.trim()) return
@@ -128,7 +161,56 @@ export default function ProjectPicker() {
               </>
             )}
 
-            {creating && (
+            {creating && !editingId && !intakePath && (
+              <div className="proj-create">
+                <label className="settings-label">New project — how do you want to set it up?</label>
+                <OptionsCard
+                  keyboard={false}
+                  options={[
+                    { title: 'Paste a brief', description: 'You already have one written' },
+                    { title: 'Walk through a few questions', description: 'Guided — what it is, who it’s for, the voice' },
+                    { title: 'Pull from a URL', description: 'Fetch a page into the brief (needs a Firecrawl key)' },
+                  ]}
+                  onSelect={(_, i) => setIntakePath(['paste', 'guided', 'url'][i])}
+                />
+                <div className="proj-create-actions"><button className="ai-btn" onClick={resetForm}>Cancel</button></div>
+              </div>
+            )}
+
+            {creating && intakePath === 'guided' && (
+              <div className="proj-create">
+                <label className="settings-label">New project — guided brief</label>
+                <input className="settings-input" placeholder="Name (e.g. Salt+Pine Coffee)" value={newName} onChange={e => setNewName(e.target.value)} autoFocus />
+                {GUIDED_Q.map(([k, label, ph]) => (
+                  <input
+                    key={k}
+                    className="settings-input"
+                    placeholder={`${label}  —  e.g. ${ph}`}
+                    value={guided[k] || ''}
+                    onChange={e => { const g = { ...guided, [k]: e.target.value }; setGuided(g); setNewDesc(assembleGuided(g)) }}
+                  />
+                ))}
+                <div className="proj-create-actions">
+                  <button className="ai-btn" onClick={resetForm}>Cancel</button>
+                  <button className="ai-btn ai-btn--primary" onClick={handleSave} disabled={!newName.trim() || busy}>{busy ? "Saving…" : "Create"}</button>
+                </div>
+              </div>
+            )}
+
+            {creating && intakePath === 'url' && (
+              <div className="proj-create">
+                <label className="settings-label">New project — pull from a URL</label>
+                <input className="settings-input" placeholder="Name (e.g. Salt+Pine Coffee)" value={newName} onChange={e => setNewName(e.target.value)} autoFocus />
+                <input className="settings-input" placeholder="https://your-site.com/about" value={url} onChange={e => setUrl(e.target.value)} />
+                {fetching && <div className="proj-brief-hint"><span>{fetching}</span></div>}
+                <div className="proj-create-actions">
+                  <button className="ai-btn" onClick={() => setIntakePath('paste')}>Paste instead</button>
+                  <button className="ai-btn ai-btn--primary" onClick={fetchFromUrl} disabled={!url.trim()}>Fetch</button>
+                </div>
+              </div>
+            )}
+
+            {creating && intakePath === 'paste' && (
               <div className="proj-create">
                 <label className="settings-label">{editingId ? "Edit project" : "New project"}</label>
                 <input

@@ -36,6 +36,16 @@
   --color-agent-gpt:     #2D7A50;   /* Forest */
   --color-agent-gemini:  #2A6EF5;   /* Cobalt */
   --color-agent-grok:    #6B4FD8;   /* Indigo */
+  --color-agent-deepseek: #4d8df0;  /* Sky — new model */
+
+  /* ─── Brand palette (landing + roundtable logo, theme-independent) ─── */
+  --color-brand-claude:   #d97757;
+  --color-brand-gpt:      #10a37f;
+  --color-brand-gemini:   #5b8def;
+  --color-brand-grok:     #b48af7;
+  --color-brand-deepseek: #4d8df0;
+  --color-brand-accent:   #6fa1ff;
+  --color-brand-bg:       #0a0b0d;
 
   /* ─── Color: Status ─── */
   --color-status-success:  #2D7A50;

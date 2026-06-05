@@ -10,6 +10,7 @@ import { pricingTableFor, sortByCost, pricingFor } from './agentPricing'
 import { makeIdleTimeout, isAbort } from './fetchTimeout'
 import { TOOLS_BY_ID, readKey } from '../tools/registry'
 import { brandBriefFrom, buildRequiresBrandContext, brandContextBlockMessage } from './brandContext'
+import { resolveBuildClass } from './buildClass'
 
 const PROXY = import.meta.env.VITE_PROXY_URL || "https://claude-proxy.jamesreed.workers.dev"
 
@@ -434,6 +435,19 @@ DECISION TREE (first match wins)
        (agent_synth, pptxgen, docgen, pdfgen, narrate_per_slide, gmail)
      → Internal tools always available. See BUILD-INTERNAL TOOLS section below.
 
+BUILD CLASS — set "build_class" on EVERY build. The panel IS the product, so a
+build that has to REASON content into existence should debate first, not silently
+produce a single-AI answer:
+- "mechanical" → pure transformation/formatting of content that ALREADY exists
+  (in the conversation or an attachment): convert, format, compile, "organize what
+  we discussed", "turn this into a spreadsheet", "put that in a doc". agent_synth's
+  job is to STRUCTURE, not to invent opinions. Mechanical builds run directly.
+- "subjective" → generated opinion/judgment/strategy/argument/creative: "pros and
+  cons", "recommend", "pitch", "write an ad", "plan a campaign", "best approach",
+  "should we", "strongest case for". The content does not exist yet — a single AI
+  here gives the same average answer as ChatGPT alone. Subjective builds DEBATE
+  first (the panel), then offer the user options. Default to subjective when unsure.
+
 BUILD INTENT — set "build_intent" on EVERY build (it tunes how agent_synth is fed):
 - "compile"  → the panel JUST discussed this and the user wants it organized into
    an artifact. Triggers: "put this/that in a spreadsheet", "compile what we
@@ -510,6 +524,7 @@ OUTPUT (return EXACTLY this JSON, no preface, no fence):
   "rounds": 1,
   "response_mode": "concise" | "balanced" | "detailed",
   "build_intent": "compile" | "research" | "create" | null,
+  "build_class": "mechanical" | "subjective",
   "requires_brand_context": true | false,
   "brand_brief_in_message": true | false,
   "deliverable": "<short folder name for build, or null in discuss>",
@@ -746,7 +761,111 @@ export async function orchestrate({
     decision.reasoning = (decision.reasoning || "") + " (no usable tool in plan — switched to discuss)"
   }
 
+  // ── PANEL-FIRST: subjective builds debate before building ─────────────
+  // The panel is the product. A build that has to REASON content into existence
+  // (strategy, opinion, an ad) should debate first and then offer the user
+  // options — not silently produce one single-AI answer. Mechanical builds
+  // (format/compile existing content) build directly, unchanged. Needs ≥2 agents
+  // to debate; the actual per-option plans are generated AFTER the debate
+  // (generateBuildOptions). The dispatcher's drawn-up plan becomes the basis.
+  if (decision.mode === 'build' && steps.length > 0 && enabledAgents.length >= 2) {
+    const buildClass = resolveBuildClass(decision.build_class, userMessage, { hasPriorDiscussion })
+    decision.build_class = buildClass
+    if (buildClass === 'subjective') {
+      const debaters = enabledAgents.slice(0, 3)
+      const roles = assignDebateRoles(debaters)
+      decision.mode = 'build_options'
+      decision.agents_to_respond = debaters
+      decision.role_assignments = roles
+      decision.rounds = 1
+      decision.panel_round = { agents: debaters, role_assignments: roles, rounds: 1 }
+      decision.base_plan = decision.plan   // basis for the options after the debate
+      decision.reasoning = (decision.reasoning || '') + ' (subjective build — panel debates, then offers options)'
+    }
+  } else if (decision.mode === 'build') {
+    decision.build_class = 'mechanical'
+  }
+
   return decision
+}
+
+// Default debate lineup for a panel-first (subjective) build. Always pairs a
+// generative role (builder/steel_manner) with a critical one (skeptic/reality
+// checker) so the debate has real friction, not parallel agreement.
+const DEBATE_LINEUP = ['builder', 'skeptic', 'reality_checker']
+function assignDebateRoles(agents) {
+  const roles = {}
+  agents.forEach((id, i) => { roles[id] = DEBATE_LINEUP[i % DEBATE_LINEUP.length] })
+  return roles
+}
+
+function normalizeOptionPlan(plan, fallbackDeliverable) {
+  const raw = Array.isArray(plan?.steps) ? plan.steps : []
+  const steps = raw.filter(s => s?.tool).map((s, i) => ({
+    id: s.id || `s${i + 1}`,
+    tool: s.tool,
+    input: s.input || s.prompt || '',
+    needs: Array.isArray(s.needs) ? s.needs : [],
+    label: s.label || s.tool,
+    output_schema: s.output_schema,
+  }))
+  const ids = new Set(steps.map(s => s.id))
+  steps.forEach(s => { s.needs = s.needs.filter(n => ids.has(n)) })
+  return { deliverable: plan?.deliverable || fallbackDeliverable || 'Build', steps }
+}
+
+/**
+ * SECOND orchestrator pass for a subjective build. After the panel debates,
+ * synthesize 3-4 meaningfully different build options FROM the debate — each
+ * with a runnable plan, the agents who championed it, and a consensus score.
+ * Returns an array (possibly empty); the executor's per-step isolation + content
+ * rescue handle any imperfect plan, so we keep normalization light.
+ */
+export async function generateBuildOptions({ userMessage, debate = [], deliverable, enabledTools = {}, settings }) {
+  const modelConfig = selectOrchestrationModel(settings)
+  if (!modelConfig) return []
+  const toolList = Object.entries(enabledTools).filter(([, v]) => v).map(([id]) => id).join(', ')
+  const debateText = debate
+    .map(r => `${String(r.agent || 'agent').toUpperCase()}${r.role ? ` (${r.role})` : ''}: ${(r.text || '').slice(0, 500)}`)
+    .join('\n\n')
+
+  const prompt = `You are OpenClaw. The panel just debated a build request. Turn the debate into concrete, DIFFERENT build options the user can choose from.
+
+USER REQUEST: "${userMessage}"
+
+PANEL DEBATE:
+${debateText || '(no debate captured — infer reasonable angles)'}
+
+TOOLS AVAILABLE: ${toolList || '(build-internal generators only)'}
+
+Generate 3-4 MEANINGFULLY DIFFERENT options — distinct angles the panel raised,
+not trivial variations. For each:
+- "name": 2-4 words
+- "description": one line on the angle
+- "est_cost": rough, e.g. "~$0.05"
+- "est_time": rough, e.g. "~2 min"
+- "champions": array of agent ids who pushed this angle (from the debate above)
+- "consensus": integer 1-4 — how many panelists would endorse it
+- "plan": { "deliverable": "...", "steps": [ {"id","tool","needs":[],"input","label","output_schema"} ] }
+  Use agent_synth (output_schema slides|document|spreadsheet|post|page) feeding a
+  generator (pptxgen|docgen|xlsxgen|mdgen|htmlgen). Feed the debate into the synth
+  step's input so it builds FROM the panel's reasoning. Each plan must be runnable.
+
+Return EXACTLY this JSON, no preface, no fence:
+{"options":[ ... ]}`.trim()
+
+  const { decision } = await callOpenClaw(prompt, modelConfig)
+  const options = Array.isArray(decision?.options) ? decision.options : []
+  return options.slice(0, 4).map((o, i) => ({
+    name: String(o?.name || `Option ${i + 1}`).slice(0, 48),
+    description: String(o?.description || '').slice(0, 180),
+    est_cost: String(o?.est_cost || ''),
+    est_time: String(o?.est_time || ''),
+    champions: Array.isArray(o?.champions) ? o.champions.filter(a => typeof a === 'string') : [],
+    consensus: Math.max(1, Math.min(4, Math.round(Number(o?.consensus) || 1))),
+    arguments: String(o?.arguments || o?.rationale || '').slice(0, 600),
+    plan: normalizeOptionPlan(o?.plan, deliverable),
+  })).filter(o => o.plan.steps.length > 0)
 }
 
 // A brand-facing build was requested but no usable brand context exists. We do

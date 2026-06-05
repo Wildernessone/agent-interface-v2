@@ -39,6 +39,12 @@
   font-size: var(--font-size-sm);
   color: var(--color-text-secondary);
 }
+.auth-trial {
+  margin-top: var(--space-2) !important;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs) !important;
+  color: var(--color-accent) !important;
+}
 
 .auth-oauth {
   display: flex;

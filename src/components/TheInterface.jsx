@@ -9,7 +9,10 @@ import Settings from './Settings'
 import HelpDrawer from './HelpDrawer'
 import { exportConversation } from '../utils/exportConversation'
 import HistorySidebar from './HistorySidebar'
-import { orchestrate, getProactiveNotices, processCorrection, ROLE_POOL, shouldAudit, auditResponse, buildRetryReminder, defaultDecision } from '../utils/openClaw'
+import { orchestrate, getProactiveNotices, processCorrection, ROLE_POOL, shouldAudit, auditResponse, buildRetryReminder, defaultDecision, generateBuildOptions } from '../utils/openClaw'
+import BuildOptionsTurn from './BuildOptionsTurn'
+import OptionsCard from './OptionsCard'
+import RoundtableLogo from './RoundtableLogo'
 import { detectSignalsFromUserMessage, logSignals, logAuditFail, getRecentRolePerformance } from '../utils/roleSignals'
 import { logUsage, logError, checkTierLimits } from '../utils/telemetry'
 import { track } from '../utils/track'
@@ -262,12 +265,34 @@ export default function TheInterface() {
   // whatever the user has dropped into Drive/Agent Interface/Skills/.
   const { settings, turns, activeAgentId, voiceMode, addTurn, addToolTurn, updateToolTurn, updateBuildTurn, setTurnText, finishTurn, addErrorTurn, addToolErrorTurn, clearTurns, setVoiceMode, saveConversation, saveStatus, conversationId, loadMemory, saveMemory, resetTurnForRetry, activeProject, projects, loadProjects, createProject, setActiveProject, skills, renameConversation, loadProjectConversations, justCreatedConversationId, billing } = useStore()
   
+  // "Voice activates next message" badge shown when toggled ON mid-response.
+  const [voiceJustEnabled, setVoiceJustEnabled] = useState(false)
+  const voiceBadgeTimer = useRef(null)
+
   const handleVoiceToggle = () => {
     if (!voiceMode) {
       voiceRef.current = new VoiceEngine(settings)
+      // Prime the audio channel INSIDE the click gesture so the browser allows
+      // programmatic speech later (autoplay policy: speech must follow a user
+      // gesture). A silent utterance opens the channel.
+      try {
+        const primer = new SpeechSynthesisUtterance(' ')
+        primer.volume = 0
+        window.speechSynthesis.cancel()
+        window.speechSynthesis.speak(primer)
+      } catch { /* speechSynthesis unavailable — VoiceEngine handles fallback */ }
+      // A response in flight can't be retro-played (its gesture window closed),
+      // so tell the user voice kicks in on the next message.
+      if (activeAgentId) {
+        setVoiceJustEnabled(true)
+        if (voiceBadgeTimer.current) clearTimeout(voiceBadgeTimer.current)
+        voiceBadgeTimer.current = setTimeout(() => setVoiceJustEnabled(false), 10000)
+      }
     } else {
       voiceRef.current?.stopSpeaking()
       voiceRef.current?.stopListening()
+      setVoiceJustEnabled(false)
+      if (voiceBadgeTimer.current) clearTimeout(voiceBadgeTimer.current)
     }
     setVoiceMode(!voiceMode)
   }
@@ -439,6 +464,15 @@ export default function TheInterface() {
     try {
     if (!overrideText) setInput("")
 
+    // Voice: re-anchor the audio gesture on this fresh user action (a paused
+    // synth from a prior turn won't speak otherwise), and clear the
+    // "voice next message" hint now that the next message is being sent.
+    if (useStore.getState().voiceMode) { try { window.speechSynthesis.resume() } catch { /* no synth */ } }
+    if (voiceJustEnabled) {
+      setVoiceJustEnabled(false)
+      if (voiceBadgeTimer.current) clearTimeout(voiceBadgeTimer.current)
+    }
+
     const limit = await checkTierLimits()
     if (!limit.allowed) {
       addErrorTurn("orchestrator", "free_tier_limit")
@@ -554,11 +588,16 @@ export default function TheInterface() {
     }
 
     const isBuildMode = clawDecision?.mode === "build"
+    const isBuildOptions = clawDecision?.mode === "build_options"
     const respondingAgents = isBuildMode
       ? []
-      : (clawDecision?.agents_to_respond?.length
-        ? selected.filter(a => clawDecision.agents_to_respond.includes(a.id))
-        : selected)
+      : isBuildOptions
+        // Panel-first: the chosen debaters respond regardless of the user's
+        // target chip, so the debate that drives the options always happens.
+        ? activeAgents.filter(a => clawDecision.agents_to_respond?.includes(a.id))
+        : (clawDecision?.agents_to_respond?.length
+          ? selected.filter(a => clawDecision.agents_to_respond.includes(a.id))
+          : selected)
     const totalRounds = clawDecision?.rounds || 1
     const activeResponseMode = clawDecision?.response_mode || responseMode
 
@@ -716,7 +755,10 @@ export default function TheInterface() {
             tokensOut: cleanResultText.length / 4 | 0, success: true,
             metadata: { role: role || null, ...auditMeta },
           })
-          if (voiceMode && voiceRef.current) {
+          // Read voiceMode LIVE, not the closure captured at sendMessage start —
+          // so a mid-response toggle ON starts speaking this turn's later agents
+          // (and a toggle OFF stops them).
+          if (useStore.getState().voiceMode && voiceRef.current) {
             await new Promise(r => voiceRef.current.speak(cleanResultText.slice(0, 400), agent.id, r))
           }
         }
@@ -725,7 +767,25 @@ export default function TheInterface() {
 
     const plan = clawDecision?.plan
     const steps = plan?.steps || []
-    if (steps.length > 0) {
+
+    if (isBuildOptions) {
+      // The panel just debated. Turn that debate into 3-4 concrete build
+      // options for the user to choose from (the panel is the product — we do
+      // NOT auto-build a single answer). On no options, fall back to the base plan.
+      const debate = useStore.getState().turns
+        .filter(t => t.type === 'agent' && t.text)
+        .slice(-(respondingAgents.length * totalRounds))
+        .map(t => ({ agent: t.agent, role: t.role, text: t.text }))
+      let options = []
+      try {
+        options = await generateBuildOptions({ userMessage: text, debate, deliverable: plan.deliverable, enabledTools: allowedTools, settings })
+      } catch (e) { logError('generateBuildOptions', e) }
+      if (options.length) {
+        addTurn({ id: `buildopts-${Date.now()}`, type: 'build_options', options, debate })
+      } else if (steps.length > 0) {
+        await executeBuild({ deliverable: plan.deliverable, steps, brandContext: plan.brandContext || null })
+      }
+    } else if (clawDecision?.mode === 'build' && steps.length > 0) {
       await executeBuild({ deliverable: plan.deliverable, steps, brandContext: plan.brandContext || null })
     }
     } finally {
@@ -795,6 +855,22 @@ export default function TheInterface() {
     fnRefs.current.sendMessage(ts.filter(t => t.type === "user").slice(-1)[0]?.text || "")
   }, [])
   const onExecuteBuild = useCallback((plan) => fnRefs.current.executeBuild(plan), [])
+  // Build a chosen panel-first option. Feed the debate into the first agent_synth
+  // step so it builds FROM the panel's reasoning, not from scratch.
+  const onBuildOption = useCallback((option, debate) => {
+    const steps = option?.plan?.steps || []
+    if (!steps.length) return
+    const digest = debate?.length
+      ? 'PANEL DEBATE (build from this reasoning, do not ignore it):\n' +
+        debate.map(d => `${String(d.agent || '').toUpperCase()}${d.role ? ` (${d.role})` : ''}: ${(d.text || '').slice(0, 600)}`).join('\n\n')
+      : ''
+    const firstSynth = steps.find(s => s.tool === 'agent_synth' && (!s.needs || !s.needs.length))
+    const finalSteps = digest && firstSynth
+      ? steps.map(s => (s === firstSynth ? { ...s, input: `${digest}\n\nTASK:\n${s.input || ''}` } : s))
+      : steps
+    fnRefs.current.executeBuild({ deliverable: option.plan.deliverable, steps: finalSteps, brandContext: null })
+  }, [])
+  const onBuildSomethingDifferent = useCallback((textVal) => fnRefs.current.sendMessage(textVal), [])
   const onOpenSettings = useCallback(() => setShowSettings(true), [])
 
   const toggleTarget = (id) => {
@@ -828,7 +904,7 @@ export default function TheInterface() {
     <div className="ai-app">
       <header className="ai-header">
         <div className="ai-brand">
-          <Logo/>
+          <RoundtableLogo size={28} pulse={false} />
           <h1>Agent Interface</h1>
           <ProjectPicker/>
           {turns.length > 0 && saveStatus !== 'idle' && (
@@ -878,12 +954,17 @@ export default function TheInterface() {
               )}
             </div>
           )}
-          <IconButton title={voiceMode ? "Voice mode on" : "Voice mode off"} onClick={handleVoiceToggle} active={voiceMode}>
-            {voiceMode
-              ? <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M9 3L5.5 5.5H3V10.5H5.5L9 13V3Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/><path d="M11.5 5.5C12.5 6.5 12.5 9.5 11.5 10.5M13 4C14.5 5.5 14.5 10.5 13 12" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>
-              : <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M9 3L5.5 5.5H3V10.5H5.5L9 13V3Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/><path d="M11.5 6L14 8.5M14 6L11.5 8.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>
-            }
-          </IconButton>
+          <span className="voice-btn-wrap">
+            <IconButton title={voiceMode ? "Voice mode on" : "Voice mode off"} onClick={handleVoiceToggle} active={voiceMode}>
+              {voiceMode
+                ? <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M9 3L5.5 5.5H3V10.5H5.5L9 13V3Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/><path d="M11.5 5.5C12.5 6.5 12.5 9.5 11.5 10.5M13 4C14.5 5.5 14.5 10.5 13 12" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>
+                : <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M9 3L5.5 5.5H3V10.5H5.5L9 13V3Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/><path d="M11.5 6L14 8.5M14 6L11.5 8.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>
+              }
+            </IconButton>
+            {voiceJustEnabled && (
+              <span className="voice-next-badge" role="status">Voice activates next message</span>
+            )}
+          </span>
           <IconButton title="Need help?" onClick={() => setShowHelp(true)} active={showHelp}>
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.2"/><path d="M6.3 6.2C6.3 5.3 7 4.7 8 4.7C9 4.7 9.7 5.3 9.7 6.1C9.7 7.6 8 7.3 8 9" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/><circle cx="8" cy="11.2" r="0.7" fill="currentColor"/></svg>
           </IconButton>
@@ -913,7 +994,7 @@ export default function TheInterface() {
 
         {turns.length === 0 && (activeAgents.length > 0 || skippedOnboarding) && (
           <div className="ai-empty">
-            <div className="ai-empty-logo"><Logo size={48}/></div>
+            <div className="ai-empty-logo"><RoundtableLogo size={48} /></div>
             <h2>One interface. All your AI.</h2>
             <p>{activeAgents.length} agent{activeAgents.length!==1?"s":""} ready · OpenClaw orchestrating</p>
             {activeAgents.length === 0 && (
@@ -922,14 +1003,17 @@ export default function TheInterface() {
               </button>
             )}
             <div className="ai-suggestions">
-              {[
-                "Help me brainstorm features",
-                "Debate the best approach to this",
-                "Plan a 30 second ad",
-                "What are you all good at?",
-              ].map(q => (
-                <button key={q} onClick={() => setInput(q)}>{q}</button>
-              ))}
+              <OptionsCard
+                keyboard={false}
+                title="Try one of these"
+                options={[
+                  { title: "Launch my coffee roastery Q4 campaign." },
+                  { title: "Research the best espresso machine under $1,500." },
+                  { title: "Make a 30-second hero ad for the new grinder." },
+                  { title: "Turn this PDF into a pitch deck." },
+                ]}
+                onSelect={(o) => { setInput(o.title); setTimeout(() => document.querySelector('textarea')?.focus(), 50) }}
+              />
             </div>
           </div>
         )}
@@ -942,6 +1026,8 @@ export default function TheInterface() {
             busy={busy}
             onRetryLast={onRetryLast}
             onExecuteBuild={onExecuteBuild}
+            onBuildOption={onBuildOption}
+            onBuildSomethingDifferent={onBuildSomethingDifferent}
             onOpenSettings={onOpenSettings}
           />
         ))}
@@ -1051,7 +1137,7 @@ export default function TheInterface() {
   )
 }
 
-const TurnRow = memo(function TurnRow({ turn, isActive, busy, onRetryLast, onExecuteBuild, onOpenSettings }) {
+const TurnRow = memo(function TurnRow({ turn, isActive, busy, onRetryLast, onExecuteBuild, onBuildOption, onBuildSomethingDifferent, onOpenSettings }) {
           if (turn.type === "user") return (
             <div key={turn.id} className="ai-turn ai-turn--user">
               <div className="ai-user-bubble">{turn.text}</div>
@@ -1124,6 +1210,14 @@ const TurnRow = memo(function TurnRow({ turn, isActive, busy, onRetryLast, onExe
                 )}
               </div>
             </div>
+          )
+          if (turn.type === "build_options") return (
+            <BuildOptionsTurn
+              key={turn.id}
+              options={turn.options}
+              onBuild={(opt) => onBuildOption(opt, turn.debate)}
+              onSomethingDifferent={onBuildSomethingDifferent}
+            />
           )
           if (turn.type === "build") {
             const done = turn.steps?.every(s => s.status === 'done' || s.status === 'failed')
@@ -1238,16 +1332,29 @@ const TurnRow = memo(function TurnRow({ turn, isActive, busy, onRetryLast, onExe
                     )}
                   </div>
                 )}
-                {done && turn.plan && (turn.errors?.length > 0 || turn.files?.length > 0) && (
+                {done && turn.plan && turn.errors?.length > 0 && (
                   <div className="ai-build-actions">
-                    <button
-                      className="ai-btn ai-btn--small"
-                      onClick={() => onExecuteBuild(turn.plan)}
-                      disabled={busy}
-                      title="Re-run this exact build plan"
-                    >
-                      ↻ Retry build
-                    </button>
+                    <OptionsCard
+                      keyboard={false}
+                      title="Some steps failed — what next?"
+                      options={[
+                        { title: 'Retry exactly', description: 'Re-run the same plan' },
+                        { title: 'Try smaller scope', description: 'Just the writing — skip the heavy generators' },
+                        { title: 'Leave it', description: 'Keep what succeeded' },
+                      ]}
+                      onSelect={(_, i) => {
+                        if (i === 0) onExecuteBuild(turn.plan)
+                        else if (i === 1) {
+                          const synth = (turn.plan.steps || []).filter(s => s.tool === 'agent_synth')
+                          onExecuteBuild({ ...turn.plan, steps: synth.length ? synth : (turn.plan.steps || []).slice(0, 1) })
+                        }
+                      }}
+                    />
+                  </div>
+                )}
+                {done && turn.plan && !turn.errors?.length && turn.files?.length > 0 && (
+                  <div className="ai-build-actions">
+                    <button className="ai-btn ai-btn--small" onClick={() => onExecuteBuild(turn.plan)} disabled={busy} title="Re-run this build">↻ Rebuild</button>
                   </div>
                 )}
               </div>
@@ -1341,39 +1448,6 @@ const TurnRow = memo(function TurnRow({ turn, isActive, busy, onRetryLast, onExe
             </div>
           )
 })
-
-function Logo({ size = 32 }) {
-  const points = [0, 72, 144, 216, 288]
-  const r1 = 9.5, r2 = 12
-  const dotColors = [
-    "var(--color-agent-claude)",
-    "var(--color-agent-gpt)",
-    "var(--color-agent-gemini)",
-    "var(--color-agent-grok)",
-    "var(--color-accent)",
-  ]
-  return (
-    <svg width={size} height={size} viewBox="0 0 36 36" fill="none" aria-hidden>
-      <rect width="36" height="36" rx="9" fill="var(--color-bg-tertiary)"/>
-      {points.map((deg, i) => {
-        const rad = (deg - 90) * Math.PI / 180
-        const x1 = 18 + r1 * Math.cos(rad)
-        const y1 = 18 + r1 * Math.sin(rad)
-        const x2 = 18 + r2 * Math.cos(rad)
-        const y2 = 18 + r2 * Math.sin(rad)
-        return (
-          <g key={i}>
-            <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="var(--color-text-secondary)" strokeWidth="0.8" opacity="0.5"/>
-            <circle cx={x2} cy={y2} r="2" fill={dotColors[i]}/>
-          </g>
-        )
-      })}
-      <circle cx="18" cy="18" r="10.5" stroke="var(--color-text-tertiary)" strokeWidth="0.6" fill="none" strokeDasharray="2 2.5"/>
-      <circle cx="18" cy="18" r="3" fill="var(--color-text-primary)"/>
-      <circle cx="18" cy="18" r="1.1" fill="var(--color-accent)"/>
-    </svg>
-  )
-}
 
 function IconButton({ children, onClick, title, active, expanded }) {
   return (
