@@ -9,7 +9,8 @@ import Settings from './Settings'
 import HelpDrawer from './HelpDrawer'
 import { exportConversation } from '../utils/exportConversation'
 import HistorySidebar from './HistorySidebar'
-import { orchestrate, getProactiveNotices, processCorrection, ROLE_POOL, shouldAudit, auditResponse, buildRetryReminder, defaultDecision } from '../utils/openClaw'
+import { orchestrate, getProactiveNotices, processCorrection, ROLE_POOL, shouldAudit, auditResponse, buildRetryReminder, defaultDecision, generateBuildOptions } from '../utils/openClaw'
+import BuildOptionsTurn from './BuildOptionsTurn'
 import { detectSignalsFromUserMessage, logSignals, logAuditFail, getRecentRolePerformance } from '../utils/roleSignals'
 import { logUsage, logError, checkTierLimits } from '../utils/telemetry'
 import { track } from '../utils/track'
@@ -585,11 +586,16 @@ export default function TheInterface() {
     }
 
     const isBuildMode = clawDecision?.mode === "build"
+    const isBuildOptions = clawDecision?.mode === "build_options"
     const respondingAgents = isBuildMode
       ? []
-      : (clawDecision?.agents_to_respond?.length
-        ? selected.filter(a => clawDecision.agents_to_respond.includes(a.id))
-        : selected)
+      : isBuildOptions
+        // Panel-first: the chosen debaters respond regardless of the user's
+        // target chip, so the debate that drives the options always happens.
+        ? activeAgents.filter(a => clawDecision.agents_to_respond?.includes(a.id))
+        : (clawDecision?.agents_to_respond?.length
+          ? selected.filter(a => clawDecision.agents_to_respond.includes(a.id))
+          : selected)
     const totalRounds = clawDecision?.rounds || 1
     const activeResponseMode = clawDecision?.response_mode || responseMode
 
@@ -759,7 +765,25 @@ export default function TheInterface() {
 
     const plan = clawDecision?.plan
     const steps = plan?.steps || []
-    if (steps.length > 0) {
+
+    if (isBuildOptions) {
+      // The panel just debated. Turn that debate into 3-4 concrete build
+      // options for the user to choose from (the panel is the product — we do
+      // NOT auto-build a single answer). On no options, fall back to the base plan.
+      const debate = useStore.getState().turns
+        .filter(t => t.type === 'agent' && t.text)
+        .slice(-(respondingAgents.length * totalRounds))
+        .map(t => ({ agent: t.agent, role: t.role, text: t.text }))
+      let options = []
+      try {
+        options = await generateBuildOptions({ userMessage: text, debate, deliverable: plan.deliverable, enabledTools: allowedTools, settings })
+      } catch (e) { logError('generateBuildOptions', e) }
+      if (options.length) {
+        addTurn({ id: `buildopts-${Date.now()}`, type: 'build_options', options, debate })
+      } else if (steps.length > 0) {
+        await executeBuild({ deliverable: plan.deliverable, steps, brandContext: plan.brandContext || null })
+      }
+    } else if (clawDecision?.mode === 'build' && steps.length > 0) {
       await executeBuild({ deliverable: plan.deliverable, steps, brandContext: plan.brandContext || null })
     }
     } finally {
@@ -829,6 +853,22 @@ export default function TheInterface() {
     fnRefs.current.sendMessage(ts.filter(t => t.type === "user").slice(-1)[0]?.text || "")
   }, [])
   const onExecuteBuild = useCallback((plan) => fnRefs.current.executeBuild(plan), [])
+  // Build a chosen panel-first option. Feed the debate into the first agent_synth
+  // step so it builds FROM the panel's reasoning, not from scratch.
+  const onBuildOption = useCallback((option, debate) => {
+    const steps = option?.plan?.steps || []
+    if (!steps.length) return
+    const digest = debate?.length
+      ? 'PANEL DEBATE (build from this reasoning, do not ignore it):\n' +
+        debate.map(d => `${String(d.agent || '').toUpperCase()}${d.role ? ` (${d.role})` : ''}: ${(d.text || '').slice(0, 600)}`).join('\n\n')
+      : ''
+    const firstSynth = steps.find(s => s.tool === 'agent_synth' && (!s.needs || !s.needs.length))
+    const finalSteps = digest && firstSynth
+      ? steps.map(s => (s === firstSynth ? { ...s, input: `${digest}\n\nTASK:\n${s.input || ''}` } : s))
+      : steps
+    fnRefs.current.executeBuild({ deliverable: option.plan.deliverable, steps: finalSteps, brandContext: null })
+  }, [])
+  const onBuildSomethingDifferent = useCallback((textVal) => fnRefs.current.sendMessage(textVal), [])
   const onOpenSettings = useCallback(() => setShowSettings(true), [])
 
   const toggleTarget = (id) => {
@@ -981,6 +1021,8 @@ export default function TheInterface() {
             busy={busy}
             onRetryLast={onRetryLast}
             onExecuteBuild={onExecuteBuild}
+            onBuildOption={onBuildOption}
+            onBuildSomethingDifferent={onBuildSomethingDifferent}
             onOpenSettings={onOpenSettings}
           />
         ))}
@@ -1090,7 +1132,7 @@ export default function TheInterface() {
   )
 }
 
-const TurnRow = memo(function TurnRow({ turn, isActive, busy, onRetryLast, onExecuteBuild, onOpenSettings }) {
+const TurnRow = memo(function TurnRow({ turn, isActive, busy, onRetryLast, onExecuteBuild, onBuildOption, onBuildSomethingDifferent, onOpenSettings }) {
           if (turn.type === "user") return (
             <div key={turn.id} className="ai-turn ai-turn--user">
               <div className="ai-user-bubble">{turn.text}</div>
@@ -1163,6 +1205,14 @@ const TurnRow = memo(function TurnRow({ turn, isActive, busy, onRetryLast, onExe
                 )}
               </div>
             </div>
+          )
+          if (turn.type === "build_options") return (
+            <BuildOptionsTurn
+              key={turn.id}
+              options={turn.options}
+              onBuild={(opt) => onBuildOption(opt, turn.debate)}
+              onSomethingDifferent={onBuildSomethingDifferent}
+            />
           )
           if (turn.type === "build") {
             const done = turn.steps?.every(s => s.status === 'done' || s.status === 'failed')
