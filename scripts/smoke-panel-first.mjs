@@ -30,7 +30,7 @@ const run = (msg) => ({ userMessage: msg, enabledAgents: ['claude', 'gpt'], sett
 const server = await createServer({ root: process.cwd(), logLevel: 'error', optimizeDeps: { noDiscovery: true }, server: { middlewareMode: true } })
 try {
   const { classifyBuildIntent } = await server.ssrLoadModule('/src/utils/buildClass.js')
-  const { orchestrate, generateBuildOptions } = await server.ssrLoadModule('/src/utils/openClaw.js')
+  const { orchestrate, generateBuildOptions, carryActionSteps } = await server.ssrLoadModule('/src/utils/openClaw.js')
 
   // ── classifier ──────────────────────────────────────────────────────
   check('subjective: write an ad', classifyBuildIntent('write me an ad for my coffee') === 'subjective')
@@ -78,6 +78,23 @@ try {
   const prose = opts.find(o => o.name === 'Prose Input')
   check('prose generator input forced to {s1}', prose.plan.steps[1].input === '{s1}', prose.plan.steps[1].input)
   check('synth output_schema backfilled to slides', prose.plan.steps[0].output_schema === 'slides', prose.plan.steps[0].output_schema)
+  // ── carryActionSteps: "...and email it" survives the options flow ────
+  const optionSteps = [
+    { id: 's1', tool: 'agent_synth', needs: [], output_schema: 'slides', input: 'draft' },
+    { id: 's2', tool: 'pptxgen', needs: ['s1'], input: '{s1}' },
+  ]
+  const basePlan = { steps: [
+    { id: 'b1', tool: 'agent_synth', needs: [] },
+    { id: 'b2', tool: 'pptxgen', needs: ['b1'], input: '{b1}' },
+    { id: 'b3', tool: 'gmail', needs: ['b2'], input: '{"to":"a@b.com","subject":"Deck","body":"Here is the deck."}' },
+  ] }
+  const merged = carryActionSteps(optionSteps, basePlan)
+  const mail = merged.find(s => s.tool === 'gmail')
+  check('email action carried onto the option', !!mail, `len=${merged.length}`)
+  check('email runs after the deliverable', mail?.needs?.[0] === 's2')
+  check('email recipient preserved', /a@b\.com/.test(mail?.input || ''))
+  check('email body points at the option deliverable link', /\{s2\.savedLink\}/.test(mail?.input || ''))
+  check('no action → steps unchanged', carryActionSteps(optionSteps, { steps: [{ id: 'x', tool: 'pptxgen' }] }).length === 2)
 } finally {
   await server.close()
 }

@@ -799,6 +799,42 @@ function assignDebateRoles(agents) {
   return roles
 }
 
+// Send/notify actions that operate ON the finished deliverable. When a subjective
+// build goes through the options flow ("make a deck AND email it"), the options
+// only regenerate the deliverable — these trailing actions get dropped. We carry
+// them from the base plan onto whichever option the user picks.
+const POST_ACTION_TOOLS = new Set(['gmail', 'twilio'])
+
+/**
+ * Append the base plan's trailing send-actions (gmail/twilio) onto a chosen
+ * option's steps, wired to run AFTER the option's deliverable. Re-points any
+ * {baseStepId} placeholders in the action's input to the option's deliverable
+ * step, and makes sure an email body includes the deliverable's link.
+ */
+export function carryActionSteps(optionSteps = [], basePlan = null) {
+  const actions = (basePlan?.steps || []).filter(s => POST_ACTION_TOOLS.has(s?.tool))
+  if (!actions.length || !optionSteps.length) return optionSteps
+  // The deliverable = the option's last file-producing step (not the synth).
+  const deliverable = [...optionSteps].reverse().find(s => s.tool !== 'agent_synth') || optionSteps[optionSteps.length - 1]
+  const baseIds = new Set((basePlan.steps || []).map(s => s.id))
+  const usedIds = new Set(optionSteps.map(s => s.id))
+  const carried = actions.map((a, i) => {
+    let id = a.id || `act${i + 1}`
+    while (usedIds.has(id)) id = `act${i + 1}_${id}`
+    usedIds.add(id)
+    let input = typeof a.input === 'string' ? a.input : (a.input ? JSON.stringify(a.input) : '')
+    // Point any reference to a base-plan step at the option's deliverable.
+    input = input.replace(/\{([a-z0-9_]+)(\.[a-z0-9_]+)?\}/gi, (m, sid, field) =>
+      baseIds.has(sid) ? `{${deliverable.id}${field || ''}}` : m)
+    // Make sure the email actually points the recipient at the result.
+    if (a.tool === 'gmail' && !input.includes(deliverable.id)) {
+      input = input.replace(/("body"\s*:\s*")([^"]*)"/, (m, p, body) => `${p}${body}\\n\\n{${deliverable.id}.savedLink}"`)
+    }
+    return { ...a, id, input, needs: [deliverable.id] }
+  })
+  return [...optionSteps, ...carried]
+}
+
 // The output_schema a generator needs from its upstream agent_synth step.
 const SCHEMA_FOR_GENERATOR = {
   pptxgen: 'slides', image_per_slide: 'slides', narrate_per_slide: 'slides',
