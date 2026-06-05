@@ -799,6 +799,14 @@ function assignDebateRoles(agents) {
   return roles
 }
 
+// The output_schema a generator needs from its upstream agent_synth step.
+const SCHEMA_FOR_GENERATOR = {
+  pptxgen: 'slides', image_per_slide: 'slides', narrate_per_slide: 'slides',
+  docgen: 'document', pdfgen: 'document',
+  xlsxgen: 'spreadsheet', gsheets: 'spreadsheet',
+  mdgen: 'post', htmlgen: 'page', codezip: 'project',
+}
+
 function normalizeOptionPlan(plan, fallbackDeliverable) {
   const raw = Array.isArray(plan?.steps) ? plan.steps : []
   const steps = raw.filter(s => s?.tool).map((s, i) => ({
@@ -810,7 +818,26 @@ function normalizeOptionPlan(plan, fallbackDeliverable) {
     output_schema: s.output_schema,
   }))
   const ids = new Set(steps.map(s => s.id))
-  steps.forEach(s => { s.needs = s.needs.filter(n => ids.has(n)) })
+  for (const s of steps) {
+    s.needs = s.needs.filter(n => ids.has(n))
+    // A generator step must consume its upstream step's STRUCTURED output via a
+    // clean {stepId} placeholder. Models sometimes write prose ("Use the slides
+    // from the outline…") which the generator then JSON.parses and chokes on
+    // ("Unexpected token 'U'…"). Force the interpolation when there's no
+    // placeholder already.
+    if (s.needs.length && SCHEMA_FOR_GENERATOR[s.tool] && !/\{[a-z0-9_]+\}/i.test(s.input)) {
+      s.input = `{${s.needs[0]}}`
+    }
+  }
+  // Backfill an agent_synth step's output_schema from whatever generator
+  // consumes it, so the synth produces the shape the generator expects
+  // (slides for pptxgen, document for docgen, …).
+  for (const s of steps) {
+    if (s.tool === 'agent_synth' && !s.output_schema) {
+      const consumer = steps.find(c => c.needs.includes(s.id) && SCHEMA_FOR_GENERATOR[c.tool])
+      if (consumer) s.output_schema = SCHEMA_FOR_GENERATOR[consumer.tool]
+    }
+  }
   return { deliverable: plan?.deliverable || fallbackDeliverable || 'Build', steps }
 }
 

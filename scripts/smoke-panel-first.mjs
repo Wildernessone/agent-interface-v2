@@ -62,14 +62,22 @@ try {
       plan: { deliverable: 'Lean', steps: [{ id: 's1', tool: 'agent_synth', needs: [], output_schema: 'document', input: 'x' }, { id: 's2', tool: 'docgen', needs: ['s1'], input: '{s1}' }] } },
     { name: 'Full Pitch', description: 'The complete deck', champions: ['gpt', 'gemini'], consensus: 4,
       plan: { steps: [{ id: 's1', tool: 'agent_synth', needs: [], output_schema: 'slides', input: 'y' }, { id: 's2', tool: 'pptxgen', needs: ['s1'], input: '{s1}' }] } },
+    // The bug pattern: generator input is PROSE (not {s1}) + the synth step has
+    // no output_schema. normalizeOptionPlan must fix both so pptxgen doesn't
+    // choke on "Unexpected token 'U', 'Use the sl'…".
+    { name: 'Prose Input', description: 'model wrote prose', champions: ['claude'], consensus: 2,
+      plan: { steps: [{ id: 's1', tool: 'agent_synth', needs: [], input: 'draft the slides' }, { id: 's2', tool: 'pptxgen', needs: ['s1'], input: 'Use the slides from the outline above' }] } },
     { name: 'Empty', description: 'no plan', plan: { steps: [] } }, // dropped (no steps)
   ] }
   const opts = await generateBuildOptions({ userMessage: 'pitch my idea', debate: [{ agent: 'claude', role: 'builder', text: 'go lean' }], deliverable: 'Pitch', enabledTools: {}, settings })
-  check('options normalized + empty dropped', opts.length === 2, `len=${opts.length}`)
+  check('options normalized + empty dropped', opts.length === 3, `len=${opts.length}`)
   check('option carries name/desc', opts[0].name === 'Lean MVP' && /smallest/.test(opts[0].description))
   check('consensus clamped 1-4', opts[1].consensus === 4)
   check('champions kept', opts[1].champions.join(',') === 'gpt,gemini')
   check('plan steps runnable', opts[0].plan.steps.length === 2 && opts[0].plan.steps[0].tool === 'agent_synth')
+  const prose = opts.find(o => o.name === 'Prose Input')
+  check('prose generator input forced to {s1}', prose.plan.steps[1].input === '{s1}', prose.plan.steps[1].input)
+  check('synth output_schema backfilled to slides', prose.plan.steps[0].output_schema === 'slides', prose.plan.steps[0].output_schema)
 } finally {
   await server.close()
 }
