@@ -1,11 +1,18 @@
 import { ROLE_POOL } from './openClaw'
 import { TOOLS_BY_ID } from '../tools/registry'
 
-export function buildSystemPrompt({ activeAgentIds=[], enabledTools={}, mode="concise", round=1, totalRounds=1, agentId="claude", voiceMode=false, memoryContext="", projectContext="", projectName="", projectBrief="", leadAgent=null, role=null, skills=null, useSkills=true }) {
+export function buildSystemPrompt({ activeAgentIds=[], enabledTools={}, mode="concise", round=1, totalRounds=1, agentId="claude", voiceMode=false, memoryContext="", projectContext="", projectName="", projectBrief="", leadAgent=null, role=null, skills=null, useSkills=true, buildDebate=false }) {
   const AGENT_NAMES = { claude:"Claude (Anthropic)", gpt:"ChatGPT (OpenAI)", gemini:"Gemini (Google)", grok:"Grok (xAI)" }
   const otherAgents = activeAgentIds.filter(id => id !== agentId).map(id => AGENT_NAMES[id] || id)
   const lines = []
   lines.push(`You are ${AGENT_NAMES[agentId] || agentId} in a live multi-agent AI panel.`)
+
+  // PANEL-FIRST BUILD DEBATE: the user asked for a build; the panel debates HOW
+  // to approach it, then the user picks an option and the SYSTEM builds it. The
+  // agents must NOT produce the artifact or perform/simulate the work here.
+  if (buildDebate) {
+    lines.push(`\nTHIS IS A BUILD-APPROACH DEBATE. The user asked for something to be built. Your job right now is to argue, in 2-4 sentences, the angle YOUR ROLE would take on HOW to approach it — what to emphasize, what direction to push, what to watch out for. Do NOT write the deliverable itself (no slides, no document text, no full copy). Do NOT perform or simulate any action (no sending email, no "I'll send it now", no tool calls or code). After the panel debates, the user picks a direction and the build system produces it. Be sharp and brief — this is a debate, not the build.`)
+  }
 
   const roleDef = role && ROLE_POOL[role]
   if (roleDef) {
@@ -106,7 +113,11 @@ export function buildSystemPrompt({ activeAgentIds=[], enabledTools={}, mode="co
     else lines.push(`\nFinal round — wrap up in 1-2 sentences. Be decisive.`)
   }
 
-  lines.push(`\nIf the user asks you to "write this up", "summarize", "create a document", or "turn this into a plan" — produce a clean structured response with clear headers and bullet points that captures the key insights from the conversation. Make it something they can copy and use directly.`)
+  if (!buildDebate) {
+    lines.push(`\nIf the user asks you to "write this up", "summarize", "create a document", or "turn this into a plan" — produce a clean structured response with clear headers and bullet points that captures the key insights from the conversation. Make it something they can copy and use directly.`)
+  }
+  // Agents contribute TEXT only. The build system performs every action.
+  lines.push(`\nNEVER perform or simulate an action. Do not write tool calls, function calls, code that "sends" or "creates" anything, or claim you have done something (sent an email, saved a file, made a deck). You produce words; OpenClaw's tools do the work. If the user asked for an action, describe what should happen — do not fake doing it, and do not say you are unable to (the system can).`)
   lines.push([
     "\nIMPORTANT formatting rule:",
     "- Do NOT prefix your response with \"[YourName]:\" or any \"[AgentName]:\" tag.",

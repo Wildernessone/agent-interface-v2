@@ -100,7 +100,7 @@ export class VoiceEngine {
       const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "xi-api-key": this.elevenLabsKey },
-        body: JSON.stringify({ text: text.slice(0,500), model_id:"eleven_turbo_v2", voice_settings:{ stability:0.5, similarity_boost:0.75 } }),
+        body: JSON.stringify({ text: text.slice(0,2500), model_id:"eleven_turbo_v2", voice_settings:{ stability:0.5, similarity_boost:0.75 } }),
       })
       if (res.status === 401 || res.status === 429 || res.status === 402) {
         this.elevenLabsFailed = true
@@ -154,7 +154,10 @@ export class VoiceEngine {
     // speechSynthesis after ~15s of continuous speech, so a single long
     // sentence gets cut off mid-word. Keeping every utterance short sidesteps it.
     const CAP = 180
-    const rawSentences = text.slice(0, 800).match(/[^.!?]+[.!?]+/g) || [text.slice(0, 800)]
+    // Speak the whole reply (a sane upper guard, since each utterance is chunked
+    // under CAP to dodge Chrome's ~15s cutoff). Was capped at 800 → cut replies off.
+    const speakText = text.slice(0, 4000)
+    const rawSentences = speakText.match(/[^.!?]+[.!?]+/g) || [speakText]
     const chunks = []
     for (const s of rawSentences) {
       let rest = s.trim()
