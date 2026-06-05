@@ -9,7 +9,7 @@ import Settings from './Settings'
 import HelpDrawer from './HelpDrawer'
 import { exportConversation } from '../utils/exportConversation'
 import HistorySidebar from './HistorySidebar'
-import { orchestrate, getProactiveNotices, processCorrection, ROLE_POOL, shouldAudit, auditResponse, buildRetryReminder, defaultDecision, generateBuildOptions } from '../utils/openClaw'
+import { orchestrate, getProactiveNotices, processCorrection, ROLE_POOL, shouldAudit, auditResponse, buildRetryReminder, defaultDecision, generateBuildOptions, carryActionSteps } from '../utils/openClaw'
 import BuildOptionsTurn from './BuildOptionsTurn'
 import OptionsCard from './OptionsCard'
 import RoundtableLogo from './RoundtableLogo'
@@ -784,7 +784,7 @@ export default function TheInterface() {
         options = await generateBuildOptions({ userMessage: text, debate, deliverable: plan.deliverable, enabledTools: allowedTools, settings })
       } catch (e) { logError('generateBuildOptions', e) }
       if (options.length) {
-        addTurn({ id: `buildopts-${Date.now()}`, type: 'build_options', options, debate })
+        addTurn({ id: `buildopts-${Date.now()}`, type: 'build_options', options, debate, basePlan: clawDecision.base_plan || plan })
       } else if (steps.length > 0) {
         await executeBuild({ deliverable: plan.deliverable, steps, brandContext: plan.brandContext || null })
       }
@@ -860,7 +860,7 @@ export default function TheInterface() {
   const onExecuteBuild = useCallback((plan) => fnRefs.current.executeBuild(plan), [])
   // Build a chosen panel-first option. Feed the debate into the first agent_synth
   // step so it builds FROM the panel's reasoning, not from scratch.
-  const onBuildOption = useCallback((option, debate) => {
+  const onBuildOption = useCallback((option, debate, basePlan) => {
     const steps = option?.plan?.steps || []
     if (!steps.length) return
     const digest = debate?.length
@@ -868,9 +868,13 @@ export default function TheInterface() {
         debate.map(d => `${String(d.agent || '').toUpperCase()}${d.role ? ` (${d.role})` : ''}: ${(d.text || '').slice(0, 600)}`).join('\n\n')
       : ''
     const firstSynth = steps.find(s => s.tool === 'agent_synth' && (!s.needs || !s.needs.length))
-    const finalSteps = digest && firstSynth
+    let finalSteps = digest && firstSynth
       ? steps.map(s => (s === firstSynth ? { ...s, input: `${digest}\n\nTASK:\n${s.input || ''}` } : s))
       : steps
+    // Carry the requested send-action(s) (e.g. "…and email it") from the base
+    // plan onto this option — the options regenerate the deliverable only and
+    // would otherwise drop the email/SMS step.
+    finalSteps = carryActionSteps(finalSteps, basePlan)
     fnRefs.current.executeBuild({ deliverable: option.plan.deliverable, steps: finalSteps, brandContext: null })
   }, [])
   const onBuildSomethingDifferent = useCallback((textVal) => fnRefs.current.sendMessage(textVal), [])
@@ -1218,7 +1222,7 @@ const TurnRow = memo(function TurnRow({ turn, isActive, busy, onRetryLast, onExe
             <BuildOptionsTurn
               key={turn.id}
               options={turn.options}
-              onBuild={(opt) => onBuildOption(opt, turn.debate)}
+              onBuild={(opt) => onBuildOption(opt, turn.debate, turn.basePlan)}
               onSomethingDifferent={onBuildSomethingDifferent}
             />
           )
