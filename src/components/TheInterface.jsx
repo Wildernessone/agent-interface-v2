@@ -667,6 +667,7 @@ export default function TheInterface() {
           projectName: activeProject?.name || "",
           projectBrief: brandBriefFrom(activeProject),
           skills, useSkills: agentUseSkills,
+          buildDebate: isBuildOptions,
         })
 
         const streamOnce = (systemPrompt) => new Promise((resolve) => {
@@ -759,7 +760,9 @@ export default function TheInterface() {
           // so a mid-response toggle ON starts speaking this turn's later agents
           // (and a toggle OFF stops them).
           if (useStore.getState().voiceMode && voiceRef.current) {
-            await new Promise(r => voiceRef.current.speak(cleanResultText.slice(0, 400), agent.id, r))
+            // Speak the FULL reply — the engine chunks it for the browser TTS
+            // cutoff. (Was sliced to 400 chars, which cut off most of a reply.)
+            await new Promise(r => voiceRef.current.speak(cleanResultText, agent.id, r))
           }
         }
       }
