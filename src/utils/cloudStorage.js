@@ -60,6 +60,23 @@ export async function pickProvider() {
   }
 }
 
+/**
+ * List the storage providers the user actually has connected (those with a
+ * live access_token), e.g. ['google_drive'] or ['google_drive','dropbox'].
+ * Used by the suggested-prompts gap-fillers ("Connect Drive…"). Never throws.
+ */
+export async function listStorageConnections() {
+  try {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return []
+    const { data: conns } = await supabase.from('storage_connections')
+      .select('provider, access_token').eq('user_id', user.id)
+    return (conns || []).filter(c => c.access_token).map(c => c.provider)
+  } catch {
+    return []
+  }
+}
+
 export async function setPrimaryProvider(provider) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return false

@@ -284,6 +284,91 @@
   color: var(--color-text-primary);
 }
 
+/* ────────── State-aware suggested prompts ────────── */
+.sp-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+}
+.sp-title {
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-wide, 0.08em);
+  color: var(--color-text-tertiary, var(--color-text-secondary));
+  margin-bottom: var(--space-1);
+  text-align: left;
+}
+.sp-card {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-md);
+  text-align: left;
+  cursor: pointer;
+  width: 100%;
+  transition: border-color var(--duration-fast) var(--easing-default),
+              background var(--duration-fast) var(--easing-default);
+}
+.sp-card:hover { border-color: var(--color-text-secondary); }
+.sp-icon { line-height: 1.4; font-size: var(--font-size-sm); flex-shrink: 0; }
+.sp-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.sp-label {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+  line-height: var(--line-height-tight);
+}
+.sp-meta { font-size: var(--font-size-xs); color: var(--color-text-secondary); }
+
+/* Starters are invitations — quieter than build/continue prompts. */
+.sp-card--starter { background: transparent; }
+.sp-card--starter .sp-label { color: var(--color-text-secondary); }
+.sp-card--starter:hover .sp-label { color: var(--color-text-primary); }
+
+/* Setup gap-fillers read as a gentle call to action. */
+.sp-card--setup {
+  border-color: var(--color-accent);
+  border-style: dashed;
+  background: var(--color-accent-soft);
+}
+.sp-card--continue { border-left: 2px solid var(--color-accent); }
+
+/* Inline (mid-conversation) placement, left-aligned under the thread. */
+.ai-suggestions--inline {
+  max-width: 480px;
+  margin: var(--space-4) 0 var(--space-2) var(--space-8);
+}
+
+/* ────────── Project-brief detected card ────────── */
+.pbd-card {
+  flex-direction: column;
+  gap: var(--space-2);
+  max-width: 520px;
+  margin: var(--space-2) 0 var(--space-2) var(--space-8);
+  padding: var(--space-4);
+  border: 1px dashed var(--color-accent);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-secondary);
+}
+.pbd-head { display: flex; align-items: center; gap: var(--space-2); }
+.pbd-icon { font-size: var(--font-size-md, var(--font-size-sm)); }
+.pbd-title { color: var(--color-accent); font-weight: var(--font-weight-medium); font-size: var(--font-size-sm); }
+.pbd-msg { margin: 0; font-size: var(--font-size-sm); color: var(--color-text-secondary); line-height: var(--line-height-normal, 1.5); }
+.pbd-msg strong { color: var(--color-text-primary); }
+.pbd-actions { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; margin-top: var(--space-1); }
+.pbd-edit-link {
+  background: none; border: none; cursor: pointer;
+  color: var(--color-text-secondary); font-size: var(--font-size-xs);
+  text-decoration: underline; padding: 0;
+}
+.pbd-edit-link:hover { color: var(--color-text-primary); }
+.pbd-card--done { flex-direction: row; align-items: center; border-style: solid; border-color: var(--color-border-primary); }
+.pbd-done-text { font-size: var(--font-size-sm); color: var(--color-text-secondary); }
+.pbd-done-text strong { color: var(--color-text-primary); }
+
 /* ────────── Turn (message row) ────────── */
 
 .ai-turn {
