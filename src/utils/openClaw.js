@@ -826,9 +826,15 @@ export function carryActionSteps(optionSteps = [], basePlan = null) {
     // Point any reference to a base-plan step at the option's deliverable.
     input = input.replace(/\{([a-z0-9_]+)(\.[a-z0-9_]+)?\}/gi, (m, sid, field) =>
       baseIds.has(sid) ? `{${deliverable.id}${field || ''}}` : m)
-    // Make sure the email actually points the recipient at the result.
-    if (a.tool === 'gmail' && !input.includes(deliverable.id)) {
-      input = input.replace(/("body"\s*:\s*")([^"]*)"/, (m, p, body) => `${p}${body}\\n\\n{${deliverable.id}.savedLink}"`)
+    // Attach the finished deliverable to the email (gmail sends it as a real
+    // file). The "{deliverable}" placeholder resolves to that step's output
+    // object, which gmail turns into a base64 attachment.
+    if (a.tool === 'gmail') {
+      try {
+        const obj = JSON.parse(input)
+        if (!obj.attachments) obj.attachments = [`{${deliverable.id}}`]
+        input = JSON.stringify(obj)
+      } catch { /* non-JSON input — leave as-is */ }
     }
     return { ...a, id, input, needs: [deliverable.id] }
   })

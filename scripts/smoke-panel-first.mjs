@@ -93,8 +93,18 @@ try {
   check('email action carried onto the option', !!mail, `len=${merged.length}`)
   check('email runs after the deliverable', mail?.needs?.[0] === 's2')
   check('email recipient preserved', /a@b\.com/.test(mail?.input || ''))
-  check('email body points at the option deliverable link', /\{s2\.savedLink\}/.test(mail?.input || ''))
+  check('option deliverable attached to the email', /"attachments":\["?\{s2\}"?\]/.test(mail?.input || ''))
   check('no action → steps unchanged', carryActionSteps(optionSteps, { steps: [{ id: 'x', tool: 'pptxgen' }] }).length === 2)
+
+  // ── buildGmailRaw: real multipart attachments ───────────────────────
+  const { buildGmailRaw } = await server.ssrLoadModule('/src/tools/registry.js')
+  const dec = (raw) => atob(raw.replace(/-/g, '+').replace(/_/g, '/'))
+  const plain = dec(buildGmailRaw({ to: 'a@b.com', subject: 'Hi', body: 'hello' }))
+  check('no attachments → text/plain', /text\/plain/.test(plain) && !/multipart/.test(plain))
+  const withFile = dec(buildGmailRaw({ to: 'a@b.com', subject: 'Deck', body: 'attached', attachments: [{ url: 'data:application/vnd.openxmlformats-officedocument.presentationml.presentation;base64,UEsDBBQ=', filename: 'deck.pptx' }] }))
+  check('attachment → multipart/mixed', /multipart\/mixed; boundary=/.test(withFile))
+  check('attachment filename + disposition', /filename="deck\.pptx"/.test(withFile) && /Content-Disposition: attachment/.test(withFile))
+  check('attachment base64 + content-type embedded', /UEsDBBQ=/.test(withFile) && /presentationml\.presentation/.test(withFile))
 } finally {
   await server.close()
 }

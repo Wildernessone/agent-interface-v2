@@ -1218,11 +1218,61 @@ const pdfgen = {
 
 // ── Gmail send — uses existing Google OAuth token + gmail.send scope ─
 // No separate API key needed. Reuses the user's Drive connection.
+// Pull {mime, b64, filename} out of an inline data: URL (what the build pipeline
+// produces). Handles both base64 data URLs (.pptx/.docx) and text ones (.md).
+function _gmailPart(att) {
+  const url = att?.url || att?.savedLink
+  const filename = att?.filename || 'attachment'
+  const m = typeof url === 'string' && /^data:([^,]*),(.*)$/s.exec(url)
+  if (!m) return null
+  const meta = m[1] || ''
+  const mime = (meta.split(';')[0] || '').trim() || 'application/octet-stream'
+  const b64 = /;base64/i.test(meta) ? m[2] : btoa(unescape(encodeURIComponent(decodeURIComponent(m[2]))))
+  return { mime, b64, filename }
+}
+function _gmailParts(attachments) {
+  const out = []
+  for (const a of (Array.isArray(attachments) ? attachments : [])) {
+    if (!a) continue
+    if (Array.isArray(a.files)) { for (const f of a.files) { const p = _gmailPart(f); if (p) out.push(p) } }
+    else { const p = _gmailPart(a); if (p) out.push(p) }
+  }
+  return out
+}
+
+// Build the base64url-encoded RFC 2822 message for the Gmail API. multipart/mixed
+// with real base64 attachment parts when there are attachments, else text/plain.
+// Exported for testing.
+export function buildGmailRaw({ to, subject, body = '', attachments = [] }) {
+  const parts = _gmailParts(attachments)
+  let mime
+  if (!parts.length) {
+    mime = [`To: ${to}`, `Subject: ${subject}`, 'MIME-Version: 1.0', 'Content-Type: text/plain; charset=utf-8', '', body].join('\r\n')
+  } else {
+    const boundary = `aibnd_${parts.length}_${(body || '').length}_${parts[0].b64.length}`
+    const lines = [
+      `To: ${to}`, `Subject: ${subject}`, 'MIME-Version: 1.0',
+      `Content-Type: multipart/mixed; boundary="${boundary}"`, '',
+      `--${boundary}`, 'Content-Type: text/plain; charset=utf-8', '', body,
+    ]
+    for (const p of parts) {
+      lines.push('', `--${boundary}`,
+        `Content-Type: ${p.mime}; name="${p.filename}"`,
+        'Content-Transfer-Encoding: base64',
+        `Content-Disposition: attachment; filename="${p.filename}"`,
+        '', p.b64)
+    }
+    lines.push('', `--${boundary}--`)
+    mime = lines.join('\r\n')
+  }
+  return btoa(unescape(encodeURIComponent(mime))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+
 const gmail = {
   id: 'gmail',
   name: 'Email (Gmail)',
   category: 'action',
-  capability: 'send an email through the user\'s own Gmail (with optional Drive-hosted attachments)',
+  capability: 'send an email through the user\'s own Gmail, with the build\'s files as real attachments',
   desc: 'Uses your Google connection — no separate key. Reconnect Drive after this update to add the gmail.send scope.',
   keySource: null,  // uses OAuth token from storage_connections
   status: 'live',
@@ -1236,29 +1286,23 @@ const gmail = {
       .select('access_token').eq('user_id', user.id).eq('provider', 'google_drive').maybeSingle()
     if (!conn?.access_token) throw new ToolError('gmail', 'no_token', 'Connect Google Drive first (Settings → Storage).')
 
-    // Input can be either a structured object {to, subject, body} or a
-    // string the model wrote naturally. Try structured first.
-    const input = typeof structuredInput === 'object' && structuredInput !== null
-      ? structuredInput
-      : { to: null, subject: null, body: (prompt || '') }
+    // Input may be a structured object {to, subject, body, attachments} OR a
+    // JSON string (interpolation produces a string), OR plain prose. Parse all.
+    let input = structuredInput
+    if (typeof input === 'string') { try { input = JSON.parse(input) } catch { input = { body: input } } }
+    if (!input || typeof input !== 'object') input = { body: prompt || '' }
 
     const to = input.to
     const subject = input.subject || 'From your Agent Interface panel'
     const body = input.body || prompt || ''
+    const attachments = Array.isArray(input.attachments)
+      ? input.attachments
+      : (input.attachment ? [input.attachment] : [])
 
     if (!to) throw new ToolError('gmail', 'no_recipient', 'No recipient email specified.')
 
-    // Build RFC 2822 message, base64url-encoded for Gmail API
-    const mime = [
-      `To: ${to}`,
-      `Subject: ${subject}`,
-      'Content-Type: text/plain; charset=utf-8',
-      '',
-      body,
-    ].join('\r\n')
-
-    const raw = btoa(unescape(encodeURIComponent(mime)))
-      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+    const attachedCount = _gmailParts(attachments).length
+    const raw = buildGmailRaw({ to, subject, body, attachments })
 
     const res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
       method: 'POST',
@@ -1276,8 +1320,8 @@ const gmail = {
     return {
       type: 'action',
       tool: 'gmail',
-      summary: `Email sent to ${to}`,
-      meta: { messageId: data.id, threadId: data.threadId, to, subject },
+      summary: `Email sent to ${to}${attachedCount ? ` with ${attachedCount} attachment${attachedCount === 1 ? '' : 's'}` : ''}`,
+      meta: { messageId: data.id, threadId: data.threadId, to, subject, attachments: attachedCount },
     }
   },
 }
