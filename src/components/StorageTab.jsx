@@ -105,7 +105,8 @@ export default function StorageTab() {
   return (
     <div>
       <p className="settings-intro">
-        Outputs from the panel — images, audio, video, generated docs — save directly to your cloud. We don't store anything. Your AI. Your keys. Your files.
+        Your data, your bills, zero markup. We never see your keys or your files.
+        Outputs save directly to your cloud — images, audio, video, generated docs.
       </p>
 
       {error && <div className="storage-error">{error}</div>}

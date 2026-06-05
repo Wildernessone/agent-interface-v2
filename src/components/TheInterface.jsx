@@ -11,6 +11,7 @@ import { exportConversation } from '../utils/exportConversation'
 import HistorySidebar from './HistorySidebar'
 import { orchestrate, getProactiveNotices, processCorrection, ROLE_POOL, shouldAudit, auditResponse, buildRetryReminder, defaultDecision, generateBuildOptions } from '../utils/openClaw'
 import BuildOptionsTurn from './BuildOptionsTurn'
+import RoundtableLogo from './RoundtableLogo'
 import { detectSignalsFromUserMessage, logSignals, logAuditFail, getRecentRolePerformance } from '../utils/roleSignals'
 import { logUsage, logError, checkTierLimits } from '../utils/telemetry'
 import { track } from '../utils/track'
@@ -902,7 +903,7 @@ export default function TheInterface() {
     <div className="ai-app">
       <header className="ai-header">
         <div className="ai-brand">
-          <Logo/>
+          <RoundtableLogo size={28} pulse={false} />
           <h1>Agent Interface</h1>
           <ProjectPicker/>
           {turns.length > 0 && saveStatus !== 'idle' && (
@@ -992,7 +993,7 @@ export default function TheInterface() {
 
         {turns.length === 0 && (activeAgents.length > 0 || skippedOnboarding) && (
           <div className="ai-empty">
-            <div className="ai-empty-logo"><Logo size={48}/></div>
+            <div className="ai-empty-logo"><RoundtableLogo size={48} /></div>
             <h2>One interface. All your AI.</h2>
             <p>{activeAgents.length} agent{activeAgents.length!==1?"s":""} ready · OpenClaw orchestrating</p>
             {activeAgents.length === 0 && (
@@ -1002,10 +1003,10 @@ export default function TheInterface() {
             )}
             <div className="ai-suggestions">
               {[
-                "Help me brainstorm features",
-                "Debate the best approach to this",
-                "Plan a 30 second ad",
-                "What are you all good at?",
+                "Launch my coffee roastery Q4 campaign.",
+                "Research the best espresso machine under $1,500.",
+                "Make a 30-second hero ad for the new grinder.",
+                "Turn this PDF into a pitch deck.",
               ].map(q => (
                 <button key={q} onClick={() => setInput(q)}>{q}</button>
               ))}
@@ -1430,39 +1431,6 @@ const TurnRow = memo(function TurnRow({ turn, isActive, busy, onRetryLast, onExe
             </div>
           )
 })
-
-function Logo({ size = 32 }) {
-  const points = [0, 72, 144, 216, 288]
-  const r1 = 9.5, r2 = 12
-  const dotColors = [
-    "var(--color-agent-claude)",
-    "var(--color-agent-gpt)",
-    "var(--color-agent-gemini)",
-    "var(--color-agent-grok)",
-    "var(--color-accent)",
-  ]
-  return (
-    <svg width={size} height={size} viewBox="0 0 36 36" fill="none" aria-hidden>
-      <rect width="36" height="36" rx="9" fill="var(--color-bg-tertiary)"/>
-      {points.map((deg, i) => {
-        const rad = (deg - 90) * Math.PI / 180
-        const x1 = 18 + r1 * Math.cos(rad)
-        const y1 = 18 + r1 * Math.sin(rad)
-        const x2 = 18 + r2 * Math.cos(rad)
-        const y2 = 18 + r2 * Math.sin(rad)
-        return (
-          <g key={i}>
-            <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="var(--color-text-secondary)" strokeWidth="0.8" opacity="0.5"/>
-            <circle cx={x2} cy={y2} r="2" fill={dotColors[i]}/>
-          </g>
-        )
-      })}
-      <circle cx="18" cy="18" r="10.5" stroke="var(--color-text-tertiary)" strokeWidth="0.6" fill="none" strokeDasharray="2 2.5"/>
-      <circle cx="18" cy="18" r="3" fill="var(--color-text-primary)"/>
-      <circle cx="18" cy="18" r="1.1" fill="var(--color-accent)"/>
-    </svg>
-  )
-}
 
 function IconButton({ children, onClick, title, active, expanded }) {
   return (

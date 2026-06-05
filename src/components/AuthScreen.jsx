@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { supabase } from '../utils/supabase'
+import RoundtableLogo from './RoundtableLogo'
 
 export default function AuthScreen() {
   const [mode, setMode] = useState('login')
@@ -32,9 +33,10 @@ export default function AuthScreen() {
     <div className="auth">
       <div className="auth-card">
         <div className="auth-brand">
-          <AuthLogo/>
+          <RoundtableLogo size={56} />
           <h1>Agent Interface</h1>
           <p>One interface. All your AI.</p>
+          <p className="auth-trial">Start 20-day free trial. No credit card required.</p>
         </div>
 
         <button
@@ -113,35 +115,3 @@ export default function AuthScreen() {
   )
 }
 
-function AuthLogo() {
-  const points = [0, 72, 144, 216, 288]
-  const r1 = 9.5, r2 = 12
-  const dotColors = [
-    "var(--color-agent-claude)",
-    "var(--color-agent-gpt)",
-    "var(--color-agent-gemini)",
-    "var(--color-agent-grok)",
-    "var(--color-accent)",
-  ]
-  return (
-    <svg width="56" height="56" viewBox="0 0 36 36" fill="none" aria-hidden>
-      <rect width="36" height="36" rx="9" fill="var(--color-bg-tertiary)"/>
-      {points.map((deg, i) => {
-        const rad = (deg - 90) * Math.PI / 180
-        const x1 = 18 + r1 * Math.cos(rad)
-        const y1 = 18 + r1 * Math.sin(rad)
-        const x2 = 18 + r2 * Math.cos(rad)
-        const y2 = 18 + r2 * Math.sin(rad)
-        return (
-          <g key={i}>
-            <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="var(--color-text-secondary)" strokeWidth="0.8" opacity="0.5"/>
-            <circle cx={x2} cy={y2} r="2" fill={dotColors[i]}/>
-          </g>
-        )
-      })}
-      <circle cx="18" cy="18" r="10.5" stroke="var(--color-text-tertiary)" strokeWidth="0.6" fill="none" strokeDasharray="2 2.5"/>
-      <circle cx="18" cy="18" r="3" fill="var(--color-text-primary)"/>
-      <circle cx="18" cy="18" r="1.1" fill="var(--color-accent)"/>
-    </svg>
-  )
-}
