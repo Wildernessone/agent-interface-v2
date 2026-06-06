@@ -47,7 +47,11 @@ const PER_MINUTE_LIMIT = 60
 // (ad_render's in-browser ffmpeg) needs a durable inline data: image.
 export function imageModelsToTry(body = {}) {
   if (body.model) return [body.model]
-  return ['gpt-image-1', 'dall-e-2']
+  // gpt-image-1 is the only live OpenAI image model — dall-e-2 and dall-e-3
+  // were both retired (verified live 2026-06; dall-e-2 now 400s "does not
+  // exist"). App-level generateImageWithFallback covers other providers
+  // (Stability/Flux/Ideogram/Recraft) if gpt-image-1 fails.
+  return ['gpt-image-1']
 }
 
 export function buildImageRequest(model, body = {}) {

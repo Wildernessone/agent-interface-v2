@@ -36,6 +36,25 @@ import { brandBriefFrom } from './brandContext'
 // outputs of previously-completed steps. Whole-string substitutions can
 // also resolve to objects/arrays — used when a downstream tool wants
 // structured input rather than a stringified prompt.
+// Resolve {stepId.field} against a step's output. The dispatcher (plan) and
+// agent_synth (output) independently name fields, so they can drift in case or
+// wording (e.g. plan asks for HERO_IMAGE_PROMPT but synth emits image_prompt).
+// Try exact, then case-insensitive, then a best-effort fallback to a *prompt*-
+// like / text field — so a downstream image/video step never gets fed an empty
+// string (which 400s the provider). Returns undefined only if nothing usable.
+function resolveField(out, field) {
+  if (out == null) return undefined
+  if (typeof out !== 'object') return out
+  if (out[field] != null && out[field] !== '') return out[field]
+  const lower = field.toLowerCase()
+  for (const k of Object.keys(out)) {
+    if (k.toLowerCase() === lower && out[k] != null && out[k] !== '') return out[k]
+  }
+  // Field missing/empty — fall back to the most prompt-like value available.
+  const promptKey = Object.keys(out).find(k => /prompt/i.test(k) && out[k])
+  return out[promptKey] ?? out.text ?? out.title ?? undefined
+}
+
 function interpolate(template, stepOutputs) {
   if (template == null) return template
   if (typeof template !== 'string') return template
@@ -48,7 +67,7 @@ function interpolate(template, stepOutputs) {
     const [, stepId, field] = whole
     const out = stepOutputs[stepId]
     if (out == null) return template
-    if (field) return out?.[field]
+    if (field) return resolveField(out, field)
     return out
   }
 
@@ -62,7 +81,7 @@ function interpolate(template, stepOutputs) {
   // JSON). Unquoted placeholders splice the stringified value as before.
   return template.replace(/("?)\{([a-z0-9_]+)(?:\.([a-z0-9_]+))?\}\1/gi, (_, quote, stepId, field) => {
     const out = stepOutputs[stepId]
-    const v = out == null ? null : (field ? out?.[field] : out)
+    const v = out == null ? null : (field ? resolveField(out, field) : out)
     if (quote) return v == null ? '""' : JSON.stringify(v)
     if (v == null) return ''
     return typeof v === 'string' ? v : JSON.stringify(v)
@@ -259,7 +278,14 @@ export async function runBuild(plan, ctx, onStep = () => {}) {
   }
 
   for (const step of ordered) {
-    const depFailed = (step.needs || []).some(d => errors.some(e => e.stepId === d))
+    // A dependency only BLOCKS this step if it failed to *produce* its output.
+    // A 'save_failed' dep still generated its artifact (it lives inline in
+    // stepOutputs) — only the cloud save failed — so downstream steps can and
+    // should still run off the inline artifact. Without this, an expired/broken
+    // Drive token cascades and kills the whole build, even though a no-storage
+    // user's identical build completes fine. (Surfaced as the launch-build
+    // "image save_failed → video dependency_failed → no deliverable" bug.)
+    const depFailed = (step.needs || []).some(d => !stepOutputs[d])
     if (depFailed) {
       errors.push({ stepId: step.id, error: 'dependency_failed' })
       onStep(step.id, 'failed', 'dependency_failed')
