@@ -33,8 +33,20 @@ jobs:
       # Gating steps — must pass before code reaches users.
       - name: Build
         run: npm run build
-      - name: Smoke tests
-        run: npm run smoke
+      # The FULL deterministic smoke suite (all network mocked). Was only
+      # running smoke.mjs — every other smoke (panel-first, tiers, entitlements,
+      # brand-gate, suggested-prompts, …) was written but never gated. smoke:all
+      # runs them all; smoke:live stays manual (real paid APIs).
+      - name: Smoke tests (all)
+        run: npm run smoke:all
+      # Public E2E — the unauthenticated Playwright smoke (landing renders,
+      # pricing, /login, no console errors on first paint). Boots Vite itself via
+      # playwright.config webServer. Authed flows need a test account + BYOK keys
+      # (TEST_EMAIL/TEST_PASSWORD) and run separately, not in the push gate.
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+      - name: Public E2E
+        run: npm run e2e:public
       # Informational — repo carries pre-existing lint debt. Doesn't block the
       # gate; tighten to a hard failure once the debt is cleared.
       - name: Lint (non-blocking)
