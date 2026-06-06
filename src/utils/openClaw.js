@@ -409,11 +409,20 @@ DECISION TREE (first match wins)
        descriptions instead of selling the product. image_per_slide reads the
        scenes via "{s1.scenes}". Use openai_tts instead of elevenlabs for s3 if
        ElevenLabs isn't connected (OpenAI usually is — image_per_slide needs it).
+     → SHORT PROMO / COMBINED BUILDS — if the video is short (≤~10s) OR the build
+       ALSO produces a single hero image (e.g. "an App Store description + a hero
+       image + a short promo video"), prefer the SIMPLE, reliable path: feed
+       ad_render that one hero image directly instead of generating a separate
+       multi-frame storyboard. i.e. ad_render input "images": {heroImageStep}
+       (the dalle/stability step), plus the voiceover and music. One image + one
+       voiceover is still a real finished video and has far fewer moving parts
+       than storyboard→image_per_slide. Reserve image_per_slide for ads the user
+       explicitly wants as MULTIPLE distinct scenes.
      → STITCHING: ad_render is the default finisher — it is build-internal
-       (browser-side ffmpeg, no key) and fuses the storyboard frames + voiceover
+       (browser-side ffmpeg, no key) and fuses the frame(s) + voiceover
        (+ ducked backing track) into ONE finished MP4. In s5's input the
-       {s2}/{s3}/{s4} placeholders are NOT quoted — they resolve to whole bundle
-       objects that splice in directly; quoting them would produce invalid JSON.
+       image/voiceover/music placeholders are NOT quoted — they resolve to whole
+       bundle objects that splice in directly; quoting them would produce invalid JSON.
        It always works, so the ad is a real video, not a kit. Alternatives only
        when asked: video_render (Shotstack) for a server-rendered MP4 from runway
        VIDEO clips (needs a shotstack key AND hosted clip URLs — it cannot fetch
