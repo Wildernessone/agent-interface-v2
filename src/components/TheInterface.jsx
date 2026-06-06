@@ -761,7 +761,10 @@ export default function TheInterface() {
             // model was rejected — not just a generic "isn't responding".
             const detail = buildErrorDetail(status, msg, model)
             addErrorTurn(agent.id, errorType, detail)
-            logUsage({ kind: "agent_message", provider: agent.id, model: model || agent.id, success: false, errorType })
+            // Capture the raw status + message snippet so an 'unknown' failure
+            // (e.g. the recurring Grok ones) is diagnosable from telemetry —
+            // without it Command Center can only report "X% failing", not why.
+            logUsage({ kind: "agent_message", provider: agent.id, model: model || agent.id, success: false, errorType, metadata: { status: status ?? null, detail: String(msg || '').slice(0, 300) } })
             resolve({ text: "", error: errorType })
           }
           const key = settings.agents[agent.id]?.key
