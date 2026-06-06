@@ -2271,12 +2271,13 @@ const adRender = {
   status: 'live',
   hidden: true,
   composer: true,
-  async run({ structuredInput, label }) {
+  async run({ structuredInput, label, context }) {
     let data = structuredInput
     if (typeof data === 'string') {
       try { data = JSON.parse(data) }
-      catch { throw new ToolError('ad_render', 'bad_input', 'ad_render expects { images, voiceover, music? } — the upstream bundles did not resolve into valid JSON.') }
+      catch { data = {} }   // tolerate a non-JSON input; we can still fall back to the build's hero image below
     }
+    if (!data || typeof data !== 'object') data = {}
 
     // Accept a bundle ({files:[...]}), a bare array, or a JSON string of either.
     const listOf = (x) => {
@@ -2294,11 +2295,18 @@ const adRender = {
       return list[0]?.url || null
     }
 
-    const images = listOf(data?.images || data?.frames || data?.slides).filter(f => f && !f.error && f.url)
+    let images = listOf(data?.images || data?.frames || data?.slides).filter(f => f && !f.error && f.url)
     const voiceUrl = oneUrl(data?.voiceover || data?.voice || data?.narration)
     const musicUrl = oneUrl(data?.music || data?.soundtrack || data?.track)
 
-    if (images.length === 0) throw new ToolError('ad_render', 'no_images', 'ad_render needs storyboard frames.')
+    // FALLBACK — if the orchestrator didn't wire any frames into ad_render (a
+    // common plan-wiring miss), animate the build's hero image instead. buildExecutor
+    // threads the most-recent generated image as context.sourceImageUrl, so a promo
+    // build that made a hero image still produces a real video. (Mirrors runway's
+    // image fallback.) One image + voiceover is a valid finished ad.
+    if (images.length === 0 && context?.sourceImageUrl) images = [{ url: context.sourceImageUrl }]
+
+    if (images.length === 0) throw new ToolError('ad_render', 'no_images', 'ad_render needs at least one frame or a hero image.')
     if (!voiceUrl) throw new ToolError('ad_render', 'no_voiceover', 'ad_render needs a voiceover track.')
     if (images.length > 60) throw new ToolError('ad_render', 'too_many_frames', `Too many frames to render in-browser (${images.length}). Split it up.`)
 
