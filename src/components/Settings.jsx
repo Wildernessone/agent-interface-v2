@@ -10,6 +10,8 @@ import { useStore } from '../store/useStore'
 import { TOOL_REGISTRY, ROADMAP_TOOLS, CATEGORY_LABELS } from '../tools/registry'
 import { AGENT_SETUP } from '../config/agentSetup'
 import SetupLinks from './SetupLinks'
+import { UpgradeNudge, LockBadge } from './TierLock'
+import { entitlements } from '../utils/entitlements'
 
 // ElevenLabs setup links, pulled from the tool registry so the Voice tab stays
 // in sync with the Tools tab (one verified source).
@@ -72,8 +74,17 @@ const TABS = [
 
 export default function Settings({ onClose }) {
   useModalDismiss(onClose)
-  const { settings, updateSetting } = useStore()
+  const { settings, updateSetting, billing } = useStore()
   const [tab, setTab] = useState("agents")
+
+  // Effective entitlements drive the lock badges + upgrade nudges below. The
+  // hard caps live in entitlements.js (send path); this is just the visible
+  // side. The "See plans" CTA routes to the Account tab (no checkout yet).
+  const ent = entitlements(billing)
+  const tierLabel = ent.tier === 'pro' ? 'Pro' : ent.tier === 'standard' ? 'Standard' : 'Free'
+  const goToPlans = () => setTab('account')
+  // Which tabs are HARD-gated for the current tier (show a 🔒 on the label).
+  const lockedTab = { memory: !ent.memory, storage: !ent.storage }
   const [showKey, setShowKey] = useState({})
   const [toolQuery, setToolQuery] = useState("")
   const [connTests, setConnTests] = useState({})   // { [agentId]: {ok,reason,model} | 'testing' }
@@ -150,11 +161,22 @@ export default function Settings({ onClose }) {
 
         <nav className="settings-tabs" role="tablist" aria-label="Settings sections">
           {TABS.map(t => (
-            <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} className={`settings-tab${tab === t.id ? " is-active" : ""}`} onClick={() => setTab(t.id)}>{t.label}</button>
+            <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} className={`settings-tab${tab === t.id ? " is-active" : ""}`} onClick={() => setTab(t.id)}>
+              {t.label}{lockedTab[t.id] && <LockBadge requires="Standard" />}
+            </button>
           ))}
         </nav>
 
         <div className="settings-body">
+          {tab === "agents" && ent.agents != null && (
+            <UpgradeNudge
+              variant="cap"
+              requires="Pro"
+              title={`The multi-agent panel is a Pro feature`}
+              note={`Connect as many agents as you like — your ${tierLabel} plan runs ${ent.agents} at a time. Pro runs the full roundtable so they can debate.`}
+              onUpgrade={goToPlans}
+            />
+          )}
           {tab === "agents" && (
             <div className="settings-conn-test">
               <button type="button" className="ai-btn" onClick={runConnectionTests} disabled={testingAll || !AGENTS.some(a => settings.agents?.[a.id]?.key)}>
@@ -194,6 +216,15 @@ export default function Settings({ onClose }) {
             </section>
           ))}
 
+          {tab === "tools" && ent.tools != null && (
+            <UpgradeNudge
+              variant="cap"
+              requires="Pro"
+              title={`${tierLabel} runs ${ent.tools} tool${ent.tools === 1 ? '' : 's'} at a time`}
+              note="Enable any tools you want here — a build uses up to your plan's limit per run. Upgrade to Pro to use every tool at once."
+              onUpgrade={goToPlans}
+            />
+          )}
           {tab === "tools" && (
             <>
               <input
@@ -354,8 +385,34 @@ export default function Settings({ onClose }) {
             </>
           )}
 
-          {tab === "memory" && <MemoryTab/>}
-          {tab === "storage" && <StorageTab/>}
+          {tab === "memory" && (
+            <>
+              {!ent.memory && (
+                <UpgradeNudge
+                  variant="lock"
+                  requires="Standard"
+                  title="Memory is a Standard & Pro feature"
+                  note={`On ${tierLabel}, the panel won't remember facts between conversations. Anything saved here stays, but it isn't applied until you upgrade.`}
+                  onUpgrade={goToPlans}
+                />
+              )}
+              <MemoryTab/>
+            </>
+          )}
+          {tab === "storage" && (
+            <>
+              {!ent.storage && (
+                <UpgradeNudge
+                  variant="lock"
+                  requires="Standard"
+                  title="Cloud storage is a Standard & Pro feature"
+                  note={`On ${tierLabel}, builds stay inline in the chat instead of saving to Drive or Dropbox. Connect a drive after upgrading to auto-save deliverables.`}
+                  onUpgrade={goToPlans}
+                />
+              )}
+              <StorageTab/>
+            </>
+          )}
           {tab === "account" && <AccountTab/>}
 
           {tab === "display" && (

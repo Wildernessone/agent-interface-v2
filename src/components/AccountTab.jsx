@@ -1,18 +1,30 @@
 import { useState } from 'react'
 import { useStore } from '../store/useStore'
+import { entitlements } from '../utils/entitlements'
+import { trialInfo } from '../utils/tier'
 
 // Account & data controls: plan/trial status, GDPR data export, and account
 // deletion. Deletion is gated behind a typed confirmation because it is
 // irreversible (calls the delete_my_account RPC, then signs out).
 export default function AccountTab() {
-  const { settings, exportMyData, deleteMyAccount } = useStore()
+  const { billing, exportMyData, deleteMyAccount } = useStore()
   const email = useStore.getState().user?.email
   const [exporting, setExporting] = useState(false)
   const [confirmText, setConfirmText] = useState('')
   const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState('')
 
-  const tier = settings.subscription_tier || settings.plan || 'free'
+  // Effective tier (honors the trial clock), not just the raw subscription row.
+  const ent = entitlements(billing)
+  const info = trialInfo(billing || {})
+  const tier = ent.tier
+  const tierLabel = tier === 'pro' ? 'Pro' : tier === 'standard' ? 'Standard' : 'Free'
+  const planRows = [
+    { k: 'Agents at a time',  v: ent.agents == null ? 'All (full panel)' : `${ent.agents}` },
+    { k: 'Tools per build',   v: ent.tools == null ? 'All' : `${ent.tools}` },
+    { k: 'Memory',            v: ent.memory ? 'On' : '—' },
+    { k: 'Cloud storage',     v: ent.storage ? 'On' : '—' },
+  ]
 
   const handleExport = async () => {
     setExporting(true)
@@ -57,10 +69,29 @@ export default function AccountTab() {
           <div className="settings-row-main">
             <div>
               <div className="settings-row-title">Current plan</div>
-              <div className="settings-row-sub" style={{ textTransform: 'capitalize' }}>{tier}</div>
+              <div className="settings-row-sub">
+                {tierLabel}
+                {info.onTrial && info.daysUntilDowngrade != null && (
+                  <> · trial → {info.nextTier === 'pro' ? 'Pro' : info.nextTier === 'standard' ? 'Standard' : 'Free'} in {info.daysUntilDowngrade} day{info.daysUntilDowngrade === 1 ? '' : 's'}</>
+                )}
+              </div>
             </div>
           </div>
         </div>
+        <div className="plan-matrix">
+          {planRows.map(r => (
+            <div className="plan-matrix-row" key={r.k}>
+              <span className="plan-matrix-k">{r.k}</span>
+              <span className="plan-matrix-v">{r.v}</span>
+            </div>
+          ))}
+        </div>
+        {tier !== 'pro' && (
+          <p className="settings-help" style={{ marginTop: 'var(--space-3)' }}>
+            <strong>Pro</strong> unlocks the full multi-agent panel (all agents debating), every tool at once,
+            memory, and cloud storage. Paid plans aren't open yet — you'll be able to upgrade here soon.
+          </p>
+        )}
       </section>
 
       <section className="settings-card">
