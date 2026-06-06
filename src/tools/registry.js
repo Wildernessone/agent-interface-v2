@@ -905,7 +905,7 @@ RIGHT voiceover_script: "Stop juggling four AI tools. Agent Interface gives you 
     // ON-brand instead of inventing the product. The build gate guarantees this
     // is present for any brand-facing build; for neutral builds it's empty.
     const brandBlock = brandContext
-      ? `BRAND CONTEXT — the output MUST align to this. Use ONLY these facts about the product/brand; do NOT invent its market, audience, features, or backstory beyond what's stated here:\n${String(brandContext).slice(0, 2000)}\n\n`
+      ? `BRAND CONTEXT — the output MUST align to this. Use ONLY these facts about the product/brand; do NOT invent its market, audience, features, or backstory beyond what's stated here:\n${String(brandContext).slice(0, 2000)}\n\nNever assert an ABSOLUTE claim about privacy, security, data handling, pricing, compliance, performance, or guarantees ("we never store your data", "100% private", "free forever", etc.) unless the brand context states it — write the benefit without the unverified absolute.\n\n`
       : ''
     const fullPrompt = `${brandBlock}${prompt}${schemaHint}`
 
