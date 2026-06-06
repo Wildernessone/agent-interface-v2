@@ -4,6 +4,46 @@ import { arrayBufferToBase64 } from './base64'
 
 const PROXY = import.meta.env.VITE_PROXY_URL || 'https://claude-proxy.jamesreed.workers.dev'
 
+const DRIVE_OAUTH_OPTS = {
+  redirectTo: typeof window !== 'undefined' ? window.location.origin : undefined,
+  scopes: [
+    'https://www.googleapis.com/auth/drive.file',
+    'https://www.googleapis.com/auth/gmail.send',
+    'https://www.googleapis.com/auth/spreadsheets',
+    'https://www.googleapis.com/auth/calendar.events',
+  ].join(' '),
+  queryParams: { access_type: 'offline', prompt: 'consent' },
+}
+
+/**
+ * Connect Google Drive to the CURRENT account — the right way.
+ *
+ * The old flow used signInWithOAuth('google') from inside the app. For a user
+ * who signed up with email/password, that SIGNS THEM IN AS their Google account
+ * — i.e. it switches/creates a SEPARATE Supabase user (the Google identity) and
+ * silently strands all subsequent work on that second account. That split
+ * accounts and broke trust.
+ *
+ * Fix: if the current user already has a Google identity (they signed up with
+ * Google), re-auth that same account to add Drive scopes. Otherwise LINK the
+ * Google identity to the current (email) user via linkIdentity — so Drive
+ * attaches to who you already are instead of forking a new account.
+ *
+ * NOTE: linkIdentity requires "Manual linking" enabled in Supabase Auth.
+ * Returns { error } on failure so the caller can surface it.
+ */
+export async function connectGoogleDrive() {
+  const { data: { user } } = await supabase.auth.getUser()
+  const hasGoogle = (user?.identities || []).some(i => i.provider === 'google')
+  if (hasGoogle) {
+    // Same Google account already linked → re-authorize to grant Drive scopes.
+    // This does NOT fork (the Google identity maps to this same user).
+    return supabase.auth.signInWithOAuth({ provider: 'google', options: DRIVE_OAUTH_OPTS })
+  }
+  // Email/password user → attach Google to THIS account, don't switch to it.
+  return supabase.auth.linkIdentity({ provider: 'google', options: DRIVE_OAUTH_OPTS })
+}
+
 /**
  * Capture the Google Drive OAuth tokens from the Supabase session and
  * persist them to storage_connections. Called after OAuth callback redirects

@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useStore } from '../store/useStore'
 import { AGENT_SETUP } from '../config/agentSetup'
-import { supabase } from '../utils/supabase'
 import { listStorageConnections } from '../utils/cloudStorage'
+import { connectGoogleDrive } from '../utils/driveStorage'
 import SetupLinks from './SetupLinks'
 
 const PROVIDERS = [
@@ -89,20 +89,11 @@ export default function OnboardingPanel({ onSkip }) {
   const connectDrive = async () => {
     setConnectingDrive(true)
     try {
-      await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: window.location.origin,
-          scopes: [
-            'https://www.googleapis.com/auth/drive.file',
-            'https://www.googleapis.com/auth/gmail.send',
-            'https://www.googleapis.com/auth/spreadsheets',
-            'https://www.googleapis.com/auth/calendar.events',
-          ].join(' '),
-          queryParams: { access_type: 'offline', prompt: 'consent' },
-        },
-      })
-      // Redirects away; on return the user lands signed-in with Drive connected.
+      // LINK Drive to the current account (not signInWithOAuth, which forks an
+      // email user into a separate Google account). Redirects away; on return
+      // the user lands on the SAME account with Drive connected.
+      const { error } = await connectGoogleDrive()
+      if (error) throw error
     } catch { setConnectingDrive(false) }
   }
 

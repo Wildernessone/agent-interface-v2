@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../utils/supabase'
 import { startDropboxAuth, dropboxConfigured } from '../utils/dropboxStorage'
 import { setPrimaryProvider } from '../utils/cloudStorage'
-import { resolveDriveRootFolder } from '../utils/driveStorage'
+import { resolveDriveRootFolder, connectGoogleDrive } from '../utils/driveStorage'
 import { useStore } from '../store/useStore'
 
 const PROVIDERS = [
@@ -58,19 +58,10 @@ export default function StorageTab() {
     setConnecting(provider.id)
     try {
       if (provider.id === "google_drive") {
-        const { error: err } = await supabase.auth.signInWithOAuth({
-          provider: "google",
-          options: {
-            redirectTo: window.location.origin,
-            scopes: [
-              "https://www.googleapis.com/auth/drive.file",
-              "https://www.googleapis.com/auth/gmail.send",
-              "https://www.googleapis.com/auth/spreadsheets",
-              "https://www.googleapis.com/auth/calendar.events",
-            ].join(" "),
-            queryParams: { access_type: "offline", prompt: "consent" },
-          },
-        })
+        // LINK Drive to the current account (or re-auth if already Google).
+        // Do NOT signInWithOAuth here — that forks email users into a second
+        // Google account and strands their data.
+        const { error: err } = await connectGoogleDrive()
         if (err) throw err
       } else if (provider.id === "dropbox") {
         if (!dropboxConfigured()) {
