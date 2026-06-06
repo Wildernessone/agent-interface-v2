@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useStore } from '../store/useStore'
 import { useModalDismiss } from '../utils/useModalDismiss'
 import { askHelp } from '../utils/openClaw'
+import { sendSupportMessage } from '../utils/contactSupport'
 import { TOOL_REGISTRY } from '../tools/registry'
 import { AGENT_SETUP } from '../config/agentSetup'
 import SetupLinks from './SetupLinks'
@@ -74,6 +75,19 @@ export default function HelpDrawer({ open, onClose }) {
   const [loading, setLoading] = useState(false)
   const scrollRef = useRef(null)
   const sendingRef = useRef(false)
+  // In-app "Contact support" — writes straight to the hub support_messages
+  // table (→ Command Center Support tab). status: idle | open | sending | sent | error
+  const [contact, setContact] = useState('idle')
+  const [contactMsg, setContactMsg] = useState('')
+
+  const sendContact = async () => {
+    if (!contactMsg.trim() || contact === 'sending') return
+    setContact('sending')
+    const email = useStore.getState().user?.email || ''
+    const ok = await sendSupportMessage({ email, message: contactMsg })
+    if (ok) { setContact('sent'); setContactMsg('') }
+    else setContact('error')
+  }
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
@@ -152,6 +166,34 @@ export default function HelpDrawer({ open, onClose }) {
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask() } }}
           />
           <button className="help-send" onClick={() => ask()} disabled={!input.trim() || loading}>Ask</button>
+        </div>
+
+        <div className="help-contact">
+          {contact === 'sent' ? (
+            <div className="help-contact-done">✓ Sent — we'll reply to your account email. <button className="help-contact-link" onClick={() => setContact('idle')}>Send another</button></div>
+          ) : contact === 'idle' ? (
+            <button className="help-contact-link" onClick={() => setContact('open')}>
+              Still stuck? Contact support →
+            </button>
+          ) : (
+            <div className="help-contact-form">
+              <textarea
+                className="help-contact-input"
+                placeholder="Describe the issue — this goes straight to the team."
+                value={contactMsg}
+                onChange={e => setContactMsg(e.target.value)}
+                rows={3}
+                autoFocus
+              />
+              {contact === 'error' && <div className="help-contact-err">Couldn't send — try again.</div>}
+              <div className="help-contact-actions">
+                <button className="help-contact-cancel" onClick={() => { setContact('idle'); setContactMsg('') }}>Cancel</button>
+                <button className="help-send" onClick={sendContact} disabled={!contactMsg.trim() || contact === 'sending'}>
+                  {contact === 'sending' ? 'Sending…' : 'Send to support'}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </aside>
     </>
