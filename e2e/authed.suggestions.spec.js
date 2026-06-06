@@ -35,13 +35,15 @@ test.describe('suggested prompts + project-brief detection', () => {
     const card = page.locator('.sp-card').first()
     await expect(card).toBeVisible()
     await card.click()
-    // Either the composer got populated (starter/setup) or a turn started
-    // (continue/example auto-send) — both are valid; assert SOMETHING happened.
-    const composer = page.locator('.ai-composer textarea')
-    const acted = await Promise.race([
-      composer.evaluate(el => el.value.trim().length > 0).then(v => v).catch(() => false),
-      page.locator('.ai-turn--user, .ai-claw').first().isVisible().then(v => v).catch(() => false),
-    ])
-    expect(acted).toBeTruthy()
+    // A click does exactly one of: fills the composer (starter populate), starts
+    // a turn (continue/example auto-send), or opens Settings (setup cards like
+    // "Connect Drive" route to a settings surface). Any of the three means it
+    // acted — poll until one is true (state updates aren't synchronous).
+    await expect(async () => {
+      const filled = (await page.locator('.ai-composer textarea').inputValue()).trim().length > 0
+      const started = (await page.locator('.ai-turn--user, .ai-claw').count()) > 0
+      const settings = (await page.locator('.settings-dialog').count()) > 0
+      expect(filled || started || settings).toBeTruthy()
+    }).toPass({ timeout: 10_000 })
   })
 })
