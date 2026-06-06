@@ -28,33 +28,31 @@
 
 const PER_MINUTE_LIMIT = 60
 
-// Build the OpenAI /images/generations payload for the /dalle route.
+// OpenAI image generation — DURABLE across OpenAI's model churn.
 //
-// DEFAULT MODEL IS dall-e-3, deliberately: gpt-image-1 requires the OpenAI
-// organization to be ID-verified and otherwise 403s ("your organization must
-// be verified to use the model `gpt-image-1`"), which silently killed every
-// ad/per-slide image build. dall-e-3 needs no verification. A verified org can
-// opt back in by passing model:'gpt-image-1'.
+// OpenAI keeps changing this surface: dall-e-3 was retired ("The model
+// 'dall-e-3' does not exist"), gpt-image-1 is current but requires a VERIFIED
+// org (403 otherwise), and `response_format` is no longer accepted at all
+// ("Unknown parameter"). To keep "a ChatGPT user can make an image" working no
+// matter what, the /dalle route tries a LIST of models in order and uses the
+// first that succeeds:
+//   gpt-image-1  — best/current; works for verified orgs, returns b64
+//   dall-e-2     — legacy, needs NO verification, so every OpenAI key can use it
+// A caller may pin one via body.model. When OpenAI changes things again, this
+// degrades gracefully (a retired/forbidden model just falls through) and the
+// only maintenance is editing this list.
 //
-// The two models have DIFFERENT vocabularies, so we translate the gpt-image-1
-// -style { size, quality } the client still sends:
-//   - sizes: dall-e-3 only accepts 1024x1024 / 1792x1024 / 1024x1792
-//   - quality: dall-e-3 wants 'standard' | 'hd' (not high/medium/low)
-//   - response_format: OpenAI's /images/generations now REJECTS this param
-//     ("Unknown parameter: 'response_format'"), so we no longer send it.
-//     dall-e-3 then returns a hosted URL that expires in ~1h; the /dalle route
-//     below fetches that URL and converts it to b64 so the build pipeline still
-//     gets an inline data: image (ad_render's browser-side ffmpeg can't fetch
-//     expiring remote URLs). gpt-image-1 already returns b64 directly.
-export function buildImageRequest(body = {}) {
-  // OpenAI RETIRED dall-e-3 ("The model 'dall-e-3' does not exist"), so the
-  // OpenAI image default is now gpt-image-1 (their current model). dall-e-3 is
-  // only used if a caller explicitly asks for it (legacy). gpt-image-1 needs a
-  // verified OpenAI org; unverified orgs 403 → the client's provider-fallback
-  // chain covers it (Stability is primary there now).
-  const wantsGptImage = body.model !== 'dall-e-3'
+// We never send `response_format` (rejected). Models that return a hosted URL
+// instead of b64 are converted to b64 in the route, since the build pipeline
+// (ad_render's in-browser ffmpeg) needs a durable inline data: image.
+export function imageModelsToTry(body = {}) {
+  if (body.model) return [body.model]
+  return ['gpt-image-1', 'dall-e-2']
+}
+
+export function buildImageRequest(model, body = {}) {
   const prompt = body.prompt
-  if (wantsGptImage) {
+  if (model === 'gpt-image-1') {
     const SIZES = new Set(['1024x1024', '1536x1024', '1024x1536'])
     const QUALITIES = new Set(['high', 'medium', 'low'])
     return {
@@ -65,14 +63,18 @@ export function buildImageRequest(body = {}) {
       quality: QUALITIES.has(body.quality) ? body.quality : 'high',
     }
   }
-  // dall-e-3 (default). Map both the dall-e-3-native and the legacy
-  // gpt-image-1 sizes the client may send.
+  if (model === 'dall-e-2') {
+    // dall-e-2: square sizes only (256/512/1024), no quality/style.
+    const SIZES = new Set(['256x256', '512x512', '1024x1024'])
+    return { model: 'dall-e-2', prompt, n: 1, size: SIZES.has(body.size) ? body.size : '1024x1024' }
+  }
+  // dall-e-3 (legacy/explicit). Map gpt-image-1-style sizes to dall-e-3's.
   const SIZE_MAP = {
     '1024x1024': '1024x1024',
     '1792x1024': '1792x1024',
     '1024x1792': '1024x1792',
-    '1536x1024': '1792x1024', // legacy "wide"
-    '1024x1536': '1024x1792', // legacy "tall"
+    '1536x1024': '1792x1024',
+    '1024x1536': '1024x1792',
   }
   return {
     model: 'dall-e-3',
@@ -80,8 +82,6 @@ export function buildImageRequest(body = {}) {
     n: 1,
     size: SIZE_MAP[body.size] || '1024x1024',
     quality: body.quality === 'high' || body.quality === 'hd' ? 'hd' : 'standard',
-    // NB: no response_format — OpenAI rejects it. The /dalle route converts the
-    // returned URL to b64.
   }
 }
 
@@ -279,24 +279,30 @@ const ROUTES = {
     const auth = req.headers.get('Authorization')
     if (!auth) return new Response(JSON.stringify({ error: 'missing_provider_key' }), { status: 400 })
     const body = await req.json()
-    const oai = await fetch('https://api.openai.com/v1/images/generations', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: auth },
-      body: JSON.stringify(buildImageRequest(body)),
-    })
-    if (!oai.ok) return new Response(oai.body, { status: oai.status, headers: { 'Content-Type': 'application/json' } })
-    const data = await oai.json()
-    // dall-e-3 returns a hosted (expiring) URL since we can't request b64 via
-    // response_format anymore. Fetch it and inline as b64 so the build pipeline
-    // (esp. ad_render's in-browser ffmpeg) gets a durable data: image.
-    const item = data?.data?.[0]
-    if (item && !item.b64_json && item.url) {
-      try {
-        const img = await fetch(item.url)
-        if (img.ok) item.b64_json = bufToBase64(await img.arrayBuffer())
-      } catch { /* leave the URL; client falls back to it */ }
+    let last = null
+    for (const model of imageModelsToTry(body)) {
+      const oai = await fetch('https://api.openai.com/v1/images/generations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: auth },
+        body: JSON.stringify(buildImageRequest(model, body)),
+      })
+      if (oai.ok) {
+        const data = await oai.json()
+        // Convert a hosted (expiring) URL to b64 so the build pipeline gets a
+        // durable inline data: image (ad_render's ffmpeg can't fetch URLs).
+        const item = data?.data?.[0]
+        if (item && !item.b64_json && item.url) {
+          try { const img = await fetch(item.url); if (img.ok) item.b64_json = bufToBase64(await img.arrayBuffer()) } catch { /* keep url */ }
+        }
+        return json(data, 200)
+      }
+      last = { status: oai.status, body: await oai.text().catch(() => '') }
+      // Model-availability / verification errors (400/403/404) → try the next
+      // model. Anything else (401 bad key, 429 quota, 5xx) → stop and report.
+      if (![400, 403, 404].includes(oai.status)) break
     }
-    return json(data, 200)
+    return new Response(last?.body || JSON.stringify({ error: 'image_generation_failed' }),
+      { status: last?.status || 502, headers: { 'Content-Type': 'application/json' } })
   },
 
   stability: async (req) => {
