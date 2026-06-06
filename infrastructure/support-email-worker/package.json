@@ -1,0 +1,15 @@
+{
+  "name": "support-email-worker",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "postal-mime": "^2.2.7"
+  },
+  "devDependencies": {
+    "wrangler": "^3.78.0"
+  }
+}

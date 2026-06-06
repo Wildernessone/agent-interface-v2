@@ -1,0 +1,9 @@
+name = "support-email"
+main = "worker.js"
+compatibility_date = "2024-09-01"
+account_id = "37466838b711d4510ec744042dd24121"
+
+# HUB project base URL (Timberline + Command Center backend). The service-role
+# key is a SECRET, set with: npx wrangler secret put HUB_SERVICE_KEY
+[vars]
+HUB_URL = "https://jcmkoooivghwrgezxode.supabase.co"
