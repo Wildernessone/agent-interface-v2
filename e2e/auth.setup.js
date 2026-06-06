@@ -17,10 +17,14 @@ setup('authenticate', async ({ page, context }) => {
     return
   }
 
-  await page.goto('/')
+  // Login lives at /login since the routing sprint — "/" is the marketing
+  // landing for logged-out visitors. After sign-in, App redirects /login →
+  // /app (the composer), which the assertion below waits for.
+  await page.goto('/login')
   await page.getByRole('textbox', { name: /email/i }).fill(EMAIL)
   await page.getByRole('textbox', { name: /password/i }).fill(PASSWORD)
-  await page.getByRole('button', { name: /^sign in$/i }).click()
+  // The form submit button — NOT the "Sign in" mode TAB (both read "Sign in").
+  await page.locator('.auth-submit').click()
 
   // Past the login screen → the composer's "To" target row is visible.
   await expect(page.locator('.ai-composer')).toBeVisible({ timeout: 30_000 })

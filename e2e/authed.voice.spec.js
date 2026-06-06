@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { agentConnected, NO_AGENT_SKIP } from './_helpers'
 
 // Voice mid-session toggle (Step 2). Headless can't assert audio, so this
 // verifies the visible UX contract: toggling voice ON while a response is in
@@ -15,6 +16,7 @@ test.describe('voice mid-session', () => {
   })
 
   test('toggling voice ON mid-response shows the "next message" badge', async ({ page }) => {
+    test.skip(!(await agentConnected(page)), NO_AGENT_SKIP)
     await page.locator('.ai-composer textarea').fill('Write three short sentences about coffee.')
     await page.locator('.ai-composer textarea').press('Enter')
     // While the panel is responding, flip voice on — the badge should appear
@@ -24,6 +26,7 @@ test.describe('voice mid-session', () => {
   })
 
   test('toggling voice OFF clears the badge immediately', async ({ page }) => {
+    test.skip(!(await agentConnected(page)), NO_AGENT_SKIP)
     await page.locator('.ai-composer textarea').fill('Name two coffee origins.')
     await page.locator('.ai-composer textarea').press('Enter')
     await page.getByRole('button', { name: /voice mode off/i }).click()

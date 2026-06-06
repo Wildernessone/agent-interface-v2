@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { agentConnected, NO_AGENT_SKIP } from './_helpers'
 
 // Coverage for the state-aware suggested prompts + project-brief auto-detect
 // (shipped 2026-06-05). Both surfaces live behind login, so they're gated on
@@ -18,6 +19,9 @@ test.describe('suggested prompts + project-brief detection', () => {
   })
 
   test('empty state renders state-aware suggested prompts', async ({ page }) => {
+    // Suggestions only render once an agent is connected (otherwise the empty
+    // state shows the onboarding "connect an agent" panel instead).
+    test.skip(!(await agentConnected(page)), NO_AGENT_SKIP)
     // A fresh thread shows the empty state with at least one suggestion card.
     await expect(page.locator('.ai-empty')).toBeVisible({ timeout: 30_000 })
     await expect(page.locator('.sp-card').first()).toBeVisible()
@@ -26,6 +30,7 @@ test.describe('suggested prompts + project-brief detection', () => {
   })
 
   test('clicking a suggestion acts (populates composer or starts a turn)', async ({ page }) => {
+    test.skip(!(await agentConnected(page)), NO_AGENT_SKIP)
     await expect(page.locator('.ai-empty')).toBeVisible({ timeout: 30_000 })
     const card = page.locator('.sp-card').first()
     await expect(card).toBeVisible()
