@@ -16,10 +16,38 @@ import { FFmpeg } from '@ffmpeg/ffmpeg'
 import { toBlobURL, fetchFile } from '@ffmpeg/util'
 
 const CORE_VERSION = '0.12.10'
-const BASE = `https://unpkg.com/@ffmpeg/core@${CORE_VERSION}/dist/umd`
+// Multiple CDNs for the ~25MB core. Relying on a single CDN (unpkg) made the
+// whole video composer fail with "failed to import ffmpeg-core.js" whenever that
+// CDN flaked or rate-limited — and ad_render never succeeded because of it. Try
+// each CDN in turn; the first that loads wins. (ffmpeg's own docs recommend not
+// depending on unpkg in production.)
+const CORE_BASES = [
+  `https://cdn.jsdelivr.net/npm/@ffmpeg/core@${CORE_VERSION}/dist/umd`,
+  `https://unpkg.com/@ffmpeg/core@${CORE_VERSION}/dist/umd`,
+  `https://esm.sh/@ffmpeg/core@${CORE_VERSION}/dist/umd`,
+]
 
 let _ffmpeg = null
 let _loading = null
+
+async function loadFromCdns() {
+  let lastErr
+  for (const base of CORE_BASES) {
+    try {
+      const ff = new FFmpeg()
+      const [coreURL, wasmURL] = await Promise.all([
+        toBlobURL(`${base}/ffmpeg-core.js`, 'text/javascript'),
+        toBlobURL(`${base}/ffmpeg-core.wasm`, 'application/wasm'),
+      ])
+      await ff.load({ coreURL, wasmURL })
+      return ff
+    } catch (e) {
+      lastErr = e
+      // try the next CDN
+    }
+  }
+  throw new Error(`ffmpeg core failed to load from all CDNs: ${lastErr?.message || lastErr}`)
+}
 
 /**
  * Get the shared FFmpeg instance, loading the core on first use.
@@ -31,19 +59,9 @@ export async function getFFmpeg(onProgress) {
     return _ffmpeg
   }
   if (!_loading) {
-    _loading = (async () => {
-      const ff = new FFmpeg()
-      const [coreURL, wasmURL] = await Promise.all([
-        toBlobURL(`${BASE}/ffmpeg-core.js`, 'text/javascript'),
-        toBlobURL(`${BASE}/ffmpeg-core.wasm`, 'application/wasm'),
-      ])
-      await ff.load({ coreURL, wasmURL })
-      _ffmpeg = ff
-      return ff
-    })().catch(e => {
-      _loading = null // allow a later retry
-      throw e
-    })
+    _loading = loadFromCdns()
+      .then(ff => { _ffmpeg = ff; return ff })
+      .catch(e => { _loading = null; throw e }) // allow a later retry
   }
   const ff = await _loading
   if (onProgress) attachProgress(ff, onProgress)
