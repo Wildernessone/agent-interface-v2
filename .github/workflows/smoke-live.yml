@@ -27,6 +27,22 @@ jobs:
           VITE_PROXY_URL=${{ secrets.SMOKE_PROXY_URL || 'https://claude-proxy.jamesreed.workers.dev' }}
           VITE_DROPBOX_CLIENT_ID=dummy
           ENV
+      # Cross-provider chat matrix (D2) — one tiny completion per provider
+      # through the deployed worker. Cheap + fast; each provider skips if its
+      # key secret is absent. Needs a JWT (SMOKE_SUPABASE_JWT or test creds).
+      - name: Cross-provider live matrix
+        run: npm run smoke:xprovider:live
+        env:
+          SMOKE_SUPABASE_JWT: ${{ secrets.SMOKE_SUPABASE_JWT }}
+          SMOKE_TEST_EMAIL: ${{ secrets.SMOKE_TEST_EMAIL }}
+          SMOKE_TEST_PASSWORD: ${{ secrets.SMOKE_TEST_PASSWORD }}
+          VITE_SUPABASE_URL: ${{ secrets.SMOKE_SUPABASE_URL || 'https://oqbpuspnmznqxgkmyzyb.supabase.co' }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.SMOKE_SUPABASE_ANON_KEY }}
+          VITE_PROXY_URL: ${{ secrets.SMOKE_PROXY_URL || 'https://claude-proxy.jamesreed.workers.dev' }}
+          CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
       - name: Live smoke
         run: npm run smoke:live
         env:
