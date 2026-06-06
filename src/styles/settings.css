@@ -810,3 +810,52 @@
 .conn-result--ok { color: var(--color-status-success); }
 .conn-result--bad { color: var(--color-status-error); }
 .conn-result--testing { color: var(--color-text-tertiary); }
+
+/* ────────── Tier lock badges + upgrade nudges (B2-UI) ────────── */
+.tier-lock-badge {
+  margin-left: 4px;
+  font-size: 0.85em;
+  opacity: 0.85;
+  vertical-align: baseline;
+}
+
+.tier-nudge {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-accent);
+  background: var(--color-accent-soft);
+}
+.tier-nudge--lock { border-style: dashed; }
+.tier-nudge-icon { font-size: var(--font-size-base); line-height: 1.3; flex-shrink: 0; }
+.tier-nudge-body { flex: 1; min-width: 0; }
+.tier-nudge-title {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
+}
+.tier-nudge-note {
+  margin-top: 2px;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  line-height: var(--line-height-normal);
+}
+.tier-nudge-cta { flex-shrink: 0; align-self: center; white-space: nowrap; }
+
+/* Plan capability matrix on the Account tab */
+.plan-matrix {
+  margin-top: var(--space-3);
+  border-top: 1px solid var(--color-border-primary);
+}
+.plan-matrix-row {
+  display: flex;
+  justify-content: space-between;
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--color-border-primary);
+  font-size: var(--font-size-sm);
+}
+.plan-matrix-k { color: var(--color-text-secondary); }
+.plan-matrix-v { color: var(--color-text-primary); font-weight: var(--font-weight-medium); }
