@@ -39,6 +39,12 @@ export function selectOrchestrationModel(settings) {
   if (settings?.agents?.claude?.key) return { provider: "claude", key: settings.agents.claude.key }
   if (settings?.agents?.gpt?.key) return { provider: "gpt", key: settings.agents.gpt.key }
   if (settings?.agents?.gemini?.key) return { provider: "gemini", key: settings.agents.gemini.key }
+  // Grok last (purely additive — only chosen when it's the ONLY key, so it
+  // never changes routing for a claude/gpt/gemini user). It's OpenAI-wire-
+  // compatible, so every orchestration call site treats it like the gpt branch
+  // with the /grok route. Closes the gap where a Grok-only user could chat but
+  // not orchestrate or build.
+  if (settings?.agents?.grok?.key) return { provider: "grok", key: settings.agents.grok.key }
   return null
 }
 
@@ -93,8 +99,8 @@ async function callOpenClaw(prompt, modelConfig) {
       const data = await res.json()
       if (!res.ok || data.error) { t.clear(); return { decision: null, raw: data, error: `claude_${res.status}` } }
       raw = data.content?.[0]?.text || ""
-    } else if (modelConfig.provider === "gpt") {
-      const res = await fetch(`${PROXY}/gpt`, {
+    } else if (modelConfig.provider === "gpt" || modelConfig.provider === "grok") {
+      const res = await fetch(`${PROXY}/${modelConfig.provider}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${modelConfig.key}`, ...(await authHeader()) },
         body: JSON.stringify({ messages: [{ role: "user", content: `${system}\n\n${prompt}` }] }),
@@ -152,8 +158,8 @@ export async function askHelp({ question, history = [], knowledge = "", settings
       const data = await res.json()
       if (!res.ok || data.error) return { text: "", error: `claude_${res.status}` }
       raw = data.content?.[0]?.text || ""
-    } else if (modelConfig.provider === "gpt") {
-      const res = await fetch(`${PROXY}/gpt`, {
+    } else if (modelConfig.provider === "gpt" || modelConfig.provider === "grok") {
+      const res = await fetch(`${PROXY}/${modelConfig.provider}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${modelConfig.key}`, ...(await authHeader()) },
         body: JSON.stringify({ messages: [{ role: "user", content: `${system}\n\n${prompt}` }] }),
@@ -1056,8 +1062,8 @@ Return EXACTLY this JSON: {"passed": true|false, "reason": "<one short sentence>
         return { passed: true, reason: `audit_error_claude_${res.status}`, audited: false }
       }
       raw = data.content?.[0]?.text || ""
-    } else if (modelConfig.provider === "gpt") {
-      const res = await fetch(`${PROXY}/gpt`, {
+    } else if (modelConfig.provider === "gpt" || modelConfig.provider === "grok") {
+      const res = await fetch(`${PROXY}/${modelConfig.provider}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${modelConfig.key}`, ...(await authHeader()) },
         body: JSON.stringify({ messages: [{ role: "user", content: prompt }] }),
@@ -1120,8 +1126,8 @@ Max 6 candidates.`
       const data = await res.json()
       if (!res.ok || data.error) return { candidates: [], error: `claude_${res.status}` }
       raw = data.content?.[0]?.text || ""
-    } else if (modelConfig.provider === "gpt") {
-      const res = await fetch(`${PROXY}/gpt`, { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${modelConfig.key}`, ...(await authHeader()) }, body: JSON.stringify({ messages: [{ role: "user", content: `${system}\n\n${prompt}` }] }) })
+    } else if (modelConfig.provider === "gpt" || modelConfig.provider === "grok") {
+      const res = await fetch(`${PROXY}/${modelConfig.provider}`, { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${modelConfig.key}`, ...(await authHeader()) }, body: JSON.stringify({ messages: [{ role: "user", content: `${system}\n\n${prompt}` }] }) })
       raw = await streamToText(res, "gpt")
     } else if (modelConfig.provider === "gemini") {
       const res = await fetch(`${PROXY}/gemini`, { method: "POST", headers: { "Content-Type": "application/json", "x-api-key": modelConfig.key, ...(await authHeader()) }, body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: `${system}\n\n${prompt}` }] }] }) })

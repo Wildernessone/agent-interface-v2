@@ -867,13 +867,14 @@ const agentSynth = {
   status: 'live',
   hidden: true,  // not shown in Settings — it's a build-internal tool
   async run({ prompt, settings, outputSchema, brandContext }) {
-    // Pick whichever orchestration model the user has — Claude → GPT → Gemini
+    // Pick whichever orchestration model the user has — Claude → GPT → Gemini → Grok
     const cfg =
       settings?.agents?.claude?.key ? { provider: 'claude', key: settings.agents.claude.key } :
       settings?.agents?.gpt?.key    ? { provider: 'gpt',    key: settings.agents.gpt.key } :
       settings?.agents?.gemini?.key ? { provider: 'gemini', key: settings.agents.gemini.key } :
+      settings?.agents?.grok?.key   ? { provider: 'grok',   key: settings.agents.grok.key } :
       null
-    if (!cfg) throw new ToolError('agent_synth', 'no_model', 'No orchestration model available — add a Claude, GPT, or Gemini key.')
+    if (!cfg) throw new ToolError('agent_synth', 'no_model', 'No orchestration model available — add a Claude, GPT, Gemini, or Grok key.')
 
     const PROXY = import.meta.env.VITE_PROXY_URL || 'https://claude-proxy.jamesreed.workers.dev'
 
@@ -923,8 +924,35 @@ RIGHT voiceover_script: "Stop juggling four AI tools. Agent Interface gives you 
     // window so a hang surfaces as a timeout error in the build card.
     const SYNTH_TIMEOUT_MS = 90_000
 
-    // One provider call. Returns raw text; throws an Error with .status
-    // on HTTP failure so the retry loop can decide whether to try again.
+    // Assemble a streamed SSE response into plain text. The worker streams
+    // /gpt, /grok (OpenAI delta format) and /gemini (candidates parts). Without
+    // this, res.text() returns the raw `data: {…}` FRAMES — the JSON extractor
+    // then grabs the SSE envelope's `{`, not the model's output, so every
+    // non-Claude build produced malformed JSON. (Claude's /claude route is
+    // non-streaming, which is why this stayed hidden.)
+    const sseToText = async (res, kind) => {
+      const reader = res.body.getReader()
+      const dec = new TextDecoder()
+      let buf = '', full = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buf += dec.decode(value, { stream: true })
+        const lines = buf.split('\n'); buf = lines.pop()
+        for (const l of lines) {
+          if (!l.startsWith('data: ') || l.includes('[DONE]')) continue
+          try {
+            const d = JSON.parse(l.slice(6))
+            if (kind === 'gemini') { const t = d.candidates?.[0]?.content?.parts?.[0]?.text; if (t) full += t }
+            else { const c = d.choices?.[0]?.delta?.content; if (c) full += c }
+          } catch { /* partial frame — next read completes it */ }
+        }
+      }
+      return full
+    }
+
+    // One provider call. Returns the assembled text; throws an Error with
+    // .status on HTTP failure so the retry loop can decide whether to try again.
     // A timeout aborts and throws an error flagged `.timeout` (no .status),
     // which the retry loop treats as non-transient so it fails fast.
     const callOnce = async () => {
@@ -944,15 +972,17 @@ RIGHT voiceover_script: "Stop juggling four AI tools. Agent Interface gives you 
           if (!res.ok) { const e = new Error(`claude_${res.status}`); e.status = res.status; throw e }
           const data = await res.json()
           return data.content?.[0]?.text || ''
-        } else if (cfg.provider === 'gpt') {
-          const res = await fetch(`${PROXY}/gpt`, {
+        } else if (cfg.provider === 'gpt' || cfg.provider === 'grok') {
+          // GPT and Grok are OpenAI-wire-compatible — same Bearer auth + delta
+          // SSE; only the route differs.
+          const res = await fetch(`${PROXY}/${cfg.provider}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.key}`, ...supaAuth },
             signal: ctrl.signal,
-            body: JSON.stringify({ model: modelFor('gpt'), messages: [{ role: 'user', content: fullPrompt }], max_tokens: 4096 }),
+            body: JSON.stringify({ model: modelFor(cfg.provider), messages: [{ role: 'user', content: fullPrompt }], max_tokens: 4096 }),
           })
-          if (!res.ok) { const e = new Error(`gpt_${res.status}`); e.status = res.status; throw e }
-          return res.text()
+          if (!res.ok) { const e = new Error(`${cfg.provider}_${res.status}`); e.status = res.status; throw e }
+          return sseToText(res, 'gpt')
         } else {
           const res = await fetch(`${PROXY}/gemini`, {
             method: 'POST',
@@ -965,7 +995,7 @@ RIGHT voiceover_script: "Stop juggling four AI tools. Agent Interface gives you 
             }),
           })
           if (!res.ok) { const e = new Error(`gemini_${res.status}`); e.status = res.status; throw e }
-          return res.text()
+          return sseToText(res, 'gemini')
         }
       } catch (e) {
         if (e?.name === 'AbortError') { const te = new Error('synth_timeout_90s'); te.timeout = true; throw te }
