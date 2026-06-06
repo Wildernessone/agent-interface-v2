@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react'
+import { downloadFile } from '../utils/downloadFile'
 
 export default function ToolOutput({ output }) {
   if (!output) return null
@@ -15,7 +16,7 @@ function VideoOutput({ output }) {
       {output.label && <div style={{ fontSize:10, color:'rgba(255,255,255,0.4)', fontFamily:'monospace', marginBottom:6, letterSpacing:'0.05em' }}>{output.label}</div>}
       <video controls src={output.url} style={{ width:'100%', maxWidth:480, borderRadius:12, border:'1px solid rgba(255,255,255,0.1)', display:'block' }}/>
       <div style={{ display:'flex', gap:8, marginTop:8, flexWrap:'wrap' }}>
-        <a href={output.url} download target="_blank" rel="noreferrer" style={{ fontSize:11, color:'rgba(255,255,255,0.5)', fontFamily:'monospace', textDecoration:'none', padding:'4px 10px', borderRadius:8, border:'1px solid rgba(255,255,255,0.1)', background:'rgba(255,255,255,0.04)' }}>⬇ Download</a>
+        <a href={output.url} download target="_blank" rel="noreferrer" onClick={e => { e.preventDefault(); downloadFile(output.url, output.filename) }} style={{ fontSize:11, color:'rgba(255,255,255,0.5)', fontFamily:'monospace', textDecoration:'none', padding:'4px 10px', borderRadius:8, border:'1px solid rgba(255,255,255,0.1)', background:'rgba(255,255,255,0.04)' }}>⬇ Download</a>
         <DriveBadge url={output.driveUrl}/>
       </div>
     </div>
@@ -48,7 +49,7 @@ function ImageOutput({ output }) {
           style={{ width:'100%', maxWidth:480, borderRadius:12, border:'1px solid rgba(255,255,255,0.1)', cursor:'zoom-in', display:'block' }}
         />
         <div style={{ display:'flex', gap:8, marginTop:8, flexWrap:'wrap' }}>
-          <a href={output.url} download target="_blank" rel="noreferrer" style={{ fontSize:11, color:'rgba(255,255,255,0.5)', fontFamily:'monospace', textDecoration:'none', padding:'4px 10px', borderRadius:8, border:'1px solid rgba(255,255,255,0.1)', background:'rgba(255,255,255,0.04)' }}>⬇ Download</a>
+          <a href={output.url} download target="_blank" rel="noreferrer" onClick={e => { e.preventDefault(); downloadFile(output.url, output.filename) }} style={{ fontSize:11, color:'rgba(255,255,255,0.5)', fontFamily:'monospace', textDecoration:'none', padding:'4px 10px', borderRadius:8, border:'1px solid rgba(255,255,255,0.1)', background:'rgba(255,255,255,0.04)' }}>⬇ Download</a>
           <button onClick={() => setZoomed(true)} style={{ fontSize:11, color:'rgba(255,255,255,0.5)', fontFamily:'monospace', padding:'4px 10px', borderRadius:8, border:'1px solid rgba(255,255,255,0.1)', background:'rgba(255,255,255,0.04)', cursor:'pointer' }}>⤢ Expand</button>
           <DriveBadge url={output.driveUrl}/>
         </div>
@@ -83,7 +84,7 @@ function AudioOutput({ output }) {
         {output.url && <audio ref={audioRef} src={output.url} onEnded={() => setPlaying(false)} style={{ display:'none' }}/>}
       </div>
       <div style={{ display:'flex', gap:8, marginTop:8 }}>
-        <a href={output.url} download target="_blank" rel="noreferrer" style={{ fontSize:11, color:'rgba(255,255,255,0.5)', fontFamily:'monospace', textDecoration:'none', padding:'4px 10px', borderRadius:8, border:'1px solid rgba(255,255,255,0.1)', background:'rgba(255,255,255,0.04)' }}>⬇ Download</a>
+        <a href={output.url} download target="_blank" rel="noreferrer" onClick={e => { e.preventDefault(); downloadFile(output.url, output.filename) }} style={{ fontSize:11, color:'rgba(255,255,255,0.5)', fontFamily:'monospace', textDecoration:'none', padding:'4px 10px', borderRadius:8, border:'1px solid rgba(255,255,255,0.1)', background:'rgba(255,255,255,0.04)' }}>⬇ Download</a>
         <DriveBadge url={output.driveUrl}/>
       </div>
     </div>

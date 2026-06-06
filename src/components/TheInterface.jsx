@@ -28,6 +28,7 @@ import { entitlements, capAgents, capTools, capNudge } from '../utils/entitlemen
 import { friendlyError, buildSummary, extractSlideTitles } from '../utils/buildErrors'
 import { estimateBuildCents, formatCents } from '../utils/buildCost'
 import { ingestFile, formatIngested } from '../utils/fileIngestion'
+import { downloadFile } from '../utils/downloadFile'
 import { supabase } from '../utils/supabase'
 import PromptLibrary from './PromptLibrary'
 import ToolOutput from './ToolOutput'
@@ -1446,6 +1447,7 @@ const TurnRow = memo(function TurnRow({ turn, isActive, busy, onRetryLast, onExe
                                 .filter(c => c?.url && !c.error)
                                 .map((c, i) => (
                                   <a key={`${f.stepId}-${i}`} href={c.url} download={c.filename || undefined}
+                                     onClick={e => { e.preventDefault(); downloadFile(c.url, c.filename) }}
                                      className="ai-build-download">{c.filename || `${f.label} ${i + 1}`} ↓</a>
                                 ))
                             }
@@ -1453,6 +1455,7 @@ const TurnRow = memo(function TurnRow({ turn, isActive, busy, onRetryLast, onExe
                             if (out?.url) {
                               return [
                                 <a key={f.stepId} href={out.url} download={out.filename || undefined}
+                                   onClick={e => { e.preventDefault(); downloadFile(out.url, out.filename) }}
                                    className="ai-build-download">{f.label} ↓</a>,
                               ]
                             }
