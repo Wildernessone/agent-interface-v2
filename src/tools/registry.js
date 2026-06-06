@@ -546,7 +546,9 @@ const runway = {
     const body = {
       prompt: (cfg.prompt || prompt || '').slice(0, 900),
       duration: cfg.duration === 10 ? 10 : 5,
-      ratio: ['1280:720', '768:1280', '960:960'].includes(cfg.ratio) ? cfg.ratio : '1280:720',
+      // Runway's current ratio enum (gen3a_turbo). The old 1280:720/960:960
+      // values were retired by Runway and now 400 — verified live 2026-06.
+      ratio: ['1280:768', '768:1280', '16:9', '9:16'].includes(cfg.ratio) ? cfg.ratio : '1280:768',
     }
     // image_url can come from explicit input or upstream context (e.g.
     // a DALL-E step that ran first and stashed its url in context).

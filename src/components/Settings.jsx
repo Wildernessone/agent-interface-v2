@@ -241,12 +241,20 @@ export default function Settings({ onClose }) {
                     const usesAgentKey = tool.keySource?.startsWith('agent.')
                     const noKey = !tool.keySource  // browser-side tools (e.g. capcut_bundle)
                     const isStubbed = tool.status === 'needs_proxy_route' || tool.status === 'beta'
+                    // Key slot = the shared vendor slot the RUNTIME reads (keySource),
+                    // NOT tool.id. Tools that share a vendor key (Stable Audio + SD3 →
+                    // stability; ElevenLabs voice + music → elevenlabs) must read/write
+                    // the SAME slot, else a key pasted in one field saves to a dead slot
+                    // the runtime never reads. See registry.readKey().
+                    const keySlot = tool.keySource?.startsWith('tool_keys.')
+                      ? tool.keySource.split('.')[1]
+                      : tool.id
                     // Ready when: enabled AND (no key needed OR uses agent key OR has its own key)
                     const hasKey = noKey
                       ? true
                       : usesAgentKey
                         ? !!settings.agents?.gpt?.key
-                        : !!settings.toolKeys?.[tool.id]
+                        : !!settings.toolKeys?.[keySlot]
                     const isReady = on && hasKey && !isStubbed
                     const needsKey = on && !hasKey && !isStubbed
                     return (
@@ -268,7 +276,7 @@ export default function Settings({ onClose }) {
                         {on && !usesAgentKey && !noKey && (
                           <>
                             <label className="settings-label">API key</label>
-                            <input className="settings-input" type="password" placeholder={tool.keyPrefix ? `${tool.keyPrefix}...` : "paste key"} value={settings.toolKeys?.[tool.id] || ""} onChange={e => updateToolKey(tool.id, e.target.value)}/>
+                            <input className="settings-input" type="password" placeholder={tool.keyPrefix ? `${tool.keyPrefix}...` : "paste key"} value={settings.toolKeys?.[keySlot] || ""} onChange={e => updateToolKey(keySlot, e.target.value)}/>
                             <SetupLinks setup={tool.setup} />
                             {tool.setupHint && (<div className="settings-helper">{tool.setupHint}</div>)}
                           </>
