@@ -325,6 +325,12 @@ export default function TheInterface() {
   const [projectConvos, setProjectConvos] = useState([])
   const [setupNotices, setSetupNotices] = useState([])
   const [skippedOnboarding, setSkippedOnboarding] = useState(false)
+  // First-run wizard latch. Decided ONCE after settings load (billing != null):
+  // open it only for a fresh user (no agents, no history). Latched so it stays
+  // open across connecting the first agent mid-wizard, instead of unmounting the
+  // moment activeAgents flips > 0.
+  const [wizardOpen, setWizardOpen] = useState(false)
+  const wizardDecidedRef = useRef(false)
   const scrollRef = useRef(null)
   const voiceRef = useRef(null)
   const conversationRef = useRef([])
@@ -344,6 +350,19 @@ export default function TheInterface() {
     () => AGENTS.filter(a => settings.agents[a.id]?.enabled && settings.agents[a.id]?.key),
     [settings.agents]
   )
+
+  // Decide the first-run wizard ONCE, after settings have loaded (billing flips
+  // non-null when loadSettings finishes) so we don't flash it at returning users
+  // before their keys load. Open only for a fresh account: no agents, no history.
+  useEffect(() => {
+    if (wizardDecidedRef.current || billing == null) return
+    wizardDecidedRef.current = true
+    if (turns.length === 0 && activeAgents.length === 0 && !skippedOnboarding) {
+      // Defer out of the effect body so it doesn't count as a synchronous
+      // setState-in-effect (avoids the cascading-render lint + an extra pass).
+      queueMicrotask(() => setWizardOpen(true))
+    }
+  }, [billing, turns.length, activeAgents.length, skippedOnboarding])
 
   // Project-scoped memory: a memory row tagged to a project (project_id) must
   // NOT bleed into a different project's prompts — that's cross-contamination
@@ -1093,11 +1112,11 @@ export default function TheInterface() {
       <TrialBanner onUpgrade={onOpenSettings} />
 
       <main ref={scrollRef} className="ai-thread">
-        {turns.length === 0 && activeAgents.length === 0 && !skippedOnboarding && (
-          <OnboardingPanel onSkip={() => setSkippedOnboarding(true)} />
+        {turns.length === 0 && wizardOpen && (
+          <OnboardingPanel onSkip={() => { setWizardOpen(false); setSkippedOnboarding(true) }} />
         )}
 
-        {turns.length === 0 && (activeAgents.length > 0 || skippedOnboarding) && (
+        {turns.length === 0 && !wizardOpen && (
           <div className="ai-empty">
             <div className="ai-empty-logo"><RoundtableLogo size={48} /></div>
             <h2>One interface. All your AI.</h2>
