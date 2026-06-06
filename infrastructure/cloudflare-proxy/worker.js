@@ -382,14 +382,15 @@ const ROUTES = {
     const auth = req.headers.get('Authorization')
     if (!auth) return new Response(JSON.stringify({ error: 'missing_provider_key' }), { status: 400 })
     const body = await req.json()
-    // Start the generation. promptImage makes it real image-to-video;
-    // omitting it keeps text-only behavior. Caller picks duration (5|10)
-    // and ratio (1280:720 widescreen, 768:1280 portrait, 960:960 square).
+    // Start the generation. promptImage makes it real image-to-video.
+    // Caller picks duration (5|10) and ratio. Runway's current ratio enum is
+    // 1280:768 (landscape) / 768:1280 (portrait) / 16:9 / 9:16 — the old
+    // 1280:720 and 960:960 were retired and now 400 (verified live 2026-06).
     const payload = {
       promptText: body.prompt,
       model: 'gen3a_turbo',
       duration: body.duration === 10 ? 10 : 5,
-      ratio: ['1280:720', '768:1280', '960:960'].includes(body.ratio) ? body.ratio : '1280:720',
+      ratio: ['1280:768', '768:1280', '16:9', '9:16'].includes(body.ratio) ? body.ratio : '1280:768',
     }
     if (body.image_url) payload.promptImage = body.image_url
     const start = await fetch('https://api.dev.runwayml.com/v1/image_to_video', {
