@@ -3,6 +3,7 @@ import { useStore } from '../store/useStore'
 import { useModalDismiss } from '../utils/useModalDismiss'
 import { BRIEF_TEMPLATE } from '../utils/brandContext'
 import { TOOLS_BY_ID } from '../tools/registry'
+import { resolveDriveRootFolder, driveFolderUrl } from '../utils/driveStorage'
 import OptionsCard from './OptionsCard'
 
 const GUIDED_Q = [
@@ -44,6 +45,17 @@ export default function ProjectPicker() {
   const [guided, setGuided] = useState({})
   const [url, setUrl] = useState("")
   const [fetching, setFetching] = useState("")
+  // Link to the root "Agent Interface" Drive folder (where no-project outputs
+  // save). Resolved lazily the first time the menu opens, only if Drive is
+  // connected — null means not connected or not resolved yet.
+  const [rootDriveLink, setRootDriveLink] = useState(null)
+
+  useEffect(() => {
+    if (!open || rootDriveLink) return
+    let cancelled = false
+    resolveDriveRootFolder().then(r => { if (!cancelled && r?.link) setRootDriveLink(r.link) })
+    return () => { cancelled = true }
+  }, [open, rootDriveLink])
 
   const resetForm = () => { setCreating(false); setEditingId(null); setNewName(""); setNewDesc(""); setIntakePath(null); setGuided({}); setUrl(""); setFetching("") }
 
@@ -145,11 +157,19 @@ export default function ProjectPicker() {
           <div className="proj-menu">
             {!creating && (
               <>
-                <button className="proj-item" onClick={handleClear}>
-                  <span className="proj-item-name">No project</span>
-                  <span className="proj-item-sub">Outputs save flat to Drive</span>
-                </button>
-                {projects.map(p => (
+                <div className="proj-item-row">
+                  <button className="proj-item proj-item--select" onClick={handleClear}>
+                    <span className="proj-item-name">No project</span>
+                    <span className="proj-item-sub">Outputs save flat to Drive</span>
+                  </button>
+                  {rootDriveLink && (
+                    <a className="proj-item-drive" href={rootDriveLink} target="_blank" rel="noopener noreferrer"
+                       onClick={e => e.stopPropagation()} title="Open your Agent Interface folder in Drive">Drive ↗</a>
+                  )}
+                </div>
+                {projects.map(p => {
+                  const folderLink = p.storage_provider === 'google_drive' ? driveFolderUrl(p.storage_folder_id) : null
+                  return (
                   <div key={p.id} className={`proj-item-row${activeProject?.id === p.id ? " is-active" : ""}`}>
                     <button
                       className="proj-item proj-item--select"
@@ -160,11 +180,15 @@ export default function ProjectPicker() {
                         ? <span className="proj-item-sub">{p.description.replace(/\s+/g, ' ').slice(0, 80)}</span>
                         : <span className="proj-item-sub proj-item-sub--empty">No brand brief — add one ↗</span>}
                     </button>
+                    {folderLink && (
+                      <a className="proj-item-drive" href={folderLink} target="_blank" rel="noopener noreferrer"
+                         onClick={e => e.stopPropagation()} title={`Open ${p.name} folder in Drive`}>Drive ↗</a>
+                    )}
                     <button className="proj-item-edit" onClick={() => startEdit(p)} title={`Edit ${p.name} brand brief`} aria-label={`Edit ${p.name}`}>
                       Edit
                     </button>
                   </div>
-                ))}
+                )})}
                 <button className="proj-create-trigger" onClick={startNew}>
                   + New project
                 </button>

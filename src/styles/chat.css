@@ -616,6 +616,22 @@
 .proj-item-edit:hover { color: var(--color-accent); border-color: var(--color-accent); }
 .proj-item-edit:focus-visible { opacity: 1; outline: none; box-shadow: var(--shadow-focus); }
 
+/* "Drive ↗" jump link on a project row (and the No-project root row). Always
+   visible (unlike Edit) — it's the primary "go to my files" affordance. */
+.proj-item-drive {
+  flex-shrink: 0;
+  align-self: center;
+  padding: var(--space-1) var(--space-2);
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-xs);
+  text-decoration: none;
+  white-space: nowrap;
+  border-radius: var(--radius-sm);
+  transition: color var(--duration-fast) var(--easing-default);
+}
+.proj-item-drive:hover { color: var(--color-accent); }
+.proj-item-drive:focus-visible { outline: none; box-shadow: var(--shadow-focus); }
+
 .proj-brief-input {
   resize: vertical;
   min-height: 96px;
