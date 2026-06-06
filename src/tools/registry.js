@@ -1776,8 +1776,27 @@ const imagePerSlide = {
   status: 'live',
   hidden: true,
   async run({ structuredInput, key, proxy, settings }) {
-    const data = typeof structuredInput === 'string' ? JSON.parse(structuredInput) : structuredInput
-    const slides = Array.isArray(data?.slides) ? data.slides : []
+    let data = structuredInput
+    if (typeof data === 'string') { try { data = JSON.parse(data) } catch { data = { slides: structuredInput } } }
+    // Tolerate where the storyboard lives. The plan should wire {s1.scenes}, but
+    // the orchestrator sometimes folds the storyboard into a combined synth step
+    // or names it differently (scenes/frames/shots/slides), and may pass the whole
+    // step object. Dig the slide array out of any of those shapes so we don't
+    // hard-fail "No slides to illustrate" when the content is right there.
+    const toSlides = (x) => {
+      if (x == null) return []
+      if (Array.isArray(x)) return x
+      if (typeof x === 'string') { try { return toSlides(JSON.parse(x)) } catch { return [{ prompt: x }] } }
+      if (typeof x === 'object') {
+        for (const k of ['slides', 'scenes', 'frames', 'shots', 'storyboard']) {
+          if (Array.isArray(x[k])) return x[k]
+          if (x[k] && typeof x[k] === 'object' && Array.isArray(x[k].scenes)) return x[k].scenes
+        }
+        if (x.prompt || x.title) return [x]   // a single slide object
+      }
+      return []
+    }
+    const slides = toSlides(data).map(s => (typeof s === 'string' ? { prompt: s } : s)).filter(Boolean)
     if (slides.length === 0) throw new ToolError('image_per_slide', 'no_slides', 'No slides to illustrate.')
 
     const style = data?.style || 'clean, modern, editorial photography'
@@ -2271,6 +2290,13 @@ const adRender = {
     const { arrayBufferToBase64 } = await import('../utils/base64')
     const ff = await getFFmpeg()
 
+    // Keep a rolling tail of ffmpeg's own log so a render failure surfaces the
+    // REAL reason (codec/concat/memory) instead of an opaque "render_failed".
+    // Previously ad_render failures showed only "ad_render" with no detail.
+    const logTail = []
+    const tap = ({ message }) => { logTail.push(message); if (logTail.length > 12) logTail.shift() }
+    ff.on('log', tap)
+
     const W = 1280, H = 720
     const VF = `scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2,setsar=1`
 
@@ -2339,6 +2365,7 @@ const adRender = {
 
       const out = await ff.readFile('out.mp4')
       const b64 = arrayBufferToBase64(out)
+      ff.off('log', tap)
       for (const s of segNames) { try { await ff.deleteFile(s) } catch {} }
       for (const f of ['concat.txt', 'slideshow.mp4', 'vo.mp3', 'music.mp3', 'out.mp4']) { try { await ff.deleteFile(f) } catch {} }
 
@@ -2350,8 +2377,12 @@ const adRender = {
         meta: { frames: images.length, durationSec: Math.round(total) || null, hadMusic: !!musicUrl, composer: true },
       }
     } catch (e) {
+      ff.off('log', tap)
       if (e instanceof ToolError) throw e
-      throw new ToolError('ad_render', 'render_failed', `Couldn't render the ad: ${e?.message || e}`)
+      // Surface the real ffmpeg reason (last log lines) so the failure is
+      // diagnosable instead of an opaque "render_failed".
+      const detail = logTail.filter(l => /error|invalid|fail|abort|no such|unable|not found|conversion/i.test(l)).slice(-3).join(' / ')
+      throw new ToolError('ad_render', 'render_failed', `Couldn't render the ad: ${e?.message || e}${detail ? ` — ffmpeg: ${detail}` : ''}`)
     }
   },
 }
