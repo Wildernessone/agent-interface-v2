@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { agentConnected, NO_AGENT_SKIP } from './_helpers'
 
 // Critical authenticated flows — the real "does it work" pass. Needs:
 //   TEST_EMAIL / TEST_PASSWORD  (a test account)
@@ -22,10 +23,13 @@ test.describe('authenticated critical flows', () => {
   })
 
   test('send a message → at least one agent responds', async ({ page }) => {
+    test.skip(!(await agentConnected(page)), NO_AGENT_SKIP)
     await page.locator('.ai-composer textarea').fill('In one sentence, what is 2+2?')
     await page.locator('.ai-composer textarea').press('Enter')
-    // An agent turn appears and fills with text (real provider call → allow time).
-    const agentTurn = page.locator('.ai-turn--agent').first()
+    // A REAL agent turn — NOT an error turn. Error/notice turns also use
+    // .ai-turn--agent (they share the avatar layout), so a bare .ai-turn--agent
+    // match would pass on a "Connect an agent" error. Exclude .ai-error.
+    const agentTurn = page.locator('.ai-turn--agent:not(:has(.ai-error))').first()
     await expect(agentTurn).toBeVisible({ timeout: 60_000 })
     await expect(agentTurn).not.toBeEmpty({ timeout: 60_000 })
     // The orchestrator must NOT have dead-ended the turn (A1).
@@ -33,6 +37,7 @@ test.describe('authenticated critical flows', () => {
   })
 
   test('build flow → a deliverable is shown (not "produced nothing")', async ({ page }) => {
+    test.skip(!(await agentConnected(page)), NO_AGENT_SKIP)
     test.slow() // a build runs multiple steps
     await page.locator('.ai-composer textarea').fill('Write a short markdown note titled "E2E Test" with two bullet points.')
     await page.locator('.ai-composer textarea').press('Enter')
