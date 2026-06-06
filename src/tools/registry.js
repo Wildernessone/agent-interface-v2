@@ -1721,6 +1721,10 @@ const gcal = {
 // skipped. Returns the first successful { type:'image', url, ... } tagged with
 // the provider that produced it; throws a combined ToolError if every
 // available provider fails.
+// OpenAI/DALL-E first — most users bring a ChatGPT key and expect it to make
+// their image. The worker's /dalle route is now durable across OpenAI's model
+// churn (tries gpt-image-1 → dall-e-2), so an OpenAI key produces an image with
+// or without org verification. The rest are fallbacks for users who have them.
 const IMAGE_PROVIDER_ORDER = ['dalle', 'stability', 'flux', 'ideogram', 'recraft']
 
 async function generateImageWithFallback({ prompt, structuredInput, settings, proxy }) {
