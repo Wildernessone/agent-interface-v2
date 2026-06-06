@@ -180,3 +180,62 @@
   text-underline-offset: 3px;
 }
 .onboarding-skip-btn:hover { color: var(--color-text-secondary); }
+
+/* ────────── Multi-step onboarding wizard ────────── */
+.wiz-progress {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-6);
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.wiz-dot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-tertiary, var(--color-text-secondary));
+}
+.wiz-dot-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border-primary);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+.wiz-dot.is-current { color: var(--color-text-primary); }
+.wiz-dot.is-current .wiz-dot-num { border-color: var(--color-accent); color: var(--color-accent); }
+.wiz-dot.is-done .wiz-dot-num { background: var(--color-accent); color: var(--color-text-inverse); border-color: var(--color-accent); }
+.wiz-dot-label { white-space: nowrap; }
+
+.wiz-step { display: flex; flex-direction: column; gap: var(--space-3); }
+.wiz-note { font-size: var(--font-size-sm); color: var(--color-accent); margin: var(--space-2) 0 0; }
+.wiz-optional {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-tertiary, var(--color-text-secondary));
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-sm);
+  padding: 1px 7px;
+  margin-left: var(--space-2);
+  vertical-align: middle;
+}
+.wiz-fineprint { font-size: var(--font-size-xs); color: var(--color-text-secondary); margin-top: var(--space-2); }
+.wiz-recap { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: var(--space-2); font-size: var(--font-size-sm); }
+.wiz-finish { margin-top: var(--space-3); align-self: flex-start; }
+
+.wiz-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-6);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border-primary);
+}
+.wiz-footer-spacer { flex: 1; }
+
+.onboarding-badge--ok { color: var(--color-accent); border-color: var(--color-accent); }
+.onboarding-card.is-connected { border-color: var(--color-accent); }
