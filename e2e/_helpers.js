@@ -7,7 +7,17 @@
 // false, so the suite is green on a key-less account and fully exercised once a
 // key is added in Settings → Agents.
 export async function agentConnected(page) {
-  return (await page.locator('.ai-targets .ai-chip').count()) > 1
+  // Settings (agents + keys) load asynchronously AFTER the composer mounts, so
+  // the per-agent target chips appear a beat later than `.ai-composer`. Wait
+  // briefly for an agent chip — the 2nd `.ai-chip`, after the always-present
+  // "All" — before deciding, otherwise we race the load and wrongly conclude
+  // "no agents". No chip within the window → genuinely key-less → skip.
+  try {
+    await page.locator('.ai-targets .ai-chip').nth(1).waitFor({ state: 'visible', timeout: 10_000 })
+    return true
+  } catch {
+    return false
+  }
 }
 
 export const NO_AGENT_SKIP =
