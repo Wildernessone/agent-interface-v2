@@ -52,6 +52,7 @@ export function buildSystemPrompt({ activeAgentIds=[], enabledTools={}, mode="co
     lines.push(`\nBRAND BRIEF FOR ${(projectName || 'THIS PROJECT').toUpperCase()} (authoritative — this is what the product actually is):`)
     lines.push(projectBrief)
     lines.push(`\nGround everything you say about this product in this brief. Do NOT contradict it or invent facts (market, audience, features, history) beyond what it states. If something isn't covered, say you don't have that detail rather than making it up.`)
+    lines.push(`\nFACTUAL-CLAIM GUARDRAIL: never assert an ABSOLUTE claim about privacy, security, data handling, pricing, compliance, performance, or guarantees ("we never store your data", "100% private", "fully encrypted", "free forever", "the fastest", etc.) unless the brief states it explicitly. These are the easiest claims to get wrong and they create legal and trust risk. Write the benefit without the unverified absolute (e.g. "your data stays under your control" instead of "we never store your data").`)
   } else if (projectName) {
     lines.push(`\nACTIVE PROJECT: "${projectName}" — but NO brand brief is on file. You do NOT know what this product is, who it's for, or its market. Do NOT infer it from the name. If the user's message doesn't tell you, say you need a product description rather than inventing one.`)
   }
