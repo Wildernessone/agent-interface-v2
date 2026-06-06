@@ -202,6 +202,12 @@ export async function runBuild(plan, ctx, onStep = () => {}) {
     ? { ...project, name: `${project.name}/${folderName}` }
     : { id: null, name: folderName }
 
+  // Most-recent image URL produced in this build. Threaded into later steps
+  // as context.sourceImageUrl so image→video (Runway needs an input image) and
+  // image→image-edit (removebg/clipdrop/topaz) chains actually work. Without
+  // this, those tools never receive an image and fail (e.g. Runway 400s).
+  let lastImageUrl = null
+
   let ordered
   try {
     ordered = topoSort(plan.steps || [])
@@ -272,6 +278,12 @@ export async function runBuild(plan, ctx, onStep = () => {}) {
     try {
       const input = interpolate(step.input || step.prompt || '', stepOutputs)
       const key = readKey(settings, tool.keySource)
+      // Prefer an image from this step's declared dependencies; else the most
+      // recent image in the build. Lets a video/image-edit step animate or edit
+      // the image an earlier step generated.
+      const depImageUrl = (step.needs || [])
+        .map(d => stepOutputs[d])
+        .find(o => o?.type === 'image' && o.url)?.url
       const output = await tool.run({
         prompt: typeof input === 'string' ? input : JSON.stringify(input),
         structuredInput: input,
@@ -281,9 +293,11 @@ export async function runBuild(plan, ctx, onStep = () => {}) {
         outputSchema: step.output_schema || null,
         label: step.label,
         brandContext,
+        context: { sourceImageUrl: depImageUrl || lastImageUrl },
       })
 
       stepOutputs[step.id] = output
+      if (output?.type === 'image' && output.url) lastImageUrl = output.url
 
       // File-bearing single output (image/audio/video/document) → save once
       if (output && (output.type === 'image' || output.type === 'audio' || output.type === 'video' || output.type === 'document')) {
