@@ -3,7 +3,9 @@ main = "worker.js"
 compatibility_date = "2024-09-01"
 account_id = "37466838b711d4510ec744042dd24121"
 
-# HUB project base URL (Timberline + Command Center backend). The service-role
-# key is a SECRET, set with: npx wrangler secret put HUB_SERVICE_KEY
+# HUB project (Timberline + Command Center backend). Both vars are PUBLIC — the
+# publishable key only has INSERT on support_messages (admin-gated read/update),
+# so no secret is needed.
 [vars]
 HUB_URL = "https://jcmkoooivghwrgezxode.supabase.co"
+HUB_KEY = "sb_publishable_2n0PtcQvGYyndgwlmG0sZQ_ZZSJla_S"
