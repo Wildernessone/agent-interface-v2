@@ -1775,7 +1775,7 @@ const imagePerSlide = {
   keySource: 'agent.gpt',
   status: 'live',
   hidden: true,
-  async run({ structuredInput, key, proxy, settings }) {
+  async run({ structuredInput, key, proxy, settings, brandContext }) {
     let data = structuredInput
     if (typeof data === 'string') { try { data = JSON.parse(data) } catch { data = { slides: structuredInput } } }
     // Tolerate where the storyboard lives. The plan should wire {s1.scenes}, but
@@ -1796,8 +1796,24 @@ const imagePerSlide = {
       }
       return []
     }
-    const slides = toSlides(data).map(s => (typeof s === 'string' ? { prompt: s } : s)).filter(Boolean)
-    if (slides.length === 0) throw new ToolError('image_per_slide', 'no_slides', 'No slides to illustrate.')
+    let slides = toSlides(data).map(s => (typeof s === 'string' ? { prompt: s } : s)).filter(Boolean)
+    if (slides.length === 0) {
+      // GRACEFUL FALLBACK — never hard-fail. The orchestrator sometimes wires a
+      // combined synth step whose storyboard scenes don't resolve, leaving us no
+      // slides. Rather than kill the whole video/deck build, generate ONE image
+      // from the best prompt we can find (an explicit prompt field, else the
+      // brand context, else a generic hero) so downstream (ad_render) still gets
+      // a frame to work with.
+      const promptish = (data && typeof data === 'object')
+        ? (data.prompt || data.image_prompt || data.hero_image_prompt ||
+           Object.entries(data).find(([k, v]) => /prompt/i.test(k) && typeof v === 'string')?.[1] ||
+           data.title)
+        : null
+      const fallbackPrompt = (promptish ||
+        (brandContext ? `Promotional hero image for: ${String(brandContext).slice(0, 300)}` : null) ||
+        'Clean, modern promotional hero image, premium brand aesthetic').toString().slice(0, 900)
+      slides = [{ prompt: fallbackPrompt }]
+    }
 
     const style = data?.style || 'clean, modern, editorial photography'
     const size = normalizeDalleSize(data?.size || 'wide')
