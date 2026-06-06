@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../utils/supabase'
 import { startDropboxAuth, dropboxConfigured } from '../utils/dropboxStorage'
 import { setPrimaryProvider } from '../utils/cloudStorage'
+import { resolveDriveRootFolder } from '../utils/driveStorage'
 import { useStore } from '../store/useStore'
 
 const PROVIDERS = [
@@ -31,8 +32,18 @@ export default function StorageTab() {
   const [loading, setLoading] = useState(true)
   const [connecting, setConnecting] = useState(null)
   const [error, setError] = useState(null)
+  // Direct link to the user's root "Agent Interface" Drive folder, resolved
+  // once Drive is connected so they can jump straight to their saved files.
+  const [driveFolderLink, setDriveFolderLink] = useState(null)
 
   useEffect(() => { loadConnections() }, [])
+
+  useEffect(() => {
+    if (!connections.some(c => c.provider === 'google_drive' && c.access_token)) return
+    let cancelled = false
+    resolveDriveRootFolder().then(r => { if (!cancelled && r?.link) setDriveFolderLink(r.link) })
+    return () => { cancelled = true }
+  }, [connections])
 
   const loadConnections = async () => {
     setError(null)
@@ -135,6 +146,9 @@ export default function StorageTab() {
               </div>
               {connected ? (
                 <div className="storage-actions">
+                  {provider.id === "google_drive" && driveFolderLink && (
+                    <a className="ai-btn ai-btn--primary" href={driveFolderLink} target="_blank" rel="noopener noreferrer">Open in Drive ↗</a>
+                  )}
                   {!isPrimary && connectedCount > 1 && (
                     <button className="ai-btn" onClick={() => handleSetPrimary(provider.id)}>Make primary</button>
                   )}

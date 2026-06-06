@@ -186,6 +186,36 @@ async function ensureRootFolder(session) {
   return findOrCreateFolder(session, 'Agent Interface')
 }
 
+/**
+ * Resolve a clickable link to the user's root "Agent Interface" Drive folder —
+ * where no-project outputs are saved. Finds (or creates) the folder, caches its
+ * id on the connection row (root_folder_id was previously read but never
+ * written), and returns { id, link }. Returns null if Drive isn't connected.
+ * Used by Storage settings + the project picker so a connected user can jump
+ * straight to their files instead of hunting through Drive.
+ */
+export async function resolveDriveRootFolder() {
+  const session = await openDriveSession()
+  if (!session) return null
+  try {
+    const id = await ensureRootFolder(session)
+    // Best-effort cache so the link is instant next time (and the column stops
+    // being vestigial). A failed write must not break the returned link.
+    supabase.from('storage_connections')
+      .update({ root_folder_id: id })
+      .eq('user_id', session.userId).eq('provider', 'google_drive')
+      .then(() => {}, () => {})
+    return { id, link: `https://drive.google.com/drive/folders/${id}` }
+  } catch {
+    return null
+  }
+}
+
+/** Build a Drive folder URL from a stored folder id (e.g. project.storage_folder_id). */
+export function driveFolderUrl(folderId) {
+  return folderId ? `https://drive.google.com/drive/folders/${folderId}` : null
+}
+
 async function ensureProjectFolder(session, rootId, project) {
   if (!project?.name) return rootId
 
