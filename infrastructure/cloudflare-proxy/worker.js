@@ -40,10 +40,12 @@ const PER_MINUTE_LIMIT = 60
 // -style { size, quality } the client still sends:
 //   - sizes: dall-e-3 only accepts 1024x1024 / 1792x1024 / 1024x1792
 //   - quality: dall-e-3 wants 'standard' | 'hd' (not high/medium/low)
-//   - response_format: dall-e-3 defaults to a hosted URL that expires in ~1h;
-//     we force 'b64_json' so the build pipeline gets an inline data: image
-//     (ad_render's browser-side ffmpeg can't fetch expiring remote URLs).
-//     gpt-image-1 always returns b64 and REJECTS response_format, so we omit it.
+//   - response_format: OpenAI's /images/generations now REJECTS this param
+//     ("Unknown parameter: 'response_format'"), so we no longer send it.
+//     dall-e-3 then returns a hosted URL that expires in ~1h; the /dalle route
+//     below fetches that URL and converts it to b64 so the build pipeline still
+//     gets an inline data: image (ad_render's browser-side ffmpeg can't fetch
+//     expiring remote URLs). gpt-image-1 already returns b64 directly.
 export function buildImageRequest(body = {}) {
   const wantsGptImage = body.model === 'gpt-image-1'
   const prompt = body.prompt
@@ -73,7 +75,8 @@ export function buildImageRequest(body = {}) {
     n: 1,
     size: SIZE_MAP[body.size] || '1024x1024',
     quality: body.quality === 'high' || body.quality === 'hd' ? 'hd' : 'standard',
-    response_format: 'b64_json',
+    // NB: no response_format — OpenAI rejects it. The /dalle route converts the
+    // returned URL to b64.
   }
 }
 
@@ -271,11 +274,24 @@ const ROUTES = {
     const auth = req.headers.get('Authorization')
     if (!auth) return new Response(JSON.stringify({ error: 'missing_provider_key' }), { status: 400 })
     const body = await req.json()
-    return fetch('https://api.openai.com/v1/images/generations', {
+    const oai = await fetch('https://api.openai.com/v1/images/generations', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: auth },
       body: JSON.stringify(buildImageRequest(body)),
     })
+    if (!oai.ok) return new Response(oai.body, { status: oai.status, headers: { 'Content-Type': 'application/json' } })
+    const data = await oai.json()
+    // dall-e-3 returns a hosted (expiring) URL since we can't request b64 via
+    // response_format anymore. Fetch it and inline as b64 so the build pipeline
+    // (esp. ad_render's in-browser ffmpeg) gets a durable data: image.
+    const item = data?.data?.[0]
+    if (item && !item.b64_json && item.url) {
+      try {
+        const img = await fetch(item.url)
+        if (img.ok) item.b64_json = bufToBase64(await img.arrayBuffer())
+      } catch { /* leave the URL; client falls back to it */ }
+    }
+    return json(data, 200)
   },
 
   stability: async (req) => {
