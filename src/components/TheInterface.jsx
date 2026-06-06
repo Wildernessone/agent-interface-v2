@@ -96,22 +96,44 @@ function buildErrorDetail(status, msg, model) {
 // BEFORE any streaming starts — model errors surface on the initial response,
 // so retrying here is safe. Returns the first ok Response (body unconsumed),
 // or { res, text } for the last failure.
+// Transient upstream statuses worth retrying the SAME model: provider capacity
+// (503 "high demand"), brief rate spikes (429), and 5xx/overload blips. These
+// are momentary — a short wait + retry turns a provider hiccup (e.g. Gemini's
+// frequent 503s) into a slight delay instead of a failed turn.
+const TRANSIENT_STATUS = new Set([429, 500, 502, 503, 504, 529])
+const sleepMs = (ms) => new Promise(r => setTimeout(r, ms))
+
 async function postWithModelFallback(route, provider, buildBody, headers, timeout) {
   const models = modelsToTry(provider)
   const ids = models.length ? models : [undefined]  // fall back to worker default
   let res = null, text = '', model
   for (let i = 0; i < ids.length; i++) {
     model = ids[i]
-    timeout?.bump()  // reset the idle window for each attempt
-    res = await fetch(`${PROXY}/${route}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...headers, ...(await authHeader()) },
-      body: JSON.stringify(buildBody(model)),
-      signal: timeout?.signal,
-    })
-    if (res.ok) return { res, text: '', model }
-    text = await res.text().catch(() => '')
-    // Only keep trying on a model-not-found; bail on auth/rate/server errors.
+    // Per-model transient retry (up to 3 attempts) BEFORE streaming starts, so a
+    // momentary 503/429/5xx (or a network blip) is retried rather than surfaced
+    // as an error. Aborts (hard idle-timeout) propagate immediately.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      timeout?.bump()  // reset the idle window for each attempt
+      try {
+        res = await fetch(`${PROXY}/${route}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...headers, ...(await authHeader()) },
+          body: JSON.stringify(buildBody(model)),
+          signal: timeout?.signal,
+        })
+      } catch (e) {
+        if (isAbort(e)) throw e   // hard timeout — let the caller handle it
+        if (attempt < 2) { await sleepMs(600 * (attempt + 1)); continue }  // network blip → retry
+        throw e
+      }
+      if (res.ok) return { res, text: '', model }
+      text = await res.text().catch(() => '')
+      // Momentary upstream failure → wait and retry the SAME model.
+      if (TRANSIENT_STATUS.has(res.status) && attempt < 2) { await sleepMs(600 * (attempt + 1)); continue }
+      break  // non-transient, or out of retries — stop retrying this model
+    }
+    if (res?.ok) return { res, text: '', model }
+    // Only keep trying the NEXT model on a model-not-found; bail otherwise.
     if (!isModelError(res.status, text) || i === ids.length - 1) break
   }
   // `model` is the LAST model tried — the one whose error `text` we return,
