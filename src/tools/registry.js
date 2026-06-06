@@ -1721,7 +1721,11 @@ const gcal = {
 // skipped. Returns the first successful { type:'image', url, ... } tagged with
 // the provider that produced it; throws a combined ToolError if every
 // available provider fails.
-const IMAGE_PROVIDER_ORDER = ['dalle', 'stability', 'flux', 'ideogram', 'recraft']
+// Stability first: it generates with NO org-verification hassle, so it's the
+// most reliable default for BYOK users. OpenAI is next — but note OpenAI retired
+// dall-e-3 and its current model (gpt-image-1) requires a verified org, so it's
+// a fallback, not the default. Users without a Stability key fall through to it.
+const IMAGE_PROVIDER_ORDER = ['stability', 'dalle', 'flux', 'ideogram', 'recraft']
 
 async function generateImageWithFallback({ prompt, structuredInput, settings, proxy }) {
   const errors = []

@@ -47,7 +47,12 @@ const PER_MINUTE_LIMIT = 60
 //     gets an inline data: image (ad_render's browser-side ffmpeg can't fetch
 //     expiring remote URLs). gpt-image-1 already returns b64 directly.
 export function buildImageRequest(body = {}) {
-  const wantsGptImage = body.model === 'gpt-image-1'
+  // OpenAI RETIRED dall-e-3 ("The model 'dall-e-3' does not exist"), so the
+  // OpenAI image default is now gpt-image-1 (their current model). dall-e-3 is
+  // only used if a caller explicitly asks for it (legacy). gpt-image-1 needs a
+  // verified OpenAI org; unverified orgs 403 → the client's provider-fallback
+  // chain covers it (Stability is primary there now).
+  const wantsGptImage = body.model !== 'dall-e-3'
   const prompt = body.prompt
   if (wantsGptImage) {
     const SIZES = new Set(['1024x1024', '1536x1024', '1024x1536'])
