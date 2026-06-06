@@ -3,16 +3,19 @@
  * ====================
  * A Cloudflare Email Worker bound to support@agentinterface.app via Email
  * Routing. Every inbound message is parsed and written to the HUB Supabase
- * `support_messages` table (service-role insert, bypasses RLS). Command Center
- * reads that table and shows an unread badge — so support mail surfaces in the
- * admin dashboard in real time, no Gmail/scraper/cron.
+ * `support_messages` table. Command Center reads that table and shows an unread
+ * badge — so support mail surfaces in the admin dashboard in real time, no
+ * Gmail/scraper/cron.
  *
  * Per the chosen design there is NO inbox forward — the message is consumed
  * here. (To also drop a copy in an inbox later, add `message.forward(addr)`.)
  *
- * Secrets/vars (wrangler):
- *   HUB_URL          (var)    https://jcmkoooivghwrgezxode.supabase.co
- *   HUB_SERVICE_KEY  (secret) HUB service-role key — never the anon key
+ * Vars (wrangler.toml — both public, no secret needed):
+ *   HUB_URL  https://jcmkoooivghwrgezxode.supabase.co
+ *   HUB_KEY  HUB publishable/anon key. The table has an INSERT-only anon policy
+ *            (support_insert_anon); SELECT/UPDATE stay admin-only, so this key
+ *            can write a message but never read or modify them. Same model as
+ *            the Timberline portals' brand_recommendations submissions.
  */
 import PostalMime from 'postal-mime'
 
@@ -38,8 +41,8 @@ export default {
     const res = await fetch(`${env.HUB_URL}/rest/v1/support_messages`, {
       method: 'POST',
       headers: {
-        apikey: env.HUB_SERVICE_KEY,
-        Authorization: `Bearer ${env.HUB_SERVICE_KEY}`,
+        apikey: env.HUB_KEY,
+        Authorization: `Bearer ${env.HUB_KEY}`,
         'Content-Type': 'application/json',
         Prefer: 'return=minimal',
       },

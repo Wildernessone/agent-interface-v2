@@ -10,9 +10,9 @@ no Gmail/scraper/cron. No inbox forward (the message is consumed here).
 ```bash
 cd infrastructure/support-email-worker
 npm install
-npx wrangler secret put HUB_SERVICE_KEY     # paste the HUB service-role key (sb_secret_…), NOT the anon key
 npx wrangler deploy
 ```
+No secret needed — `HUB_KEY` (publishable key) is a public var in `wrangler.toml`; it only has INSERT on `support_messages`.
 
 ## Wire it to email (Cloudflare dashboard)
 
