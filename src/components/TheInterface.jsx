@@ -37,6 +37,7 @@ import OnboardingPanel from './OnboardingPanel'
 import ProjectPicker from './ProjectPicker'
 import MemoryPanel from './MemoryPanel'
 import TrialBanner from './TrialBanner'
+import ErrorBoundary from './ErrorBoundary'
 
 const AGENTS = [
   { id:"claude",  name:"Claude",  color:"var(--color-agent-claude)", avatar:"C" },
@@ -1230,20 +1231,33 @@ export default function TheInterface() {
         )}
 
         {turns.map(turn => (
-          <TurnRow
+          // Per-turn boundary: one malformed turn (bad persisted shape, an
+          // unexpected tool-output) degrades to a small card instead of
+          // white-screening the whole thread.
+          <ErrorBoundary
             key={turn.id}
-            turn={turn}
-            isActive={activeAgentId === turn.id}
-            busy={busy}
-            onRetryLast={onRetryLast}
-            onExecuteBuild={onExecuteBuild}
-            onBuildOption={onBuildOption}
-            onBuildSomethingDifferent={onBuildSomethingDifferent}
-            onOpenSettings={onOpenSettings}
-            onSaveBrief={onSaveBrief}
-            onDismissBrief={onDismissBrief}
-            onEditBrief={onEditBrief}
-          />
+            scope="turn"
+            fallback={
+              <div className="ai-turn ai-tool-card">
+                <div className="ai-error-title">This message couldn't be displayed</div>
+                <div className="ai-error-help">It hit a rendering error and was skipped — the rest of your conversation is fine.</div>
+              </div>
+            }
+          >
+            <TurnRow
+              turn={turn}
+              isActive={activeAgentId === turn.id}
+              busy={busy}
+              onRetryLast={onRetryLast}
+              onExecuteBuild={onExecuteBuild}
+              onBuildOption={onBuildOption}
+              onBuildSomethingDifferent={onBuildSomethingDifferent}
+              onOpenSettings={onOpenSettings}
+              onSaveBrief={onSaveBrief}
+              onDismissBrief={onDismissBrief}
+              onEditBrief={onEditBrief}
+            />
+          </ErrorBoundary>
         ))}
 
         {/* Mid-conversation: grounded next-step suggestions once a short
