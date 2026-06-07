@@ -171,7 +171,7 @@ function synthToMarkdown(out) {
  *     deliverable,
  *     folderName,
  *     files: [{ stepId, label, output, savedLink, savedProvider }],
- *     errors: [{ stepId, error }],
+ *     errors: [{ stepId, tool, code, error }],
  *     stepOutputs: { stepId: output, ... }
  *   }
  *
@@ -231,7 +231,7 @@ export async function runBuild(plan, ctx, onStep = () => {}) {
   try {
     ordered = topoSort(plan.steps || [])
   } catch (e) {
-    return { deliverable: plan.deliverable, folderName, files: [], errors: [{ stepId: '_plan', error: e.message }], stepOutputs, folderLink: null }
+    return { deliverable: plan.deliverable, folderName, files: [], errors: [{ stepId: '_plan', tool: 'plan', code: 'plan_failed', error: e.message }], stepOutputs, folderLink: null }
   }
 
   // Steps whose output another step depends on. A TERMINAL agent_synth (one no
@@ -308,14 +308,14 @@ export async function runBuild(plan, ctx, onStep = () => {}) {
     // "image save_failed → video dependency_failed → no deliverable" bug.)
     const depFailed = (step.needs || []).some(d => !stepOutputs[d])
     if (depFailed) {
-      errors.push({ stepId: step.id, error: 'dependency_failed' })
+      errors.push({ stepId: step.id, tool: step.tool, code: 'dependency_failed', error: 'dependency_failed' })
       onStep(step.id, 'failed', 'dependency_failed')
       continue
     }
 
     const tool = TOOLS_BY_ID[step.tool]
     if (!tool || typeof tool.run !== 'function') {
-      errors.push({ stepId: step.id, error: `unknown_tool:${step.tool}` })
+      errors.push({ stepId: step.id, tool: step.tool, code: 'unknown_tool', error: `unknown_tool:${step.tool}` })
       onStep(step.id, 'failed', 'unknown_tool')
       continue
     }
@@ -376,7 +376,7 @@ export async function runBuild(plan, ctx, onStep = () => {}) {
           // failed with a clear reason so the user sees the issue instead of
           // a misleading checkmark.
           if (!saved) {
-            errors.push({ stepId: step.id, error: 'save_failed' })
+            errors.push({ stepId: step.id, tool: step.tool, code: 'save_failed', error: 'save_failed' })
             onStep(step.id, 'failed', 'save_failed')
             continue
           }
@@ -438,7 +438,7 @@ export async function runBuild(plan, ctx, onStep = () => {}) {
           savedLinks.push(saved?.webViewLink || null)
         }
         if (!anySaved) {
-          errors.push({ stepId: step.id, error: 'save_failed' })
+          errors.push({ stepId: step.id, tool: step.tool, code: 'save_failed', error: 'save_failed' })
           onStep(step.id, 'failed', 'save_failed')
           continue
         }
@@ -473,7 +473,8 @@ export async function runBuild(plan, ctx, onStep = () => {}) {
       onStep(step.id, 'done', null, output)
     } catch (e) {
       const reason = e instanceof ToolError ? e.message : String(e.message || e)
-      errors.push({ stepId: step.id, error: reason })
+      const code = e instanceof ToolError ? (e.errorType || 'tool_error') : 'exception'
+      errors.push({ stepId: step.id, tool: step.tool, code, error: reason })
       onStep(step.id, 'failed', reason)
     }
   }

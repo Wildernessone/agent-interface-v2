@@ -1013,8 +1013,18 @@ export default function TheInterface() {
       folderLink: result.folderLink,
       folderProvider: result.folderProvider,
     })
-    result.files.forEach(f => logUsage({ kind: 'tool_call', provider: f.output?.tool || 'build', success: true }))
-    result.errors.forEach(e => logUsage({ kind: 'tool_call', provider: e.stepId, success: false, errorType: 'build_step' }))
+    result.files.forEach(f => logUsage({ kind: 'tool_call', provider: f.output?.tool || 'build', model: f.output?.tool || null, success: true, metadata: { stepId: f.stepId } }))
+    // Capture WHY a build step failed (tool, classified code, real message) so
+    // usage_events is diagnosable — previously this logged only the step id and a
+    // generic 'build_step', leaving every failure row's metadata empty.
+    result.errors.forEach(e => logUsage({
+      kind: 'tool_call',
+      provider: e.tool || 'build',
+      model: e.tool || null,
+      success: false,
+      errorType: e.code || 'build_step',
+      metadata: { stepId: e.stepId, tool: e.tool || null, code: e.code || null, detail: String(e.error || '').slice(0, 500) },
+    }))
     // Surface which build tools get used as a hub feature signal (feeds top_features).
     result.files.forEach(f => track('tool_use', { feature: f.output?.tool || 'build' }))
 
