@@ -147,6 +147,13 @@ export default {
         const allowed = await checkRateLimit(env.RATE_LIMIT_KV, user.sub)
         if (!allowed) return json({ error: 'rate_limited' }, 429, cors)
       }
+    } else if (env.RATE_LIMIT_KV) {
+      // Auth-exempt routes (refresh_google) still get a per-IP rate limit so the
+      // server-held Google client_secret can't be used as an unauthenticated
+      // token-exchange/validation oracle at scale.
+      const ip = request.headers.get('CF-Connecting-IP') || 'unknown'
+      const allowed = await checkRateLimit(env.RATE_LIMIT_KV, `ip:${ip}`)
+      if (!allowed) return json({ error: 'rate_limited' }, 429, cors)
     }
 
     // 3. Route
@@ -166,7 +173,11 @@ export default {
 
 function corsHeaders(origin, env) {
   const allowed = (env.ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean)
-  const ok = allowed.length === 0 || allowed.includes(origin)
+  // Fail CLOSED: an empty/unset ALLOWED_ORIGINS previously allowed EVERY origin
+  // (allowed.length === 0 || …). If the env var ever goes missing in a deploy,
+  // deny rather than turn the proxy into an any-origin relay. wrangler.toml sets
+  // it, so this only bites on misconfiguration — which is exactly when we want it.
+  const ok = allowed.includes(origin)
   return {
     'Access-Control-Allow-Origin': ok ? origin : 'null',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -207,6 +218,7 @@ async function getAudioBlob(req) {
   }
   const body = await req.json().catch(() => ({}))
   if (!body.audio_url) return null
+  if (!isSafeUrl(body.audio_url)) return null
   const r = await fetch(body.audio_url)
   if (!r.ok) return null
   return new Blob([await r.arrayBuffer()], { type: r.headers.get('Content-Type') || 'audio/mpeg' })
@@ -233,6 +245,26 @@ async function checkRateLimit(kv, userId) {
   const current = parseInt((await kv.get(key)) || '0', 10)
   if (current >= PER_MINUTE_LIMIT) return false
   await kv.put(key, String(current + 1), { expirationTtl: 120 })
+  return true
+}
+
+// SSRF guard for user-supplied URLs the worker fetches server-side. Hostname-
+// based (Workers can't resolve DNS), so it blocks the DIRECT cases — loopback,
+// private/link-local/metadata IPs, non-http(s) schemes, internal TLDs. Not a
+// defense against DNS rebinding, but it closes the easy holes that let a
+// signed-in user point the proxy at internal endpoints.
+function isSafeUrl(raw) {
+  let u
+  try { u = new URL(raw) } catch { return false }
+  if (u.protocol !== 'https:' && u.protocol !== 'http:') return false
+  const h = u.hostname.toLowerCase().replace(/^\[|\]$/g, '')
+  if (h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.internal') || h.endsWith('.local')) return false
+  const v4 = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/)
+  if (v4) {
+    const a = +v4[1], b = +v4[2]
+    if (a === 0 || a === 127 || a === 10 || (a === 169 && b === 254) || (a === 192 && b === 168) || (a === 172 && b >= 16 && b <= 31) || a >= 224) return false
+  }
+  if (h === '::1' || h.startsWith('fe80') || h.startsWith('fc') || h.startsWith('fd')) return false
   return true
 }
 
@@ -498,6 +530,7 @@ const ROUTES = {
     if (!apiKey) return new Response(JSON.stringify({ error: 'missing_provider_key' }), { status: 400 })
     const body = await req.json()
     if (!body.source_url) return new Response(JSON.stringify({ error: 'missing_source_url' }), { status: 400 })
+    if (!isSafeUrl(body.source_url)) return new Response(JSON.stringify({ error: 'blocked_url' }), { status: 400 })
     const img = await fetch(body.source_url)
     if (!img.ok) return new Response(JSON.stringify({ error: 'source_fetch_failed' }), { status: 502, headers: { 'Content-Type': 'application/json' } })
     const imgBuf = await img.arrayBuffer()
@@ -519,6 +552,7 @@ const ROUTES = {
     if (!body.instance || !body.status) return new Response(JSON.stringify({ error: 'missing_fields' }), { status: 400 })
     let base
     try { base = new URL(body.instance).origin } catch { return new Response(JSON.stringify({ error: 'bad_instance' }), { status: 400 }) }
+    if (!isSafeUrl(base)) return new Response(JSON.stringify({ error: 'blocked_instance' }), { status: 400 })
     return fetch(`${base}/api/v1/statuses`, {
       method: 'POST',
       headers: { Authorization: auth, 'Content-Type': 'application/json' },
@@ -683,6 +717,7 @@ const ROUTES = {
     if (!apiKey) return new Response(JSON.stringify({ error: 'missing_provider_key' }), { status: 400 })
     const body = await req.json()
     if (!body.image_url) return new Response(JSON.stringify({ error: 'missing_image_url' }), { status: 400 })
+    if (!isSafeUrl(body.image_url)) return new Response(JSON.stringify({ error: 'blocked_url' }), { status: 400 })
     const img = await fetch(body.image_url)
     if (!img.ok) return new Response(JSON.stringify({ error: 'source_fetch_failed' }), { status: 502, headers: { 'Content-Type': 'application/json' } })
     const form = new FormData()
