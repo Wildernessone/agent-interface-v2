@@ -22,14 +22,22 @@ import { toBlobURL, fetchFile } from '@ffmpeg/util'
 // flaky browser-CDN dependency. (We can't ship the 30 MiB wasm as a Pages asset:
 // Cloudflare Pages rejects files >25 MiB.) Public CDNs remain a last-ditch
 // fallback if the worker is unreachable.
+// MUST be the ESM core, not UMD. @ffmpeg/ffmpeg 0.12 creates its class worker as
+// a MODULE worker (`type: "module"`), where importScripts() doesn't exist — so
+// the worker loads the core via `import(coreURL).default`. The UMD build has no
+// default export, so that resolves to undefined and throws ERROR_IMPORT_FAILURE
+// ("failed to import ffmpeg-core.js") in EVERY browser. The ESM build has the
+// proper default export. (This was the real cause of all ad_render failures —
+// not a headless quirk.) The `?core=esm` query busts any stale UMD response a
+// browser/edge cached under the old URL.
 const PROXY = import.meta.env.VITE_PROXY_URL || 'https://claude-proxy.jamesreed.workers.dev'
-const coreAssetURL = `${PROXY}/ffmpeg-core.js`
-const wasmAssetURL = `${PROXY}/ffmpeg-core.wasm`
+const coreAssetURL = `${PROXY}/ffmpeg-core.js?core=esm`
+const wasmAssetURL = `${PROXY}/ffmpeg-core.wasm?core=esm`
 
 const CORE_VERSION = '0.12.10'
 const CORE_BASES = [
-  `https://cdn.jsdelivr.net/npm/@ffmpeg/core@${CORE_VERSION}/dist/umd`,
-  `https://unpkg.com/@ffmpeg/core@${CORE_VERSION}/dist/umd`,
+  `https://cdn.jsdelivr.net/npm/@ffmpeg/core@${CORE_VERSION}/dist/esm`,
+  `https://unpkg.com/@ffmpeg/core@${CORE_VERSION}/dist/esm`,
 ]
 
 let _ffmpeg = null

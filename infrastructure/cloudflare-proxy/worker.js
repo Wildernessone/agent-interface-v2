@@ -107,9 +107,12 @@ export default {
     // is too big to host on Cloudflare Pages (>25 MiB limit). So we serve it from
     // here: fetched from jsDelivr SERVER-SIDE (reliable) and edge-cached, returned
     // from a stable first-party endpoint with long browser cache + CORS.
+    // ESM core (dist/esm), NOT umd — @ffmpeg/ffmpeg 0.12's module worker loads the
+    // core via import().default, which only the ESM build provides. Serving umd
+    // caused "failed to import ffmpeg-core.js" on every render.
     const FFMPEG_CORE = {
-      'ffmpeg-core.js': ['https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/umd/ffmpeg-core.js', 'text/javascript'],
-      'ffmpeg-core.wasm': ['https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/umd/ffmpeg-core.wasm', 'application/wasm'],
+      'ffmpeg-core.js': ['https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm/ffmpeg-core.js', 'text/javascript'],
+      'ffmpeg-core.wasm': ['https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm/ffmpeg-core.wasm', 'application/wasm'],
     }
     if (request.method === 'GET' && FFMPEG_CORE[path]) {
       const [src, mime] = FFMPEG_CORE[path]
