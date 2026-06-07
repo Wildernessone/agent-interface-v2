@@ -1077,12 +1077,22 @@ export default function TheInterface() {
         image = { ...out, regenKind: 'image', regenParam: image.regenParam }
       }
       const finalOut = await TOOLS_BY_ID.ad_render.run({ structuredInput: { images: image, voiceover: voice, music: music || null }, label: turn.deliverable, context: { sourceImageUrl: image.url } })
-      // Swap the regenerated piece + the new video back into the build turn. The
-      // re-stitched video is inline-only (savedLink cleared) — the user can
-      // download it or rebuild to re-save to Drive.
+      // Re-save the revised cut into the SAME build folder so Drive holds the
+      // latest (named "(revised)" so it's distinct from the original). Only if
+      // storage is connected + entitled; otherwise it stays inline like before.
+      let savedLink = null, driveUrl = null
+      const hasStorage = entitlements(billing).storage ? !!(await pickProvider()) : false
+      if (hasStorage) {
+        const buildProject = activeProject
+          ? { ...activeProject, name: `${activeProject.name}/${turn.folderName || turn.deliverable}` }
+          : { id: null, name: turn.folderName || turn.deliverable }
+        const saved = await saveToCloud({ ...finalOut, displayName: `FINAL — ${turn.deliverable} (revised)` }, buildProject).catch(() => null)
+        if (saved) { savedLink = saved.webViewLink || null; driveUrl = saved.webViewLink || null }
+      }
+      // Swap the regenerated piece + the new (re-saved) video back into the turn.
       updateBuildTurn(buildTurnId, {
         files: (fs) => (fs || []).map(f => {
-          if (f.output?.type === 'video') return { ...f, output: { ...finalOut }, savedLink: null }
+          if (f.output?.type === 'video') return { ...f, output: { ...finalOut, driveUrl: driveUrl || undefined }, savedLink }
           if (kind === 'voiceover' && f.output?.regenKind === 'voiceover') return { ...f, output: voice }
           if (kind === 'music' && f.output?.regenKind === 'music') return { ...f, output: music }
           if (kind === 'image' && f.output?.regenKind === 'image') return { ...f, output: image }
