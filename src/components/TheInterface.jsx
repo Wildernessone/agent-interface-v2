@@ -873,7 +873,21 @@ export default function TheInterface() {
     const plan = clawDecision?.plan
     const steps = plan?.steps || []
 
-    if (isBuildOptions) {
+    // Video/promo builds skip the options debate and go STRAIGHT to the agentic
+    // builder (a real tool-call loop). The options step was unreliable for
+    // "assemble a finished MP4" — whichever option got picked kept mis-routing to
+    // the static plan executor. Detect from the user's words, or a plan that
+    // generates an image + a voiceover (and isn't a deck).
+    const wantsVideo = (isBuildMode || isBuildOptions) && (
+      /\b(video|promo|mp4|reel|trailer|clip|spot|advert|commercial)\b/i.test(text || '') ||
+      (steps.some(s => ['dalle', 'stability', 'ideogram', 'flux', 'recraft', 'image_per_slide'].includes(s.tool)) &&
+        steps.some(s => ['elevenlabs', 'openai_tts'].includes(s.tool)) &&
+        !steps.some(s => s.tool === 'pptxgen'))
+    )
+
+    if (wantsVideo) {
+      await executeBuild({ deliverable: plan?.deliverable || 'Promo Video', steps, brandContext: plan?.brandContext || null, request: text })
+    } else if (isBuildOptions) {
       // The panel just debated. Turn that debate into 3-4 concrete build
       // options for the user to choose from (the panel is the product — we do
       // NOT auto-build a single answer). On no options, fall back to the base plan.
