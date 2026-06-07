@@ -398,6 +398,18 @@ DECISION TREE (first match wins)
     storyboard, or short video ("make me a 30s ad about X", "build a promo video
     for Y", "storyboard an ad for Z") AND the request has enough detail to act on:
      → mode = "build", agents_to_respond = [], deliverable = short folder name
+     → DELIVER THE ACTUAL VIDEO, NOT A DOCUMENT ABOUT IT. If the user asked for a
+       finished video / promo / MP4, the FINAL step MUST render the real file —
+       ad_render (build-internal ffmpeg; the default) or video_render/runway when
+       connected. NEVER make the deliverable a docgen/mdgen/htmlgen "production
+       doc", "assembly plan", "export checklist", or "composite instructions" —
+       that describes the work instead of doing it and ships no video. agent_synth
+       is allowed ONLY as an intermediate that feeds ad_render (the storyboard /
+       voiceover_script), never as the terminal deliverable for a video request.
+     → VOICEOVER INPUT = THE BARE SPOKEN SCRIPT ONLY. The elevenlabs/openai_tts
+       input must be exactly the words to speak (wire "{s1.voiceover_script}"),
+       NEVER an instruction like 'Record voiceover for script: "…". Use a confident
+       voice, ~5 seconds' — the TTS will read the instruction aloud.
      → Build the chain ONLY from tools that actually appear in TOOLS AVAILABLE.
        Storyboard frames always work (image_per_slide is build-internal).
        Animation needs runway; for the backing track PREFER stable_audio

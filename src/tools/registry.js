@@ -351,7 +351,22 @@ function spokenTextFrom(structuredInput, prompt) {
     }
   }
   if (!t) t = (typeof structuredInput === 'string' && structuredInput.trim()) || (typeof prompt === 'string' ? prompt : '') || ''
-  return String(t)
+  return unwrapInstruction(String(t))
+}
+
+// The orchestrator sometimes wires a voiceover step's input as a natural-language
+// INSTRUCTION that quotes the script — e.g.  Record voiceover for script: "One
+// prompt. Every angle covered." Use a confident voice, ~5 seconds.  The TTS then
+// reads the whole instruction aloud ("Record voiceover for script…"). When the
+// text reads like such an instruction AND contains a substantial quoted segment,
+// speak only the quote — that's the actual script.
+function unwrapInstruction(text) {
+  if (!text) return text
+  const looksLikeInstruction = /\b(voice\s?over|voiceover|narrat|read (?:the |this|aloud)|record (?:the |a )?voice|say the following|tts|cinematic voice|punchy|seconds)\b/i.test(text)
+  if (!looksLikeInstruction) return text
+  const quotes = [...text.matchAll(/[“”"']([^“”"']{12,}?)[“”"']/g)].map(m => m[1]).filter(Boolean)
+  if (quotes.length) return quotes.sort((a, b) => b.length - a.length)[0].trim()
+  return text
 }
 
 const elevenlabs = {
