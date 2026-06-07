@@ -197,11 +197,15 @@ async function openDriveSession() {
     return res
   }
 
-  return { driveFetch, userId: user.id }
+  return { driveFetch, userId: user.id, rootFolderId: conn.root_folder_id || null }
 }
 
-async function findOrCreateFolder(session, name, parentId = null) {
-  const parentClause = parentId ? ` and '${parentId}' in parents` : ''
+// Find or create a folder. parentId scopes BOTH the search and the create — a
+// folder is only matched/created under that exact parent. (A null parentId used
+// to search GLOBALLY, which is how the root folder kept resolving to a nested
+// "Agent Interface" and burrowed the whole tree deeper on every build.)
+async function findOrCreateFolder(session, name, parentId) {
+  const parentClause = parentId ? ` and '${parentId}' in parents` : ` and 'root' in parents`
   const q = `name='${name.replace(/'/g, "\\'")}' and mimeType='application/vnd.google-apps.folder' and trashed=false${parentClause}`
   const search = await session.driveFetch(
     `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name)`
@@ -210,8 +214,7 @@ async function findOrCreateFolder(session, name, parentId = null) {
   const data = await search.json()
   if (data.files?.[0]?.id) return data.files[0].id
 
-  const body = { name, mimeType: 'application/vnd.google-apps.folder' }
-  if (parentId) body.parents = [parentId]
+  const body = { name, mimeType: 'application/vnd.google-apps.folder', parents: [parentId || 'root'] }
   const create = await session.driveFetch('https://www.googleapis.com/drive/v3/files', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -222,8 +225,26 @@ async function findOrCreateFolder(session, name, parentId = null) {
   return folder.id
 }
 
+const ROOT_FOLDER_NAME = 'Agent Interface'
+
+// Resolve the ONE top-level "Agent Interface" folder. Prefer the cached, stable
+// id (never re-resolve by name — a project can also be named "Agent Interface",
+// so a name search matched nested folders and nested the tree forever). Only
+// fall back to a true-root-scoped find/create, then cache it.
 async function ensureRootFolder(session) {
-  return findOrCreateFolder(session, 'Agent Interface')
+  if (session.rootFolderId) {
+    const r = await session.driveFetch(
+      `https://www.googleapis.com/drive/v3/files/${session.rootFolderId}?fields=id,trashed`
+    )
+    if (r.ok) { const f = await r.json().catch(() => null); if (f?.id && !f.trashed) return session.rootFolderId }
+  }
+  const id = await findOrCreateFolder(session, ROOT_FOLDER_NAME, null) // null → scoped to 'root'
+  try {
+    await supabase.from('storage_connections')
+      .update({ root_folder_id: id })
+      .eq('user_id', session.userId).eq('provider', 'google_drive')
+  } catch { /* cache best-effort */ }
+  return id
 }
 
 /**
@@ -261,7 +282,14 @@ async function ensureProjectFolder(session, rootId, project) {
 
   // Names can be slashed paths for nested build folders, e.g.
   //   "Salt+Pine Coffee Launch/2026-05-26 — Pitch deck"
-  const segments = project.name.split('/').map(s => s.trim()).filter(Boolean)
+  // Drop any segment equal to the app root name — the root folder IS already
+  // "Agent Interface", so a project literally named "Agent Interface" must not
+  // create a redundant "Agent Interface/Agent Interface" nest (and this also
+  // hard-stops the runaway re-nesting that previously happened).
+  const segments = project.name.split('/')
+    .map(s => s.trim())
+    .filter(Boolean)
+    .filter(s => s !== ROOT_FOLDER_NAME)
   if (segments.length === 0) return rootId
 
   if (segments.length === 1 && project?.storage_folder_id) return project.storage_folder_id
