@@ -1788,7 +1788,7 @@ const gcal = {
 // or without org verification. The rest are fallbacks for users who have them.
 const IMAGE_PROVIDER_ORDER = ['dalle', 'stability', 'flux', 'ideogram', 'recraft']
 
-async function generateImageWithFallback({ prompt, structuredInput, settings, proxy }) {
+export async function generateImageWithFallback({ prompt, structuredInput, settings, proxy }) {
   const errors = []
   let anyKey = false
   // Output finishing: if the caller asked for a named spec or explicit

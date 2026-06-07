@@ -23,6 +23,7 @@ import { track } from '../utils/track'
 import { saveToCloud, pickProvider, listStorageConnections } from '../utils/cloudStorage'
 import { TOOLS_BY_ID, ToolError, readKey } from '../tools/registry'
 import { runBuild } from '../utils/buildExecutor'
+import { runAgenticBuild } from '../utils/agenticBuild'
 import { brandBriefFrom } from '../utils/brandContext'
 import { entitlements, capAgents, capTools, capNudge } from '../utils/entitlements'
 import { friendlyError, buildSummary, extractSlideTitles } from '../utils/buildErrors'
@@ -887,7 +888,7 @@ export default function TheInterface() {
       if (options.length) {
         addTurn({ id: `buildopts-${Date.now()}`, type: 'build_options', options, debate, basePlan: clawDecision.base_plan || plan })
       } else if (steps.length > 0) {
-        await executeBuild({ deliverable: plan.deliverable, steps, brandContext: plan.brandContext || null })
+        await executeBuild({ deliverable: plan.deliverable, steps, brandContext: plan.brandContext || null, request: text })
       }
     } else if (clawDecision?.mode === 'build' && steps.length > 0) {
       await executeBuild({ deliverable: plan.deliverable, steps, brandContext: plan.brandContext || null })
@@ -918,32 +919,61 @@ export default function TheInterface() {
   const executeBuild = async (planToRun) => {
     setToolsWorking(true)
     const buildTurnId = `build-${Date.now()}`
-    const cost = estimateBuildCents(planToRun.steps)
+    // Video/promo builds run through the AGENTIC builder (a real tool-call loop)
+    // instead of the static plan executor — far more reliable for "assemble a
+    // finished MP4". The agent decides+fires its own tool calls, so it has no
+    // pre-listed steps (they stream in as it works).
+    const isVideoBuild = /\b(video|promo|mp4|reel|trailer|clip|spot|advert|commercial)\b/i
+      .test(`${planToRun.deliverable || ''} ${planToRun.request || ''}`)
+    const cost = estimateBuildCents(planToRun.steps || [])
     addToolTurn({
       id: buildTurnId,
       type: 'build',
       deliverable: planToRun.deliverable || 'Build',
-      steps: planToRun.steps.map(s => ({ id: s.id, label: s.label, tool: s.tool, status: 'pending' })),
+      steps: isVideoBuild ? [] : (planToRun.steps || []).map(s => ({ id: s.id, label: s.label, tool: s.tool, status: 'pending' })),
       files: [],
       errors: [],
       plan: planToRun,  // stored so Retry can re-run the same plan
       cost,
     })
 
-    // Resolve storage availability once so runBuild can keep outputs inline
+    // Resolve storage availability once so the build can keep outputs inline
     // (instead of failing every file step) when no Drive/Dropbox is connected.
     // Cloud storage is a Standard/Pro entitlement — Free builds stay inline.
     const hasStorage = entitlements(billing).storage ? !!(await pickProvider()) : false
 
-    const result = await runBuild(
-      { ...planToRun, brandContext: planToRun.brandContext || null },
-      { settings, project: activeProject, proxy: proxyFetch, hasStorage },
-      (stepId, status, reason) => {
-        updateBuildTurn(buildTurnId, {
-          steps: (s) => (s || []).map(x => x.id === stepId ? { ...x, status, reason } : x),
-        })
+    let result
+    if (isVideoBuild) {
+      // Agentic builder: steps are added/updated as the agent fires each tool.
+      const addOrUpdate = (id, label, status, reason) => updateBuildTurn(buildTurnId, {
+        steps: (s) => {
+          const arr = s || []
+          const i = arr.findIndex(x => x.id === id)
+          return i < 0
+            ? [...arr, { id, label, tool: id, status, reason }]
+            : arr.map(x => x.id === id ? { ...x, label: label || x.label, status, reason } : x)
+        },
+      })
+      try {
+        result = await runAgenticBuild(
+          { request: planToRun.request || planToRun.deliverable, brandContext: planToRun.brandContext || null, settings, project: activeProject, proxy: proxyFetch, hasStorage },
+          addOrUpdate,
+        )
+      } catch (e) {
+        logError('runAgenticBuild', e)
+        result = { files: [], errors: [{ stepId: '_agent', error: e.message }], folderName: null, folderLink: null, folderProvider: null }
       }
-    )
+    } else {
+      result = await runBuild(
+        { ...planToRun, brandContext: planToRun.brandContext || null },
+        { settings, project: activeProject, proxy: proxyFetch, hasStorage },
+        (stepId, status, reason) => {
+          updateBuildTurn(buildTurnId, {
+            steps: (s) => (s || []).map(x => x.id === stepId ? { ...x, status, reason } : x),
+          })
+        }
+      )
+    }
 
     updateBuildTurn(buildTurnId, {
       files: result.files,

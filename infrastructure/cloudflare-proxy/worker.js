@@ -252,6 +252,11 @@ const ROUTES = {
         model: body.model || 'claude-sonnet-4-6',
         max_tokens: body.max_tokens || 1024,
         messages: body.messages,
+        // Pass through native tool-use fields when present (the agentic builder
+        // drives a real tool-call loop instead of a static plan script).
+        ...(body.system ? { system: body.system } : {}),
+        ...(body.tools ? { tools: body.tools } : {}),
+        ...(body.tool_choice ? { tool_choice: body.tool_choice } : {}),
       }),
     })
   },
