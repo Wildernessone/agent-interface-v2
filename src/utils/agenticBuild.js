@@ -94,14 +94,18 @@ For a short promo video:
 When render_video succeeds, confirm in one short sentence and STOP (no further tool calls).${brandContext ? `\n\nBRAND CONTEXT (ground everything in this; do not contradict it):\n${String(brandContext).slice(0, 1500)}` : ''}`
 
   let messages = [{ role: 'user', content: request || 'Make a short launch promo video.' }]
+  console.log('[agentic] start —', request?.slice(0, 80))
   for (let turn = 0; turn < 14; turn++) {
-    const res = await proxy('claude', { model: MODEL, max_tokens: 1500, system, messages, tools: VIDEO_TOOLS }, { 'x-api-key': claudeKey })
-    if (!res.ok) { errors.push({ stepId: '_agent', error: `claude_${res.status}` }); break }
+    const res = await proxy('claude', { model: MODEL, max_tokens: 4096, system, messages, tools: VIDEO_TOOLS }, { 'x-api-key': claudeKey })
+    if (!res.ok) { console.error('[agentic] claude not ok', res.status); errors.push({ stepId: '_agent', error: `claude_${res.status}` }); break }
     const data = await res.json().catch(() => ({}))
     const content = data.content || []
     messages.push({ role: 'assistant', content })
     const toolUses = content.filter(c => c.type === 'tool_use')
-    if (data.stop_reason !== 'tool_use' || !toolUses.length) break
+    console.log(`[agentic] turn ${turn}: stop=${data.stop_reason} tools=[${toolUses.map(t => t.name).join(',')}]`)
+    // Execute whenever the model emitted tool calls — even if it also hit the
+    // token cap (stop_reason 'max_tokens'). Only stop when there are NO tools.
+    if (!toolUses.length) break
     const results = []
     for (const tu of toolUses) {
       try {
@@ -109,6 +113,7 @@ When render_video succeeds, confirm in one short sentence and STOP (no further t
         if (r.status === 'error') errors.push({ stepId: tu.name, error: r.note })
         results.push({ type: 'tool_result', tool_use_id: tu.id, content: JSON.stringify(r) })
       } catch (e) {
+        console.error('[agentic] tool error', tu.name, e?.message)
         onStep(tu.name, tu.name, 'failed', e.message)
         errors.push({ stepId: tu.name, error: e.message })
         results.push({ type: 'tool_result', tool_use_id: tu.id, content: `error: ${e.message}`, is_error: true })
@@ -116,6 +121,28 @@ When render_video succeeds, confirm in one short sentence and STOP (no further t
     }
     messages.push({ role: 'user', content: results })
     if (store.final_video) break
+  }
+
+  // DETERMINISTIC FINISHER — if the agent produced an image + voiceover but
+  // never called render_video (it "described" finishing, or ran out of turns),
+  // assemble the MP4 ourselves so a finished video ALWAYS results.
+  if (!store.final_video) {
+    const last = (k) => Object.keys(store).filter(id => id.startsWith(k)).pop()
+    const img = store[last('image_')], vo = store[last('voiceover_')], mu = store[last('music_')]
+    console.log('[agentic] post-loop, final_video?', !!store.final_video, 'img?', !!img, 'vo?', !!vo)
+    if (img?.url && vo?.url) {
+      try {
+        onStep('render_video', 'Render the finished MP4', 'started')
+        const out = await TOOLS_BY_ID.ad_render.run({ structuredInput: { images: img, voiceover: vo, music: mu || null }, label: deliverable, context: { sourceImageUrl: img.url } })
+        store.final_video = out
+        onStep('render_video', 'Render the finished MP4', 'done')
+        console.log('[agentic] auto-render OK')
+      } catch (e) {
+        console.error('[agentic] auto-render failed', e?.message)
+        onStep('render_video', 'Render the finished MP4', 'failed', e.message)
+        errors.push({ stepId: 'render_video', error: e.message })
+      }
+    }
   }
 
   // Save: finished video = FINAL deliverable; the generated pieces = reusable components.
@@ -135,5 +162,6 @@ When render_video succeeds, confirm in one short sentence and STOP (no further t
     await saveOne(out, id.replace(/_/g, ' '), componentsProject, false)
   }
 
+  console.log('[agentic] DONE — files:', files.length, 'errors:', JSON.stringify(errors))
   return { deliverable, folderName, files, errors, folderLink, folderProvider, agentic: true }
 }
