@@ -1048,34 +1048,49 @@ export default function TheInterface() {
     const turn = useStore.getState().turns.find(t => t.id === buildTurnId)
     if (!turn) return
     const files = turn.files || []
-    const videoFile = files.find(f => f.output?.type === 'video' && f.output?.url)
-    const comp = (k) => files.find(f => f.output?.regenKind === k && f.output?.url)
-    let image = comp('image')?.output
-    let voice = comp('voiceover')?.output
-    let music = comp('music')?.output
-    if (!videoFile || !image?.url || !voice?.url) {
-      addToolErrorTurn('regenerate', 'unavailable', "The original pieces aren't in memory anymore (they're cleared on reload) — rebuild to make changes.")
+    const videoFile = files.find(f => f.output?.type === 'video')
+    const comp = (k) => files.find(f => f.output?.regenKind === k)?.output || null
+    const image0 = comp('image'), voice0 = comp('voiceover'), music0 = comp('music')
+    // regenParam (the prompt/script) survives persistence — only the heavy media
+    // url is stripped on save/reload — so we can always reconstruct from it.
+    if (!videoFile || !image0?.regenParam || !voice0?.regenParam) {
+      addToolErrorTurn('regenerate', 'unavailable', "This build can't be revised — rebuild it instead.")
       return
     }
     setToolsWorking(true)
     try {
-      if (kind === 'voiceover') {
+      // For each piece: keep the inline original if its url is still in memory,
+      // else re-make it from its saved prompt. `force` always re-makes (the piece
+      // the user asked to redo). This is what lets regen survive a page reload:
+      // the "unchanged" pieces are reconstructed from their prompts when their
+      // urls were dropped on save.
+      const ensureImage = async (force) => {
+        if (!force && image0?.url) return image0
+        const out = await generateImageWithFallback({ prompt: image0.regenParam, structuredInput: { prompt: image0.regenParam }, settings, proxy: proxyFetch })
+        return { ...out, regenKind: 'image', regenParam: image0.regenParam }
+      }
+      const ensureVoice = async (force) => {
+        if (!force && voice0?.url) return voice0
         const elevenKey = readKey(settings, 'tool_keys.elevenlabs')
         const tool = elevenKey ? TOOLS_BY_ID.elevenlabs : TOOLS_BY_ID.openai_tts
         const key = elevenKey || readKey(settings, 'agent.gpt')
         if (!key) throw new Error('Add an ElevenLabs or OpenAI key to regenerate the voiceover.')
-        const out = await tool.run({ prompt: voice.regenParam, structuredInput: { text: voice.regenParam }, key, proxy: proxyFetch, settings })
-        voice = { ...out, regenKind: 'voiceover', regenParam: voice.regenParam }
-      } else if (kind === 'music') {
-        const key = readKey(settings, 'tool_keys.stability')
-        if (!key) throw new Error('Add a Stability key to regenerate the music.')
-        const prompt = music?.regenParam || 'instrumental backing track, no vocals'
-        const out = await TOOLS_BY_ID.stable_audio.run({ prompt, structuredInput: { prompt, duration: music?.regenDuration || 15 }, key, proxy: proxyFetch })
-        music = { ...out, regenKind: 'music', regenParam: prompt }
-      } else if (kind === 'image') {
-        const out = await generateImageWithFallback({ prompt: image.regenParam, structuredInput: { prompt: image.regenParam }, settings, proxy: proxyFetch })
-        image = { ...out, regenKind: 'image', regenParam: image.regenParam }
+        const out = await tool.run({ prompt: voice0.regenParam, structuredInput: { text: voice0.regenParam }, key, proxy: proxyFetch, settings })
+        return { ...out, regenKind: 'voiceover', regenParam: voice0.regenParam }
       }
+      const ensureMusic = async (force) => {
+        if (!music0) return null
+        if (!force && music0?.url) return music0
+        const key = readKey(settings, 'tool_keys.stability')
+        if (!key) return music0?.url ? music0 : null   // can't re-make without a key
+        const prompt = music0.regenParam || 'instrumental backing track, no vocals'
+        const out = await TOOLS_BY_ID.stable_audio.run({ prompt, structuredInput: { prompt, duration: music0.regenDuration || 15 }, key, proxy: proxyFetch })
+        return { ...out, regenKind: 'music', regenParam: prompt, regenDuration: music0.regenDuration || 15 }
+      }
+      const image = await ensureImage(kind === 'image')
+      const voice = await ensureVoice(kind === 'voiceover')
+      const music = await ensureMusic(kind === 'music')
+      if (!image?.url || !voice?.url) throw new Error("Couldn't prepare the pieces to re-render.")
       const finalOut = await TOOLS_BY_ID.ad_render.run({ structuredInput: { images: image, voiceover: voice, music: music || null }, label: turn.deliverable, context: { sourceImageUrl: image.url } })
       // Re-save the revised cut into the SAME build folder so Drive holds the
       // latest (named "(revised)" so it's distinct from the original). Only if
@@ -1093,9 +1108,9 @@ export default function TheInterface() {
       updateBuildTurn(buildTurnId, {
         files: (fs) => (fs || []).map(f => {
           if (f.output?.type === 'video') return { ...f, output: { ...finalOut, driveUrl: driveUrl || undefined }, savedLink }
-          if (kind === 'voiceover' && f.output?.regenKind === 'voiceover') return { ...f, output: voice }
-          if (kind === 'music' && f.output?.regenKind === 'music') return { ...f, output: music }
-          if (kind === 'image' && f.output?.regenKind === 'image') return { ...f, output: image }
+          if (f.output?.regenKind === 'voiceover') return { ...f, output: voice }
+          if (f.output?.regenKind === 'music' && music) return { ...f, output: music }
+          if (f.output?.regenKind === 'image') return { ...f, output: image }
           return f
         }),
       })
@@ -1635,8 +1650,8 @@ const TurnRow = memo(function TurnRow({ turn, isActive, busy, onRetryLast, onExe
                     rebuild. Only for a finished video whose pieces are still in
                     memory (cleared on reload). Voiceover redo picks up the
                     current Settings → Narrator voice. */}
-                {done && turn.files?.some(f => f.output?.type === 'video' && f.output?.url) && (() => {
-                  const has = (k) => turn.files?.some(f => f.output?.regenKind === k && f.output?.url)
+                {done && turn.files?.some(f => f.output?.type === 'video') && (() => {
+                  const has = (k) => turn.files?.some(f => f.output?.regenKind === k && f.output?.regenParam)
                   const btns = [
                     has('voiceover') && { k: 'voiceover', label: 'voiceover', hint: 'Re-records the voiceover — set a different voice in Settings → Narrator voice first' },
                     has('music') && { k: 'music', label: 'music', hint: 'Generates a fresh backing track' },
