@@ -968,6 +968,7 @@ export default function TheInterface() {
           addOrUpdate,
         )
       } catch (e) {
+        console.error('[agentic] executeBuild threw:', e?.stack || e)
         logError('runAgenticBuild', e)
         result = { files: [], errors: [{ stepId: '_agent', error: e.message }], folderName: null, folderLink: null, folderProvider: null }
       }
