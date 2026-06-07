@@ -46,7 +46,7 @@ export default function App() {
           await new Promise(r => setTimeout(r, ms))
           if (cancelled) return
           await loadSettings()
-          if (useStore.getState().settings?.subscription_status === 'active') return
+          if (useStore.getState().billing?.subscription_status === 'active') return
         }
       })()
     }
