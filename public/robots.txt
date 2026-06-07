@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+
+# App + auth routes hold no indexable marketing content
+Disallow: /app
+Disallow: /login
+
+Sitemap: https://agentinterface.app/sitemap.xml
