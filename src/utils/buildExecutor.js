@@ -241,6 +241,26 @@ export async function runBuild(plan, ctx, onStep = () => {}) {
   // it as a Markdown document so it's readable inline and downloadable.
   const consumedStepIds = new Set((plan.steps || []).flatMap(s => s.needs || []))
 
+  // Build output organization. A step whose output ANOTHER step consumes is a
+  // reusable COMPONENT (a frame, a voiceover, a backing track); a TERMINAL step
+  // (nothing consumes it) is a finished DELIVERABLE. Deliverables save at the
+  // build-folder root with a clear "FINAL — …" name; components go in a
+  // components/ subfolder with readable names. The folder reads as a kit — the
+  // finished product on top, every reusable piece preserved underneath, so you
+  // can regenerate one part and reassemble without rebuilding everything.
+  const componentsProject = buildProject ? { ...buildProject, name: `${buildProject.name}/components` } : buildProject
+  const isComponent = (id) => consumedStepIds.has(id)
+  const cleanName = (s) => String(s || '').replace(/[<>:"/\\|?*]/g, '').replace(/\s+/g, ' ').slice(0, 80).trim()
+  const finalName = (label) => `FINAL — ${cleanName(label) || 'deliverable'}`
+  let componentsFolderLink = null
+  // Capture the build-ROOT folder link from a deliverable save; fall back to the
+  // components subfolder only if a build produced components but no deliverable.
+  const captureLink = (saved, component) => {
+    if (!saved?.folderLink) return
+    if (component) { if (!componentsFolderLink) componentsFolderLink = saved.folderLink }
+    else if (!folderLink) { folderLink = saved.folderLink; folderProvider = saved.provider }
+  }
+
   // Surface an agent_synth step's content as a readable + downloadable Markdown
   // deliverable (inline preview + .md). Used for a TERMINAL synth (no generator
   // after it) AND as a RESCUE when a synth's generator step failed — so
@@ -261,11 +281,12 @@ export async function runBuild(plan, ctx, onStep = () => {}) {
     }
     let saved = null
     if (hasStorage) {
-      saved = await saveToCloud(doc, buildProject)
-      if (saved && !folderLink && saved.folderLink) {
-        folderLink = saved.folderLink
-        folderProvider = saved.provider
-      }
+      const component = isComponent(step.id)
+      saved = await saveToCloud(
+        { ...doc, displayName: component ? cleanName(step.label || step.id) : finalName(step.label || plan.deliverable) },
+        component ? componentsProject : buildProject,
+      )
+      captureLink(saved, component)
     }
     files.push({
       stepId: step.id,
@@ -343,10 +364,12 @@ export async function runBuild(plan, ctx, onStep = () => {}) {
           // stepOutputs[step.id] already holds the raw output (set above), so
           // downstream steps interpolate the data: URL directly.
         } else {
+          const component = isComponent(step.id)
           const saved = await saveToCloud({
             ...output,
             prompt: step.label || output.prompt || step.id,
-          }, buildProject)
+            displayName: component ? cleanName(step.label || step.id) : finalName(step.label || plan.deliverable),
+          }, component ? componentsProject : buildProject)
 
           // Silent save failure was a real bug — if the cloud save didn't
           // land (and storage IS connected), the step is NOT done. Mark it
@@ -364,13 +387,11 @@ export async function runBuild(plan, ctx, onStep = () => {}) {
             output,
             savedLink: saved.webViewLink || null,
             savedProvider: saved.provider || null,
+            component,
           })
-          // First successful save tells us where the build folder lives —
-          // capture for the folder link UI.
-          if (!folderLink && saved.folderLink) {
-            folderLink = saved.folderLink
-            folderProvider = saved.provider
-          }
+          // First successful deliverable save tells us where the build folder
+          // lives — capture for the folder link UI.
+          captureLink(saved, component)
           // Merge savedLink back into the cached output so downstream steps
           // can reference {step.savedLink} in their interpolated input.
           stepOutputs[step.id] = { ...output, savedLink: saved.webViewLink, savedProvider: saved.provider }
@@ -397,22 +418,23 @@ export async function runBuild(plan, ctx, onStep = () => {}) {
       } else if (bundleType && Array.isArray(output.files)) {
         const savedLinks = []
         let anySaved = false
+        // A bundle (per-slide frames, per-slide narration) is almost always a
+        // reusable component feeding a later assembler (ad_render/pptxgen), so
+        // it goes in components/. Each child keeps a clean, readable name.
+        const component = isComponent(step.id)
+        const target = component ? componentsProject : buildProject
+        output.files.forEach((c, i) => { if (!c.error && !c.displayName) c.displayName = cleanName((c.filename || `${step.label || step.id}-${i + 1}`).replace(/\.[a-z0-9]+$/i, '')) })
         for (const child of output.files) {
           if (child.error) continue
           const saved = await saveToCloud({
             type: bundleType,
             url: child.url,
             filename: child.filename,
+            displayName: child.displayName,
             tool: output.tool,
             prompt: `${step.label || step.id} — ${child.filename}`,
-          }, buildProject)
-          if (saved) {
-            anySaved = true
-            if (!folderLink && saved.folderLink) {
-              folderLink = saved.folderLink
-              folderProvider = saved.provider
-            }
-          }
+          }, target)
+          if (saved) { anySaved = true; captureLink(saved, component) }
           savedLinks.push(saved?.webViewLink || null)
         }
         if (!anySaved) {
@@ -502,7 +524,10 @@ export async function runBuild(plan, ctx, onStep = () => {}) {
     files,
     errors,
     stepOutputs,
-    folderLink,
+    // Prefer the build-root link; if a build only produced components (e.g. its
+    // assembler failed), fall back to the components folder so the parts are
+    // still reachable.
+    folderLink: folderLink || componentsFolderLink,
     folderProvider,
   }
 }
