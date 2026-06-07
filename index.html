@@ -4,7 +4,11 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Agent Interface — One interface. All your AI.</title>
-    <meta name="description" content="A panel of the world's best AI models — debating, disagreeing, and shipping finished work straight to your Drive. Not a single chatbot. A roundtable. Bring your own keys, zero markup." />
+    <meta name="description" content="A panel of the best AI models — Claude, GPT, Gemini, Grok — that debate your request and ship finished decks, docs, and videos to your Drive. Bring your own keys, zero markup." />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <meta name="author" content="Wilderness One LLC" />
+    <meta name="application-name" content="Agent Interface" />
+    <meta name="keywords" content="AI panel, multi-agent AI, Claude, ChatGPT, Gemini, Grok, AI workspace, bring your own keys, BYOK AI, AI deck generator, AI document builder" />
     <link rel="canonical" href="https://agentinterface.app/" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 
@@ -19,17 +23,88 @@
 
     <!-- Open Graph -->
     <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Agent Interface" />
+    <meta property="og:locale" content="en_US" />
     <meta property="og:title" content="Agent Interface — One interface. All your AI." />
-    <meta property="og:description" content="A panel of the world's best AI models — debating, disagreeing, and shipping finished work straight to your Drive." />
+    <meta property="og:description" content="A panel of the best AI models — debating, disagreeing, and shipping finished decks, docs, and videos straight to your Drive." />
     <meta property="og:url" content="https://agentinterface.app/" />
     <meta property="og:image" content="https://agentinterface.app/og-image.png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Agent Interface — the AI panel that ships finished work" />
     <!-- Twitter -->
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Agent Interface — One interface. All your AI." />
-    <meta name="twitter:description" content="A panel of the world's best AI models, debating and shipping finished work to your Drive." />
+    <meta name="twitter:description" content="A panel of the best AI models, debating and shipping finished work to your Drive." />
     <meta name="twitter:image" content="https://agentinterface.app/og-image.png" />
+    <meta name="twitter:image:alt" content="Agent Interface — the AI panel that ships finished work" />
+
+    <!-- Structured data: rich-result signals for the product, brand, and FAQ -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "SoftwareApplication",
+          "name": "Agent Interface",
+          "applicationCategory": "BusinessApplication",
+          "operatingSystem": "Web, iOS, Android",
+          "url": "https://agentinterface.app/",
+          "description": "A panel of the best AI models — Claude, GPT, Gemini, and Grok — that debate your request and ship finished decks, docs, spreadsheets, and videos straight to your Drive. Bring your own API keys with zero markup.",
+          "image": "https://agentinterface.app/og-image.png",
+          "offers": [
+            { "@type": "Offer", "name": "Pro", "price": "25.00", "priceCurrency": "USD", "category": "subscription" },
+            { "@type": "Offer", "name": "Standard", "price": "10.00", "priceCurrency": "USD", "category": "subscription" },
+            { "@type": "Offer", "name": "Free", "price": "0.00", "priceCurrency": "USD", "category": "subscription" }
+          ],
+          "featureList": [
+            "Multi-agent AI panel that debates before it answers",
+            "Ships finished decks, documents, spreadsheets, and videos",
+            "Saves deliverables straight to Google Drive",
+            "Bring your own API keys — providers bill you direct, zero markup"
+          ],
+          "publisher": { "@type": "Organization", "name": "Wilderness One LLC" }
+        },
+        {
+          "@type": "Organization",
+          "name": "Wilderness One LLC",
+          "url": "https://agentinterface.app/",
+          "logo": "https://agentinterface.app/icons/icon-192.png",
+          "brand": "Agent Interface",
+          "contactPoint": {
+            "@type": "ContactPoint",
+            "contactType": "customer support",
+            "email": "support@agentinterface.app"
+          }
+        },
+        {
+          "@type": "FAQPage",
+          "mainEntity": [
+            {
+              "@type": "Question",
+              "name": "What is Agent Interface?",
+              "acceptedAnswer": { "@type": "Answer", "text": "Agent Interface is a multi-agent AI workspace. Instead of one chatbot, a panel of the best models — Claude, GPT, Gemini, and Grok — debate and disagree about your request, then build the finished deliverable and save it to your Drive." }
+            },
+            {
+              "@type": "Question",
+              "name": "What can it build?",
+              "acceptedAnswer": { "@type": "Answer", "text": "Tell it what you want and it builds it: pitch decks and PowerPoint, documents and reports, spreadsheets, PDFs, blog posts, and promo videos — real finished files, not descriptions." }
+            },
+            {
+              "@type": "Question",
+              "name": "What does \"bring your own keys\" mean?",
+              "acceptedAnswer": { "@type": "Answer", "text": "You connect your own AI provider API keys. The providers bill you directly at their rates and Agent Interface takes zero markup — you own your data and your bills from day one." }
+            },
+            {
+              "@type": "Question",
+              "name": "How much does Agent Interface cost?",
+              "acceptedAnswer": { "@type": "Answer", "text": "Pro is $25/month for every agent and tool, Standard is $10/month, and there is a Free plan. Every plan starts with a 20-day free trial and no credit card required." }
+            }
+          ]
+        }
+      ]
+    }
+    </script>
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

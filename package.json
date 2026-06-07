@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && node scripts/prerender.mjs",
+    "prerender": "node scripts/prerender.mjs",
     "lint": "eslint .",
     "smoke": "node scripts/smoke.mjs",
     "smoke:brandgate": "node scripts/smoke-brand-gate.mjs",
