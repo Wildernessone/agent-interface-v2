@@ -500,6 +500,7 @@ BUILD-INTERNAL TOOLS (always available in build mode):
 - mdgen ({title,sections[],frontmatter?} → .md — blog post with YAML frontmatter)
 - codezip ({files:[{path,content}]} → .zip — multi-file code project, nested paths OK)
 - image_per_slide ({slides[{title,prompt?}], style?, size?'square'|'wide'|'tall'} → one image per slide as a bundle)
+- IMAGE OUTPUT SPEC: any image step (dalle, image_per_slide) may add output_spec to get an EXACT, ready-to-use size instead of a model-native one. Use it for store/social assets: 'app_icon' (1024²), 'play_feature' (1024×500), 'play_screenshot'/'instagram_story' (1080×1920), 'ios_screenshot_67' (1290×2796), 'og_image' (1200×630), 'square_1080', 'youtube_thumb' (1280×720), 'twitter_card' (1600×900). Or pass dimensions:{w,h,fit:'cover'|'contain'}. e.g. {"prompt":"...","output_spec":"play_feature"}.
 - narrate_per_slide (slides[] → per-slide audio with timing; accepts provider:'elevenlabs'|'openai')
 - openai_tts ({text, voice?:'nova'|'alloy'|'echo'|'fable'|'onyx'|'shimmer'} → audio file; use when ElevenLabs is unavailable or user says "use OpenAI voice")
 - stable_audio ({prompt, duration?:1-190} → instrumental music track up to 190s, royalty-free; PREFER for ad backing tracks, ambient, video music)

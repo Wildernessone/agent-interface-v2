@@ -39,6 +39,7 @@
  */
 
 import { modelFor } from '../config/models'
+import { resolveSpec, bestGenSize, fitImageToSpec } from '../utils/imageFinish'
 
 export class ToolError extends Error {
   constructor(toolId, errorType, message) {
@@ -1761,6 +1762,14 @@ const IMAGE_PROVIDER_ORDER = ['dalle', 'stability', 'flux', 'ideogram', 'recraft
 async function generateImageWithFallback({ prompt, structuredInput, settings, proxy }) {
   const errors = []
   let anyKey = false
+  // Output finishing: if the caller asked for a named spec or explicit
+  // dimensions (output_spec: 'play_feature' | dimensions: {w,h,fit}), generate
+  // at the closest aspect, then size the result to the EXACT spec so the build
+  // outputs a ready-to-use asset, not a model-native size to crop by hand.
+  const spec = resolveSpec(structuredInput?.output_spec || structuredInput?.dimensions)
+  const genInput = (spec && structuredInput && typeof structuredInput === 'object' && !structuredInput.size)
+    ? { ...structuredInput, size: bestGenSize(spec) }
+    : structuredInput
   for (const id of IMAGE_PROVIDER_ORDER) {
     const tool = TOOLS_BY_ID[id]
     const key = readKey(settings, tool?.keySource)
@@ -1771,9 +1780,15 @@ async function generateImageWithFallback({ prompt, structuredInput, settings, pr
       // dalle tool's run() (which itself delegates here). Other providers have
       // no fallback wrapper, so calling their run() directly is safe.
       const out = id === 'dalle'
-        ? await dalleGenerateOnce({ prompt, structuredInput, key, proxy })
-        : await tool.run({ prompt, structuredInput, key, proxy, settings })
-      if (out?.url) return { ...out, provider: id, fellBackFrom: errors.map(e => e.id) }
+        ? await dalleGenerateOnce({ prompt, structuredInput: genInput, key, proxy })
+        : await tool.run({ prompt, structuredInput: genInput, key, proxy, settings })
+      if (out?.url) {
+        const url = spec ? await fitImageToSpec(out.url, spec) : out.url
+        return {
+          ...out, url, provider: id, fellBackFrom: errors.map(e => e.id),
+          ...(spec ? { meta: { ...(out.meta || {}), output_spec: `${spec.w}x${spec.h}` } } : {}),
+        }
+      }
       errors.push({ id, error: 'no image returned' })
     } catch (e) {
       errors.push({ id, error: e?.message || String(e) })
@@ -1863,7 +1878,7 @@ const imagePerSlide = {
         // the org-verification fix AND survives a single provider being broke.
         const out = await generateImageWithFallback({
           prompt: promptText,
-          structuredInput: { prompt: promptText, size, quality: 'high' },
+          structuredInput: { prompt: promptText, size, quality: 'high', output_spec: data?.output_spec, dimensions: data?.dimensions },
           settings: effSettings,
           proxy,
         })
