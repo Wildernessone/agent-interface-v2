@@ -42,7 +42,7 @@ export async function pickProvider() {
 
     const [{ data: settings }, { data: conns }] = await Promise.all([
       supabase.from('user_settings').select('primary_storage_provider').eq('user_id', user.id).maybeSingle(),
-      supabase.from('storage_connections').select('provider, access_token').eq('user_id', user.id),
+      supabase.rpc('get_storage_connections'),
     ])
 
     const connectedProviders = (conns || []).filter(c => c.access_token).map(c => c.provider)
@@ -69,8 +69,7 @@ export async function listStorageConnections() {
   try {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return []
-    const { data: conns } = await supabase.from('storage_connections')
-      .select('provider, access_token').eq('user_id', user.id)
+    const { data: conns } = await supabase.rpc('get_storage_connections')
     return (conns || []).filter(c => c.access_token).map(c => c.provider)
   } catch {
     return []
