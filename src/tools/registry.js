@@ -1141,21 +1141,42 @@ const pptxgen = {
       throw new ToolError('pptxgen', 'no_input', 'pptxgen needs a slides[] array')
     }
 
+    // pptxgenjs addImage needs base64 `data` or a fetchable `path`. Generated
+    // images arrive as blob: URLs (in-browser) or remote/data URLs — normalize
+    // any of them to an {data} | {path} arg so a deck can carry real visuals.
+    const toImageArg = async (src) => {
+      if (!src || typeof src !== 'string') return null
+      if (src.startsWith('data:')) return { data: src }
+      if (src.startsWith('blob:')) {
+        try {
+          const blob = await (await fetch(src)).blob()
+          const data = await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = rej; fr.readAsDataURL(blob) })
+          return { data }
+        } catch { return null }
+      }
+      return { path: src }   // http(s) — pptxgenjs fetches at write time
+    }
+
     const pres = new PptxGenJS()
     pres.layout = 'LAYOUT_WIDE'
     for (const s of slides) {
       const slide = pres.addSlide()
+      const img = await toImageArg(s.image)
+      const textW = img ? 6.8 : 12   // shrink text column when a visual is present
       if (s.title) {
         slide.addText(s.title, {
-          x: 0.5, y: 0.4, w: 12, h: 1,
+          x: 0.5, y: 0.4, w: textW, h: 1,
           fontSize: 32, bold: true, color: '0E0F12',
         })
       }
       if (Array.isArray(s.bullets) && s.bullets.length) {
         slide.addText(
           s.bullets.map(b => ({ text: b, options: { bullet: true } })),
-          { x: 0.7, y: 1.6, w: 11.5, h: 5, fontSize: 20, color: '263238' }
+          { x: 0.7, y: 1.6, w: textW - 0.5, h: 5, fontSize: 20, color: '263238' }
         )
+      }
+      if (img) {
+        slide.addImage({ ...img, x: 7.6, y: 1.4, w: 5.3, h: 4.6, sizing: { type: 'contain', w: 5.3, h: 4.6 } })
       }
       if (s.notes) {
         slide.addNotes(s.notes)

@@ -873,20 +873,22 @@ export default function TheInterface() {
     const plan = clawDecision?.plan
     const steps = plan?.steps || []
 
-    // Video/promo builds skip the options debate and go STRAIGHT to the agentic
-    // builder (a real tool-call loop). The options step was unreliable for
-    // "assemble a finished MP4" — whichever option got picked kept mis-routing to
-    // the static plan executor. Detect from the user's words, or a plan that
-    // generates an image + a voiceover (and isn't a deck).
-    const wantsVideo = (isBuildMode || isBuildOptions) && (
-      /\b(video|promo|mp4|reel|trailer|clip|spot|advert|commercial)\b/i.test(text || '') ||
+    // A concrete "build me X" (a finished video, deck, doc, spreadsheet, pdf,
+    // post) skips the options debate and goes STRAIGHT to the agentic builder (a
+    // real tool-call loop) — that fulfills "tell it what you want and it builds
+    // it". The options step was unreliable for finished files (whichever option
+    // got picked mis-routed to the static plan executor). Detect from the user's
+    // words, or a plan that already includes a document/video generator.
+    const _docToolIds = ['pptxgen', 'docgen', 'xlsxgen', 'pdfgen', 'mdgen']
+    const wantsDirectBuild = (isBuildMode || isBuildOptions) && (
+      /\b(video|promo|mp4|reel|trailer|clip|spot|advert|commercial|deck|slides?|powerpoint|presentation|pitch|keynote|document|report|one[- ]?pager|whitepaper|memo|proposal|spreadsheet|excel|workbook|budget|pdf|blog post|article|newsletter)\b/i.test(text || '') ||
+      steps.some(s => _docToolIds.includes(s.tool)) ||
       (steps.some(s => ['dalle', 'stability', 'ideogram', 'flux', 'recraft', 'image_per_slide'].includes(s.tool)) &&
-        steps.some(s => ['elevenlabs', 'openai_tts'].includes(s.tool)) &&
-        !steps.some(s => s.tool === 'pptxgen'))
+        steps.some(s => ['elevenlabs', 'openai_tts'].includes(s.tool)))
     )
 
-    if (wantsVideo) {
-      await executeBuild({ deliverable: plan?.deliverable || 'Promo Video', steps, brandContext: plan?.brandContext || null, request: text })
+    if (wantsDirectBuild) {
+      await executeBuild({ deliverable: plan?.deliverable || 'Build', steps, brandContext: plan?.brandContext || null, request: text })
     } else if (isBuildOptions) {
       // The panel just debated. Turn that debate into 3-4 concrete build
       // options for the user to choose from (the panel is the product — we do
@@ -933,26 +935,32 @@ export default function TheInterface() {
   const executeBuild = async (planToRun) => {
     setToolsWorking(true)
     const buildTurnId = `build-${Date.now()}`
-    // Video/promo builds run through the AGENTIC builder (a real tool-call loop)
-    // instead of the static plan executor — far more reliable for "assemble a
-    // finished MP4". The agent decides+fires its own tool calls, so it has no
-    // pre-listed steps (they stream in as it works). Detect by intent words OR,
-    // robustly, by plan CONTENT: any build that generates an image AND a
-    // voiceover is a promo/video (the orchestrator's deliverable name is too
-    // unreliable to depend on — that's how this kept routing to the static path).
+    // Real deliverables (deck, doc, spreadsheet, pdf, post, promo video) run
+    // through the AGENTIC builder (a real tool-call loop) instead of the static
+    // plan executor — far more reliable: the agent writes the real content and
+    // fires the FINAL tool that emits the actual file, fulfilling "tell it what
+    // you want and it builds it". The agent decides+fires its own tool calls, so
+    // it has no pre-listed steps (they stream in as it works). Detect by plan
+    // CONTENT (a document/video generator step) OR intent words — the
+    // orchestrator's deliverable name alone is too unreliable to depend on.
     const _steps = planToRun.steps || []
+    const _docTools = ['pptxgen', 'docgen', 'xlsxgen', 'pdfgen', 'mdgen']
     const _hasImage = _steps.some(s => ['dalle', 'stability', 'ideogram', 'flux', 'recraft', 'image_per_slide'].includes(s.tool))
     const _hasVoice = _steps.some(s => ['elevenlabs', 'openai_tts'].includes(s.tool))
-    const _isDeck = _steps.some(s => ['pptxgen'].includes(s.tool))
+    const _hasDoc = _steps.some(s => _docTools.includes(s.tool))
+    const _text = `${planToRun.deliverable || ''} ${planToRun.request || ''}`
     const isVideoBuild =
-      /\b(video|promo|mp4|reel|trailer|clip|spot|advert|commercial)\b/i.test(`${planToRun.deliverable || ''} ${planToRun.request || ''}`) ||
-      (_hasImage && _hasVoice && !_isDeck)
+      /\b(video|promo|mp4|reel|trailer|clip|spot|advert|commercial)\b/i.test(_text) ||
+      (_hasImage && _hasVoice && !_hasDoc)
+    // The agentic builder owns any build whose deliverable is a finished file.
+    const isAgentic = isVideoBuild || _hasDoc ||
+      /\b(deck|slides?|powerpoint|presentation|pitch|keynote|document|report|one[- ]?pager|brief|whitepaper|memo|letter|proposal|spreadsheet|excel|workbook|budget|pdf|blog post|article|newsletter)\b/i.test(_text)
     const cost = estimateBuildCents(planToRun.steps || [])
     addToolTurn({
       id: buildTurnId,
       type: 'build',
       deliverable: planToRun.deliverable || 'Build',
-      steps: isVideoBuild ? [] : (planToRun.steps || []).map(s => ({ id: s.id, label: s.label, tool: s.tool, status: 'pending' })),
+      steps: isAgentic ? [] : (planToRun.steps || []).map(s => ({ id: s.id, label: s.label, tool: s.tool, status: 'pending' })),
       files: [],
       errors: [],
       plan: planToRun,  // stored so Retry can re-run the same plan
@@ -965,7 +973,7 @@ export default function TheInterface() {
     const hasStorage = entitlements(billing).storage ? !!(await pickProvider()) : false
 
     let result
-    if (isVideoBuild) {
+    if (isAgentic) {
       // Agentic builder: steps are added/updated as the agent fires each tool.
       const addOrUpdate = (id, label, status, reason) => updateBuildTurn(buildTurnId, {
         steps: (s) => {
@@ -978,7 +986,7 @@ export default function TheInterface() {
       })
       try {
         result = await runAgenticBuild(
-          { request: planToRun.request || planToRun.deliverable, brandContext: planToRun.brandContext || null, settings, project: activeProject, proxy: proxyFetch, hasStorage },
+          { request: planToRun.request || planToRun.deliverable, deliverable: planToRun.deliverable, brandContext: planToRun.brandContext || null, settings, project: activeProject, proxy: proxyFetch, hasStorage },
           addOrUpdate,
         )
       } catch (e) {
