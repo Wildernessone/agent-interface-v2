@@ -65,14 +65,12 @@ export async function captureDriveTokens() {
   // safety buffer so we treat them as expired just before they actually do.
   const expiresAt = new Date(Date.now() + 3540 * 1000).toISOString()
 
-  const { error } = await supabase.from('storage_connections').upsert({
-    user_id: user.id,
-    provider: 'google_drive',
-    access_token: accessToken,
-    refresh_token: refreshToken || null,
-    expires_at: expiresAt,
-    updated_at: new Date().toISOString(),
-  }, { onConflict: 'user_id,provider' })
+  const { error } = await supabase.rpc('set_storage_connection', {
+    p_provider: 'google_drive',
+    p_access_token: accessToken,
+    p_refresh_token: refreshToken || null,
+    p_expires_at: expiresAt,
+  })
 
   if (error) logError('captureDriveTokens', error)
   return !error
@@ -103,14 +101,11 @@ async function refreshDriveAccessToken(userId, refreshToken) {
     const expiresInSec = (data.expires_in || 3600) - 60
     const expiresAt = new Date(Date.now() + expiresInSec * 1000).toISOString()
 
-    await supabase.from('storage_connections')
-      .update({
-        access_token: data.access_token,
-        expires_at: expiresAt,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('user_id', userId)
-      .eq('provider', 'google_drive')
+    await supabase.rpc('update_storage_tokens', {
+      p_provider: 'google_drive',
+      p_access_token: data.access_token,
+      p_expires_at: expiresAt,
+    })
 
     return data.access_token
   } catch (e) {
@@ -127,12 +122,8 @@ async function refreshDriveAccessToken(userId, refreshToken) {
 async function getDriveToken() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null
-  const { data } = await supabase
-    .from('storage_connections')
-    .select('access_token, refresh_token, expires_at, root_folder_id')
-    .eq('user_id', user.id)
-    .eq('provider', 'google_drive')
-    .maybeSingle()
+  const { data: rows } = await supabase.rpc('get_storage_connections')
+  const data = (rows || []).find(r => r.provider === 'google_drive')
   if (!data?.access_token) return null
 
   // If expired or about to expire, refresh.

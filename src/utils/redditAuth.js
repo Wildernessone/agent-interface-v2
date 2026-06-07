@@ -94,14 +94,12 @@ export async function finishRedditAuth() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return false
     const expiresAt = json.expires_in ? new Date(Date.now() + json.expires_in * 1000).toISOString() : null
-    await supabase.from('storage_connections').upsert({
-      user_id: user.id,
-      provider: 'reddit',
-      access_token: json.access_token,
-      refresh_token: json.refresh_token || null,
-      expires_at: expiresAt,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: 'user_id,provider' })
+    await supabase.rpc('set_storage_connection', {
+      p_provider: 'reddit',
+      p_access_token: json.access_token,
+      p_refresh_token: json.refresh_token || null,
+      p_expires_at: expiresAt,
+    })
 
     window.history.replaceState({}, '', window.location.origin + window.location.pathname)
     return true
@@ -115,12 +113,8 @@ export async function finishRedditAuth() {
 export async function getValidRedditToken() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null
-  const { data } = await supabase
-    .from('storage_connections')
-    .select('access_token, refresh_token, expires_at')
-    .eq('user_id', user.id)
-    .eq('provider', 'reddit')
-    .maybeSingle()
+  const { data: rows } = await supabase.rpc('get_storage_connections')
+  const data = (rows || []).find(r => r.provider === 'reddit')
   if (!data?.access_token) return null
 
   const expiresAt = data.expires_at ? new Date(data.expires_at) : null
@@ -136,9 +130,9 @@ export async function getValidRedditToken() {
         const json = await res.json()
         if (json.access_token) {
           const newExpiry = json.expires_in ? new Date(Date.now() + json.expires_in * 1000).toISOString() : null
-          await supabase.from('storage_connections')
-            .update({ access_token: json.access_token, expires_at: newExpiry, updated_at: new Date().toISOString() })
-            .eq('user_id', user.id).eq('provider', 'reddit')
+          await supabase.rpc('update_storage_tokens', {
+            p_provider: 'reddit', p_access_token: json.access_token, p_expires_at: newExpiry,
+          })
           return json.access_token
         }
       }
