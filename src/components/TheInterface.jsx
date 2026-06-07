@@ -1544,6 +1544,19 @@ const TurnRow = memo(function TurnRow({ turn, isActive, busy, onRetryLast, onExe
                     ))}
                   </div>
                 )}
+                {/* Inline previews — play/show the finished media right in the
+                    chat instead of only a download link. Only when the url is
+                    present (live session); after reload heavy data: URLs are
+                    stripped, so the folder/download links below carry it. */}
+                {done && fileItems.some(f => ['video', 'image', 'audio'].includes(f.output?.type) && f.output?.url) && (
+                  <div className="ai-build-previews">
+                    {fileItems
+                      .filter(f => ['video', 'image', 'audio'].includes(f.output?.type) && f.output?.url)
+                      .map(f => (
+                        <ToolOutput key={`preview-${f.stepId}`} output={f.savedLink ? { ...f.output, driveUrl: f.savedLink } : f.output} />
+                      ))}
+                  </div>
+                )}
                 {done && fileItems.length > 0 && (
                   <div className="ai-build-files">
                     <span>{fileItems.length} file{fileItems.length === 1 ? '' : 's'} {folderHref ? 'bundled' : 'generated'}</span>
