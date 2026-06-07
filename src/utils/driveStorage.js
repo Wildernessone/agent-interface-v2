@@ -394,8 +394,14 @@ export async function saveToDrive(output, project = null) {
     const folderId = project ? await ensureProjectFolder(session, rootId, project) : rootId
     const folderLink = `https://drive.google.com/drive/folders/${folderId}`
 
+    // A clean human filename when the caller provides one (displayName) — e.g.
+    // "FINAL — Promo Video" or "voiceover". Falls back to the old timestamped
+    // name only when no displayName is given.
     const safePrompt = (output.prompt || output.tool || 'output').replace(/[^a-z0-9-_ ]/gi, '').slice(0, 60).trim() || 'output'
-    const filename = `${Date.now()}-${output.tool}-${safePrompt}.${ext}`
+    const base = output.displayName
+      ? (String(output.displayName).replace(/[^a-z0-9-_ —&().+]/gi, '').replace(/\s+/g, ' ').slice(0, 90).trim() || safePrompt)
+      : `${Date.now()}-${output.tool}-${safePrompt}`
+    const filename = `${base}.${ext}`
     const file = await uploadFile(session, folderId, filename, mimeType, body)
 
     if (project?.id) {
