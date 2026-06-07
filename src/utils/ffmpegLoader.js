@@ -45,6 +45,25 @@ async function loadFrom(coreSrc, wasmSrc) {
   return ff
 }
 
+// ── Composer mutex ─────────────────────────────────────────────────
+// ffmpeg.wasm is a SINGLE global instance with one virtual filesystem and a
+// single-threaded exec queue. Two overlapping composer runs (a user kicks off a
+// second ad while the first renders, or a parallel session) would interleave
+// writeFile/exec/readFile on the same fixed filenames (vo.mp3, seg0.mp4, out.mp4…)
+// and corrupt BOTH outputs. acquireFFmpegLock() serializes them: each caller
+// awaits the previous holder's release before proceeding.
+//
+//   const release = await acquireFFmpegLock()
+//   try { /* writeFile … exec … readFile */ } finally { release() }
+let _lockChain = Promise.resolve()
+export function acquireFFmpegLock() {
+  let release
+  const next = new Promise(res => { release = res })
+  const prev = _lockChain
+  _lockChain = _lockChain.then(() => next)
+  return prev.then(() => release)
+}
+
 async function loadCore() {
   // 1) bundled, same-origin (the reliable path).
   try {
