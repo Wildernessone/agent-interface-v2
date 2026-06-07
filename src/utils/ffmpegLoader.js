@@ -14,39 +14,51 @@
 // composer actually runs — it is never part of the main bundle.
 import { FFmpeg } from '@ffmpeg/ffmpeg'
 import { toBlobURL, fetchFile } from '@ffmpeg/util'
+// SELF-HOSTED core, served by OUR claude-proxy worker (/ffmpeg-core.js + .wasm).
+// The worker fetches the core from jsDelivr SERVER-SIDE (Cloudflare→CDN is far
+// more reliable than browser→CDN) and edge-caches it, so the browser always gets
+// it from a stable, fast, first-party endpoint. This is the durable fix for the
+// "failed to import ffmpeg-core.js" failures that killed every ad_render — no
+// flaky browser-CDN dependency. (We can't ship the 30 MiB wasm as a Pages asset:
+// Cloudflare Pages rejects files >25 MiB.) Public CDNs remain a last-ditch
+// fallback if the worker is unreachable.
+const PROXY = import.meta.env.VITE_PROXY_URL || 'https://claude-proxy.jamesreed.workers.dev'
+const coreAssetURL = `${PROXY}/ffmpeg-core.js`
+const wasmAssetURL = `${PROXY}/ffmpeg-core.wasm`
 
 const CORE_VERSION = '0.12.10'
-// Multiple CDNs for the ~25MB core. Relying on a single CDN (unpkg) made the
-// whole video composer fail with "failed to import ffmpeg-core.js" whenever that
-// CDN flaked or rate-limited — and ad_render never succeeded because of it. Try
-// each CDN in turn; the first that loads wins. (ffmpeg's own docs recommend not
-// depending on unpkg in production.)
 const CORE_BASES = [
   `https://cdn.jsdelivr.net/npm/@ffmpeg/core@${CORE_VERSION}/dist/umd`,
   `https://unpkg.com/@ffmpeg/core@${CORE_VERSION}/dist/umd`,
-  `https://esm.sh/@ffmpeg/core@${CORE_VERSION}/dist/umd`,
 ]
 
 let _ffmpeg = null
 let _loading = null
 
-async function loadFromCdns() {
-  let lastErr
-  for (const base of CORE_BASES) {
-    try {
-      const ff = new FFmpeg()
-      const [coreURL, wasmURL] = await Promise.all([
-        toBlobURL(`${base}/ffmpeg-core.js`, 'text/javascript'),
-        toBlobURL(`${base}/ffmpeg-core.wasm`, 'application/wasm'),
-      ])
-      await ff.load({ coreURL, wasmURL })
-      return ff
-    } catch (e) {
-      lastErr = e
-      // try the next CDN
+async function loadFrom(coreSrc, wasmSrc) {
+  const ff = new FFmpeg()
+  const [coreURL, wasmURL] = await Promise.all([
+    toBlobURL(coreSrc, 'text/javascript'),
+    toBlobURL(wasmSrc, 'application/wasm'),
+  ])
+  await ff.load({ coreURL, wasmURL })
+  return ff
+}
+
+async function loadCore() {
+  // 1) bundled, same-origin (the reliable path).
+  try {
+    return await loadFrom(coreAssetURL, wasmAssetURL)
+  } catch (bundledErr) {
+    // 2) CDN fallback, only if the same-origin asset somehow failed.
+    let lastErr = bundledErr
+    for (const base of CORE_BASES) {
+      try {
+        return await loadFrom(`${base}/ffmpeg-core.js`, `${base}/ffmpeg-core.wasm`)
+      } catch (e) { lastErr = e }
     }
+    throw new Error(`ffmpeg core failed to load (bundled + CDNs): ${lastErr?.message || lastErr}`)
   }
-  throw new Error(`ffmpeg core failed to load from all CDNs: ${lastErr?.message || lastErr}`)
 }
 
 /**
@@ -59,7 +71,7 @@ export async function getFFmpeg(onProgress) {
     return _ffmpeg
   }
   if (!_loading) {
-    _loading = loadFromCdns()
+    _loading = loadCore()
       .then(ff => { _ffmpeg = ff; return ff })
       .catch(e => { _loading = null; throw e }) // allow a later retry
   }

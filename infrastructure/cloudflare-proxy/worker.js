@@ -99,11 +99,31 @@ export default {
       return new Response(null, { status: 204, headers: cors })
     }
 
+    const path = url.pathname.replace(/^\/+/, '')
+
+    // Self-hosted ffmpeg.wasm core (GET, no auth). The browser-side ad_render
+    // composer loads this; fetching it from a public CDN directly was flaky and
+    // broke every video ("failed to import ffmpeg-core.js"), and the 30 MiB wasm
+    // is too big to host on Cloudflare Pages (>25 MiB limit). So we serve it from
+    // here: fetched from jsDelivr SERVER-SIDE (reliable) and edge-cached, returned
+    // from a stable first-party endpoint with long browser cache + CORS.
+    const FFMPEG_CORE = {
+      'ffmpeg-core.js': ['https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/umd/ffmpeg-core.js', 'text/javascript'],
+      'ffmpeg-core.wasm': ['https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/umd/ffmpeg-core.wasm', 'application/wasm'],
+    }
+    if (request.method === 'GET' && FFMPEG_CORE[path]) {
+      const [src, mime] = FFMPEG_CORE[path]
+      const up = await fetch(src, { cf: { cacheEverything: true, cacheTtl: 604800 } })
+      if (!up.ok) return json({ error: 'ffmpeg_core_unavailable', status: up.status }, 502, cors)
+      return new Response(up.body, {
+        status: 200,
+        headers: { 'Content-Type': mime, 'Cache-Control': 'public, max-age=604800, immutable', ...cors },
+      })
+    }
+
     if (request.method !== 'POST') {
       return json({ error: 'method_not_allowed' }, 405, cors)
     }
-
-    const path = url.pathname.replace(/^\/+/, '')
 
     // Token-refresh routes are authorized by the caller's own refresh_token plus
     // the server-held client_secret, and the client calls them WITHOUT a Supabase
