@@ -922,9 +922,17 @@ export default function TheInterface() {
     // Video/promo builds run through the AGENTIC builder (a real tool-call loop)
     // instead of the static plan executor — far more reliable for "assemble a
     // finished MP4". The agent decides+fires its own tool calls, so it has no
-    // pre-listed steps (they stream in as it works).
-    const isVideoBuild = /\b(video|promo|mp4|reel|trailer|clip|spot|advert|commercial)\b/i
-      .test(`${planToRun.deliverable || ''} ${planToRun.request || ''}`)
+    // pre-listed steps (they stream in as it works). Detect by intent words OR,
+    // robustly, by plan CONTENT: any build that generates an image AND a
+    // voiceover is a promo/video (the orchestrator's deliverable name is too
+    // unreliable to depend on — that's how this kept routing to the static path).
+    const _steps = planToRun.steps || []
+    const _hasImage = _steps.some(s => ['dalle', 'stability', 'ideogram', 'flux', 'recraft', 'image_per_slide'].includes(s.tool))
+    const _hasVoice = _steps.some(s => ['elevenlabs', 'openai_tts'].includes(s.tool))
+    const _isDeck = _steps.some(s => ['pptxgen'].includes(s.tool))
+    const isVideoBuild =
+      /\b(video|promo|mp4|reel|trailer|clip|spot|advert|commercial)\b/i.test(`${planToRun.deliverable || ''} ${planToRun.request || ''}`) ||
+      (_hasImage && _hasVoice && !_isDeck)
     const cost = estimateBuildCents(planToRun.steps || [])
     addToolTurn({
       id: buildTurnId,
