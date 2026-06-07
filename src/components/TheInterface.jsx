@@ -1050,10 +1050,11 @@ export default function TheInterface() {
     const files = turn.files || []
     const videoFile = files.find(f => f.output?.type === 'video')
     const comp = (k) => files.find(f => f.output?.regenKind === k)?.output || null
-    const image0 = comp('image'), voice0 = comp('voiceover'), music0 = comp('music')
+    const imageFiles = files.filter(f => f.output?.regenKind === 'image')
+    const voice0 = comp('voiceover'), music0 = comp('music')
     // regenParam (the prompt/script) survives persistence — only the heavy media
     // url is stripped on save/reload — so we can always reconstruct from it.
-    if (!videoFile || !image0?.regenParam || !voice0?.regenParam) {
+    if (!videoFile || !imageFiles[0]?.output?.regenParam || !voice0?.regenParam) {
       addToolErrorTurn('regenerate', 'unavailable', "This build can't be revised — rebuild it instead.")
       return
     }
@@ -1063,12 +1064,15 @@ export default function TheInterface() {
       // else re-make it from its saved prompt. `force` always re-makes (the piece
       // the user asked to redo). This is what lets regen survive a page reload:
       // the "unchanged" pieces are reconstructed from their prompts when their
-      // urls were dropped on save.
-      const ensureImage = async (force) => {
-        if (!force && image0?.url) return image0
-        const out = await generateImageWithFallback({ prompt: image0.regenParam, structuredInput: { prompt: image0.regenParam }, settings, proxy: proxyFetch })
-        return { ...out, regenKind: 'image', regenParam: image0.regenParam }
-      }
+      // urls were dropped on save. Images are handled as a SET so the slideshow
+      // (every scene frame) is preserved, not collapsed to one.
+      const ensureImages = async (force) => Promise.all(imageFiles.map(async (f) => {
+        const o = f.output
+        if (!force && o?.url) return o
+        if (!o?.regenParam) return o
+        const out = await generateImageWithFallback({ prompt: o.regenParam, structuredInput: { prompt: o.regenParam }, settings, proxy: proxyFetch })
+        return { ...out, regenKind: 'image', regenParam: o.regenParam }
+      }))
       const ensureVoice = async (force) => {
         if (!force && voice0?.url) return voice0
         const elevenKey = readKey(settings, 'tool_keys.elevenlabs')
@@ -1087,11 +1091,12 @@ export default function TheInterface() {
         const out = await TOOLS_BY_ID.stable_audio.run({ prompt, structuredInput: { prompt, duration: music0.regenDuration || 15 }, key, proxy: proxyFetch })
         return { ...out, regenKind: 'music', regenParam: prompt, regenDuration: music0.regenDuration || 15 }
       }
-      const image = await ensureImage(kind === 'image')
+      const newImages = await ensureImages(kind === 'image')
+      const images = newImages.filter(o => o?.url)
       const voice = await ensureVoice(kind === 'voiceover')
       const music = await ensureMusic(kind === 'music')
-      if (!image?.url || !voice?.url) throw new Error("Couldn't prepare the pieces to re-render.")
-      const finalOut = await TOOLS_BY_ID.ad_render.run({ structuredInput: { images: image, voiceover: voice, music: music || null }, label: turn.deliverable, context: { sourceImageUrl: image.url } })
+      if (!images.length || !voice?.url) throw new Error("Couldn't prepare the pieces to re-render.")
+      const finalOut = await TOOLS_BY_ID.ad_render.run({ structuredInput: { images, voiceover: voice, music: music || null }, label: turn.deliverable, context: { sourceImageUrl: images[0].url } })
       // Re-save the revised cut into the SAME build folder so Drive holds the
       // latest (named "(revised)" so it's distinct from the original). Only if
       // storage is connected + entitled; otherwise it stays inline like before.
@@ -1104,15 +1109,16 @@ export default function TheInterface() {
         const saved = await saveToCloud({ ...finalOut, displayName: `FINAL — ${turn.deliverable} (revised)` }, buildProject).catch(() => null)
         if (saved) { savedLink = saved.webViewLink || null; driveUrl = saved.webViewLink || null }
       }
-      // Swap the regenerated piece + the new (re-saved) video back into the turn.
+      // Swap the regenerated piece(s) + the new (re-saved) video back into the
+      // turn. Images map positionally so each frame's new output lands on its row.
       updateBuildTurn(buildTurnId, {
-        files: (fs) => (fs || []).map(f => {
+        files: (fs) => { let imgI = 0; return (fs || []).map(f => {
           if (f.output?.type === 'video') return { ...f, output: { ...finalOut, driveUrl: driveUrl || undefined }, savedLink }
           if (f.output?.regenKind === 'voiceover') return { ...f, output: voice }
           if (f.output?.regenKind === 'music' && music) return { ...f, output: music }
-          if (f.output?.regenKind === 'image') return { ...f, output: image }
+          if (f.output?.regenKind === 'image') { const out = newImages[imgI++] || f.output; return { ...f, output: out } }
           return f
-        }),
+        }) },
       })
       track('tool_use', { feature: `regen_${kind}` })
     } catch (e) {
@@ -1655,7 +1661,7 @@ const TurnRow = memo(function TurnRow({ turn, isActive, busy, onRetryLast, onExe
                   const btns = [
                     has('voiceover') && { k: 'voiceover', label: 'voiceover', hint: 'Re-records the voiceover — set a different voice in Settings → Narrator voice first' },
                     has('music') && { k: 'music', label: 'music', hint: 'Generates a fresh backing track' },
-                    has('image') && { k: 'image', label: 'background', hint: 'Generates a new background image' },
+                    has('image') && { k: 'image', label: 'visuals', hint: 'Regenerates the scene image(s)' },
                   ].filter(Boolean)
                   if (!btns.length) return null
                   return (
