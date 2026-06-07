@@ -324,6 +324,35 @@ const topaz = {
 
 // ── Voice / TTS ───────────────────────────────────────────────────
 
+// Pull the line(s) a narrator should SPEAK from a step's output. The orchestrator
+// sometimes wires the whole synth object ({s1}) or a combined storyboard into a
+// voiceover step instead of {s1.voiceover_script} — which made TTS narrate ~60s
+// of scene descriptions / raw JSON over a 5s ad. Always prefer the spoken-script
+// field; for a storyboard with no script, fall back to the short on-screen text —
+// NEVER the scene image prompts or the serialized object.
+function spokenTextFrom(structuredInput, prompt) {
+  const pick = (o) => {
+    if (!o || typeof o !== 'object') return null
+    for (const k of ['voiceover_script', 'voiceoverScript', 'voiceover', 'vo', 'narration', 'script', 'spoken', 'line']) {
+      if (typeof o[k] === 'string' && o[k].trim()) return o[k].trim()
+    }
+    if (Array.isArray(o.scenes)) {
+      const t = o.scenes.map(s => s?.on_screen_text).filter(x => typeof x === 'string' && x.trim()).join('. ')
+      if (t.trim()) return t.trim()
+    }
+    if (typeof o.text === 'string' && o.text.trim()) return o.text.trim()
+    return null
+  }
+  let t = pick(structuredInput)
+  if (!t) {
+    for (const s of [structuredInput, prompt]) {
+      if (typeof s === 'string' && /^\s*[[{]/.test(s)) { try { const v = pick(JSON.parse(s)); if (v) { t = v; break } } catch { /* not JSON */ } }
+    }
+  }
+  if (!t) t = (typeof structuredInput === 'string' && structuredInput.trim()) || (typeof prompt === 'string' ? prompt : '') || ''
+  return String(t)
+}
+
 const elevenlabs = {
   id: 'elevenlabs',
   name: 'ElevenLabs',
@@ -344,7 +373,7 @@ const elevenlabs = {
     // any plumbing.
     const cfg = typeof structuredInput === 'object' && structuredInput ? structuredInput : {}
     const voiceId = cfg.voice_id || settings?.narratorVoiceId || '21m00Tcm4TlvDq8ikWAM'
-    const text = cfg.text || prompt || ''
+    const text = spokenTextFrom(structuredInput, prompt)
     const res = await proxy('elevenlabs', { text: text.slice(0, 2500), voice_id: voiceId }, { 'x-api-key': key })
     if (!res.ok) throw new ToolError('elevenlabs', 'bad_response', await res.text().catch(() => `status ${res.status}`))
     const data = await res.json()
@@ -367,7 +396,7 @@ const openaiTts = {
   async run({ prompt, structuredInput, key, proxy }) {
     if (!key) throw new ToolError('openai_tts', 'missing_key', 'OpenAI TTS uses your OpenAI key — add it in Settings → Agents → ChatGPT.')
     const cfg = (typeof structuredInput === 'object' && structuredInput) || {}
-    const text = (cfg.text || prompt || '').slice(0, 4000)
+    const text = spokenTextFrom(structuredInput, prompt).slice(0, 4000)
     const voice = OPENAI_TTS_VOICES.includes(cfg.voice) ? cfg.voice : 'nova'
     const model = cfg.hd ? 'tts-1-hd' : 'tts-1'
     // Route through the worker proxy — api.openai.com sends no CORS headers, so
