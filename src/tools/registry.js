@@ -1079,11 +1079,17 @@ RIGHT voiceover_script: "Stop juggling four AI tools. Agent Interface gives you 
       throw new ToolError('agent_synth', 'bad_response', friendly)
     }
 
-    // Robust JSON extraction — finds the first balanced { ... }
+    // Robust JSON extraction — first balanced { ... }, with repair for the two
+    // ways model JSON breaks: trailing commas, and TRUNCATION (model hit its
+    // token cap mid-object). Repairing a truncated storyboard/script salvages the
+    // build instead of throwing "Unterminated JSON" and failing the whole video.
     const cleaned = raw.replace(/```json\s*/gi, '').replace(/```/g, '').trim()
     const start = cleaned.indexOf('{')
     if (start === -1) throw new ToolError('agent_synth', 'bad_response', 'No JSON in response')
+    const tryParse = (s) => { try { return JSON.parse(s) } catch { return undefined } }
+    const repair = (s) => s.replace(/,(\s*[}\]])/g, '$1')
     let depth = 0, inString = false, escape = false
+    const stack = []
     for (let i = start; i < cleaned.length; i++) {
       const c = cleaned[i]
       if (inString) {
@@ -1093,18 +1099,26 @@ RIGHT voiceover_script: "Stop juggling four AI tools. Agent Interface gives you 
         continue
       }
       if (c === '"') { inString = true; continue }
-      if (c === '{') depth++
+      if (c === '{') { depth++; stack.push('}') }
+      else if (c === '[') { stack.push(']') }
+      else if (c === ']') { stack.pop() }
       else if (c === '}') {
-        depth--
+        stack.pop(); depth--
         if (depth === 0) {
-          try {
-            return JSON.parse(cleaned.slice(start, i + 1))
-          } catch {
-            throw new ToolError('agent_synth', 'bad_response', 'Malformed JSON')
-          }
+          const cand = cleaned.slice(start, i + 1)
+          const v = tryParse(cand) ?? tryParse(repair(cand))
+          if (v !== undefined) return v
+          throw new ToolError('agent_synth', 'bad_response', 'Malformed JSON')
         }
       }
     }
+    // Truncated — close the open string + braces/brackets, drop a dangling comma.
+    let partial = cleaned.slice(start)
+    if (inString) partial += '"'
+    partial = partial.replace(/,\s*$/, '').replace(/:\s*$/, ': null')
+    while (stack.length) partial += stack.pop()
+    const repaired = tryParse(partial) ?? tryParse(repair(partial))
+    if (repaired !== undefined) return repaired
     throw new ToolError('agent_synth', 'bad_response', 'Unterminated JSON')
   },
 }
