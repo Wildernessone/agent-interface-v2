@@ -277,39 +277,45 @@ export function driveFolderUrl(folderId) {
   return folderId ? `https://drive.google.com/drive/folders/${folderId}` : null
 }
 
+// Each project lives in its OWN TOP-LEVEL Drive folder (a sibling of the app
+// root, directly under My Drive) — NOT nested inside the "Agent Interface" app
+// folder. A build's dated subfolder nests INSIDE that project folder. So the
+// layout is:  My Drive / <Project> / <date — deliverable> / files.
+// The project folder is resolved from the cached storage_folder_id (kept in sync
+// in the projects row); if absent/trashed it's (re)created at the Drive root and
+// re-cached — which also moves a project's outputs to follow its folder.
 async function ensureProjectFolder(session, rootId, project) {
   if (!project?.name) return rootId
 
-  // Names can be slashed paths for nested build folders, e.g.
-  //   "Salt+Pine Coffee Launch/2026-05-26 — Pitch deck"
-  // Drop any segment equal to the app root name — the root folder IS already
-  // "Agent Interface", so a project literally named "Agent Interface" must not
-  // create a redundant "Agent Interface/Agent Interface" nest (and this also
-  // hard-stops the runaway re-nesting that previously happened).
-  const segments = project.name.split('/')
-    .map(s => s.trim())
-    .filter(Boolean)
-    .filter(s => s !== ROOT_FOLDER_NAME)
+  // Names can be slashed paths: "<Project>/<date — deliverable>".
+  const segments = project.name.split('/').map(s => s.trim()).filter(Boolean)
   if (segments.length === 0) return rootId
 
-  if (segments.length === 1 && project?.storage_folder_id) return project.storage_folder_id
-
-  let parent = rootId
-  let topFolderId = null
-  for (let i = 0; i < segments.length; i++) {
-    const id = await findOrCreateFolder(session, segments[i], parent)
-    if (i === 0) topFolderId = id
-    parent = id
+  // 1) Resolve the project's own top-level folder.
+  let projectFolderId = null
+  if (project.storage_folder_id) {
+    const r = await session.driveFetch(
+      `https://www.googleapis.com/drive/v3/files/${project.storage_folder_id}?fields=id,trashed`
+    )
+    if (r.ok) { const f = await r.json().catch(() => null); if (f?.id && !f.trashed) projectFolderId = f.id }
+  }
+  if (!projectFolderId) {
+    // null parent → created/matched at the true Drive root (top level).
+    projectFolderId = await findOrCreateFolder(session, segments[0], null)
+    if (project?.id) {
+      try {
+        await supabase.from('projects')
+          .update({ storage_folder_id: projectFolderId, storage_provider: 'google_drive' })
+          .eq('id', project.id)
+      } catch { /* cache best-effort */ }
+    }
   }
 
-  if (project?.id && topFolderId) {
-    try {
-      await supabase.from('projects')
-        .update({ storage_folder_id: topFolderId, storage_provider: 'google_drive' })
-        .eq('id', project.id)
-    } catch {}
+  // 2) Nest the dated build subfolder(s) INSIDE the project folder.
+  let parent = projectFolderId
+  for (let i = 1; i < segments.length; i++) {
+    parent = await findOrCreateFolder(session, segments[i], parent)
   }
-
   return parent
 }
 
