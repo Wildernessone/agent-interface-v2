@@ -20,8 +20,8 @@ const BUILDER_TOOLS = [
     input_schema: { type: 'object', properties: { script: { type: 'string' } }, required: ['script'] } },
   { name: 'generate_music', description: 'Generate a short instrumental backing track, no vocals. Returns a music id (or skipped if no key).',
     input_schema: { type: 'object', properties: { prompt: { type: 'string' }, duration_sec: { type: 'number' } }, required: ['prompt'] } },
-  { name: 'render_video', description: 'FINAL (video): assemble the finished MP4 from a generated image, a voiceover, and optional music. Pass the ids returned earlier.',
-    input_schema: { type: 'object', properties: { image_id: { type: 'string' }, voiceover_id: { type: 'string' }, music_id: { type: 'string' } }, required: ['image_id', 'voiceover_id'] } },
+  { name: 'render_video', description: 'FINAL (video): assemble the finished MP4 from the scene image(s), a voiceover, and optional music. Pass image_ids = the ORDERED list of every scene-image id you generated, so all frames play as a slideshow across the voiceover. (image_id is a single-frame fallback.)',
+    input_schema: { type: 'object', properties: { image_ids: { type: 'array', items: { type: 'string' }, description: 'ordered scene-image ids — use ALL the images you generated' }, image_id: { type: 'string' }, voiceover_id: { type: 'string' }, music_id: { type: 'string' } }, required: ['voiceover_id'] } },
   { name: 'build_deck', description: 'FINAL (slide deck / pitch deck / PowerPoint): emit a real .pptx. Write COMPLETE slide content yourself — punchy titles and concrete bullets, no placeholders. Optionally attach a generated image to a slide via image_id (use generate_image first for a cover or key visuals).',
     input_schema: { type: 'object', properties: {
       title: { type: 'string' },
@@ -113,13 +113,24 @@ export async function runAgenticBuild({ request, deliverable: deliverableIn, bra
       return { id, status: 'ok' }
     }
     if (name === 'render_video') {
-      const img = store[input.image_id], vo = store[input.voiceover_id], mu = input.music_id ? store[input.music_id] : null
-      if (!img) throw new Error(`unknown image_id "${input.image_id}"`)
+      // Use EVERY scene image as a slideshow across the voiceover — not just one.
+      // The agent builds a multi-frame storyboard but the schema only took a
+      // single image_id, so extra frames the user paid to generate were dropped.
+      const refIds = (Array.isArray(input.image_ids) && input.image_ids.length)
+        ? input.image_ids
+        : (input.image_id ? [input.image_id] : [])
+      let imgs = refIds.map(id => store[id]).filter(o => o?.url)
+      // If fewer were referenced than generated, fall back to ALL images (in
+      // creation order) so nothing generated gets thrown away.
+      const allImgs = Object.keys(store).filter(k => /^image_\d+$/.test(k)).sort().map(k => store[k]).filter(o => o?.url)
+      if (allImgs.length > imgs.length) imgs = allImgs
+      const vo = store[input.voiceover_id], mu = input.music_id ? store[input.music_id] : null
+      if (!imgs.length) throw new Error('no generated image to render')
       if (!vo) throw new Error(`unknown voiceover_id "${input.voiceover_id}"`)
       onStep('render_video', 'Render the finished MP4', 'started')
-      const out = await TOOLS_BY_ID.ad_render.run({ structuredInput: { images: img, voiceover: vo, music: mu }, label: deliverable, context: { sourceImageUrl: img.url } })
+      const out = await TOOLS_BY_ID.ad_render.run({ structuredInput: { images: imgs, voiceover: vo, music: mu }, label: deliverable, context: { sourceImageUrl: imgs[0].url } })
       store.final_video = out; finals.push({ out, kind: 'render_video' }); onStep('render_video', 'Render the finished MP4', 'done')
-      renderInputs = { image: input.image_id, voiceover: input.voiceover_id, music: input.music_id || null }
+      renderInputs = { image: refIds[0] || null, voiceover: input.voiceover_id, music: input.music_id || null }
       return { id: 'final_video', status: 'ok', note: 'finished MP4 rendered' }
     }
     if (name === 'build_deck') {
@@ -214,15 +225,16 @@ Write ALL real content YOURSELF — headlines, bullets, prose, numbers — never
   // so a finished video ALWAYS results.
   if (!finals.length) {
     const last = (k) => Object.keys(store).filter(id => id.startsWith(k)).pop()
-    const imgId = last('image_'), voId = last('voiceover_'), muId = last('music_')
-    const img = store[imgId], vo = store[voId], mu = store[muId]
-    console.log('[agentic] post-loop, finals?', finals.length, 'img?', !!img, 'vo?', !!vo)
-    if (img?.url && vo?.url) {
+    const allImgs = Object.keys(store).filter(k => /^image_\d+$/.test(k)).sort().map(k => store[k]).filter(o => o?.url)
+    const voId = last('voiceover_'), muId = last('music_')
+    const vo = store[voId], mu = store[muId]
+    console.log('[agentic] post-loop, finals?', finals.length, 'imgs?', allImgs.length, 'vo?', !!vo)
+    if (allImgs.length && vo?.url) {
       try {
         onStep('render_video', 'Render the finished MP4', 'started')
-        const out = await TOOLS_BY_ID.ad_render.run({ structuredInput: { images: img, voiceover: vo, music: mu || null }, label: deliverable, context: { sourceImageUrl: img.url } })
+        const out = await TOOLS_BY_ID.ad_render.run({ structuredInput: { images: allImgs, voiceover: vo, music: mu || null }, label: deliverable, context: { sourceImageUrl: allImgs[0].url } })
         store.final_video = out; finals.push({ out, kind: 'render_video' })
-        renderInputs = { image: imgId, voiceover: voId, music: muId || null }
+        renderInputs = { image: last('image_'), voiceover: voId, music: muId || null }
         onStep('render_video', 'Render the finished MP4', 'done')
         console.log('[agentic] auto-render OK')
       } catch (e) {
