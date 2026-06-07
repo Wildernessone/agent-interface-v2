@@ -53,7 +53,13 @@ function extractJson(text) {
   const cleaned = text.replace(/```json\s*/gi, "").replace(/```/g, "").trim()
   const start = cleaned.indexOf("{")
   if (start === -1) return null
+  const tryParse = (s) => { try { return JSON.parse(s) } catch { return undefined } }
+  // Strip trailing commas (",}" / ",]") — the most common reason a model's
+  // otherwise-valid plan JSON fails to parse.
+  const repair = (s) => s.replace(/,(\s*[}\]])/g, "$1")
+
   let depth = 0, inString = false, escape = false
+  const stack = []  // expected closers, for repairing a truncated response
   for (let i = start; i < cleaned.length; i++) {
     const c = cleaned[i]
     if (inString) {
@@ -63,16 +69,26 @@ function extractJson(text) {
       continue
     }
     if (c === '"') { inString = true; continue }
-    if (c === "{") depth++
+    if (c === "{") { depth++; stack.push("}") }
+    else if (c === "[") { stack.push("]") }
+    else if (c === "]") { stack.pop() }
     else if (c === "}") {
-      depth--
+      stack.pop(); depth--
       if (depth === 0) {
-        try { return JSON.parse(cleaned.slice(start, i + 1)) }
-        catch { return null }
+        const cand = cleaned.slice(start, i + 1)
+        return tryParse(cand) ?? tryParse(repair(cand)) ?? null
       }
     }
   }
-  return null
+  // Never closed → the response was TRUNCATED (model hit its token cap
+  // mid-plan). Repair: close an open string, drop a dangling trailing
+  // comma/partial key, close the open braces/brackets in order, then parse —
+  // rescuing a build instead of silently demoting it to a discussion.
+  let partial = cleaned.slice(start)
+  if (inString) partial += '"'
+  partial = partial.replace(/,\s*$/, "").replace(/:\s*$/, ": null")
+  while (stack.length) partial += stack.pop()
+  return tryParse(partial) ?? tryParse(repair(partial)) ?? null
 }
 
 async function callOpenClaw(prompt, modelConfig) {
@@ -93,7 +109,7 @@ async function callOpenClaw(prompt, modelConfig) {
       const res = await fetch(`${PROXY}/claude`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-api-key": modelConfig.key, ...(await authHeader()) },
-        body: JSON.stringify({ messages: [{ role: "user", content: `${system}\n\n${prompt}` }], max_tokens: 2048 }),
+        body: JSON.stringify({ messages: [{ role: "user", content: `${system}\n\n${prompt}` }], max_tokens: 4096 }),
         signal: t.signal,
       })
       const data = await res.json()
@@ -630,8 +646,15 @@ export async function orchestrate({
     return { ...defaultDecision(enabledAgents, voiceMode), reasoning: "No orchestrator model configured — defaulted to discuss." }
   }
 
-  const { decision, raw, error } = await callOpenClaw(prompt, modelConfig)
-  if (raw) console.log("[OpenClaw]", raw.slice(0, 600))
+  let { decision, raw, error } = await callOpenClaw(prompt, modelConfig)
+  // A malformed/truncated JSON response shouldn't silently demote the turn to a
+  // discussion (the panel then "talks about" building while nothing fires —
+  // exactly the stuck "it didn't build anything" symptom). Retry once on a parse
+  // failure; a second clean response usually parses.
+  if (!decision && error === "parse_failed") {
+    ;({ decision, raw, error } = await callOpenClaw(prompt, modelConfig))
+  }
+  if (raw) console.log("[OpenClaw]", typeof raw === "string" ? raw.slice(0, 600) : raw)
   if (error) console.warn("[OpenClaw error]", error)
 
   if (!decision) {
