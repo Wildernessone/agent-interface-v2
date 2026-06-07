@@ -7,6 +7,7 @@ export default function AuthScreen() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
   const [loading, setLoading] = useState(false)
   const [oauthLoading, setOauthLoading] = useState('')
 
@@ -14,19 +15,56 @@ export default function AuthScreen() {
     e.preventDefault()
     setLoading(true)
     setError('')
-    const { error } = mode === 'login'
-      ? await supabase.auth.signInWithPassword({ email, password })
-      : await supabase.auth.signUp({ email, password })
-    if (error) setError(error.message)
-    setLoading(false)
+    setNotice('')
+    try {
+      if (mode === 'login') {
+        const { error } = await supabase.auth.signInWithPassword({ email, password })
+        if (error) setError(error.message)
+        // success → onAuthStateChange routes to /app
+      } else {
+        const { data, error } = await supabase.auth.signUp({ email, password })
+        if (error) {
+          setError(error.message)
+        } else if (!data.session) {
+          // Email-confirmation is on: no session is returned and the user must
+          // confirm via a link. Without this branch the screen just went quiet —
+          // the #1 funnel drop. Supabase returns a user with EMPTY identities
+          // when the email is already registered (it won't resend), so steer
+          // those to sign in instead of a confirmation that never arrives.
+          if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+            setError('This email is already registered — try signing in instead.')
+          } else {
+            setNotice('Check your email to confirm your account, then sign in.')
+          }
+        }
+        // else: confirmation disabled → session exists → routed to /app
+      }
+    } catch (err) {
+      setError(err?.message || 'Something went wrong. Please try again.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   const handleOAuth = async (provider) => {
     setOauthLoading(provider)
-    await supabase.auth.signInWithOAuth({
-      provider,
-      options: { redirectTo: window.location.origin },
-    })
+    setError('')
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: { redirectTo: window.location.origin },
+      })
+      // On success the browser redirects away; keep the button in its loading
+      // state. On failure (popup blocked, misconfig, network) reset it and show
+      // the error instead of leaving the button stuck on "Redirecting…".
+      if (error) {
+        setError(error.message)
+        setOauthLoading('')
+      }
+    } catch (err) {
+      setError(err?.message || `Couldn't start ${provider} sign-in.`)
+      setOauthLoading('')
+    }
   }
 
   return (
@@ -74,7 +112,7 @@ export default function AuthScreen() {
             <button
               key={m.id}
               className={`auth-mode-btn${mode === m.id ? " is-active" : ""}`}
-              onClick={() => setMode(m.id)}
+              onClick={() => { setMode(m.id); setError(''); setNotice('') }}
             >{m.label}</button>
           ))}
         </div>
@@ -99,6 +137,7 @@ export default function AuthScreen() {
             autoComplete={mode === "login" ? "current-password" : "new-password"}
           />
           {error && <div className="auth-error" role="alert">{error}</div>}
+          {notice && <div className="auth-notice" role="status" style={{ color: '#34A853', fontSize: 13, textAlign: 'center' }}>{notice}</div>}
           <button type="submit" className="ai-btn ai-btn--primary auth-submit" disabled={loading}>
             {loading ? "…" : mode === "login" ? "Sign in" : "Create account"}
           </button>
