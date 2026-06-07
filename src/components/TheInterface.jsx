@@ -1713,11 +1713,27 @@ function IconButton({ children, onClick, title, active, expanded }) {
 }
 
 async function proxyFetch(path, body, extraHeaders = {}) {
-  return fetch(`${PROXY}/${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...(await authHeader()), ...extraHeaders },
-    body: JSON.stringify(body),
-  })
+  // Shared by every registry tool AND the agentic builder. Without a timeout a
+  // hung upstream left the tool/build promise pending forever — the exact hang
+  // class fetchTimeout.js exists to kill, but this path skipped it. Some worker
+  // routes poll synchronously for up to ~200s (runway/shotstack/heygen) and
+  // return one JSON at the end, so this is a generous 240s total ceiling (not the
+  // 90s idle window the streaming agent calls use) — long enough for any real
+  // poll, short enough that a true hang surfaces as an error.
+  const t = makeIdleTimeout(240_000)
+  try {
+    return await fetch(`${PROXY}/${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(await authHeader()), ...extraHeaders },
+      body: JSON.stringify(body),
+      signal: t.signal,
+    })
+  } catch (e) {
+    if (isAbort(e)) throw new Error(`${path} timed out — no response in 240s`)
+    throw e
+  } finally {
+    t.clear()
+  }
 }
 
 /**
