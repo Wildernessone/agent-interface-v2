@@ -34,12 +34,26 @@ export default function App() {
     const params = new URLSearchParams(window.location.search)
     const checkout = params.get('checkout')
     if (!checkout) return
+    let cancelled = false
     if (checkout === 'success') {
-      ;[1000, 3000, 6000].forEach(ms => setTimeout(() => loadSettings(), ms))
+      // The Stripe webhook updates the tier asynchronously. Poll with backoff
+      // until the subscription reads 'active' (up to ~30s) instead of giving up
+      // at 6s and leaving a just-paid user on their old tier until a manual
+      // reload — the worst billing UX.
+      ;(async () => {
+        for (const ms of [1000, 2000, 3000, 5000, 8000, 12000]) {
+          if (cancelled) return
+          await new Promise(r => setTimeout(r, ms))
+          if (cancelled) return
+          await loadSettings()
+          if (useStore.getState().settings?.subscription_status === 'active') return
+        }
+      })()
     }
     params.delete('checkout')
     const qs = params.toString()
     window.history.replaceState({}, '', window.location.pathname + (qs ? `?${qs}` : ''))
+    return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

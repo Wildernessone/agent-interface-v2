@@ -37,6 +37,7 @@ import OnboardingPanel from './OnboardingPanel'
 import ProjectPicker from './ProjectPicker'
 import MemoryPanel from './MemoryPanel'
 import TrialBanner from './TrialBanner'
+import ErrorBoundary from './ErrorBoundary'
 
 const AGENTS = [
   { id:"claude",  name:"Claude",  color:"var(--color-agent-claude)", avatar:"C" },
@@ -346,6 +347,11 @@ export default function TheInterface() {
   const [showMemory, setShowMemory] = useState(false)
   const [showPrompts, setShowPrompts] = useState(false)
   const [agentMemory, setAgentMemory] = useState([])
+  // Load saved memories on mount. Previously agentMemory was only populated when
+  // the user opened AND closed the Memory panel, so scopedMemory (threaded into
+  // every system prompt) stayed empty all session — "it remembers" was silently
+  // inert. Load it up front so memories influence the panel from the first turn.
+  useEffect(() => { loadMemory().then(setAgentMemory).catch(() => {}) }, [loadMemory])
   const [projectConvos, setProjectConvos] = useState([])
   const [setupNotices, setSetupNotices] = useState([])
   const [skippedOnboarding, setSkippedOnboarding] = useState(false)
@@ -1013,8 +1019,18 @@ export default function TheInterface() {
       folderLink: result.folderLink,
       folderProvider: result.folderProvider,
     })
-    result.files.forEach(f => logUsage({ kind: 'tool_call', provider: f.output?.tool || 'build', success: true }))
-    result.errors.forEach(e => logUsage({ kind: 'tool_call', provider: e.stepId, success: false, errorType: 'build_step' }))
+    result.files.forEach(f => logUsage({ kind: 'tool_call', provider: f.output?.tool || 'build', model: f.output?.tool || null, success: true, metadata: { stepId: f.stepId } }))
+    // Capture WHY a build step failed (tool, classified code, real message) so
+    // usage_events is diagnosable — previously this logged only the step id and a
+    // generic 'build_step', leaving every failure row's metadata empty.
+    result.errors.forEach(e => logUsage({
+      kind: 'tool_call',
+      provider: e.tool || 'build',
+      model: e.tool || null,
+      success: false,
+      errorType: e.code || 'build_step',
+      metadata: { stepId: e.stepId, tool: e.tool || null, code: e.code || null, detail: String(e.error || '').slice(0, 500) },
+    }))
     // Surface which build tools get used as a hub feature signal (feeds top_features).
     result.files.forEach(f => track('tool_use', { feature: f.output?.tool || 'build' }))
 
@@ -1220,20 +1236,33 @@ export default function TheInterface() {
         )}
 
         {turns.map(turn => (
-          <TurnRow
+          // Per-turn boundary: one malformed turn (bad persisted shape, an
+          // unexpected tool-output) degrades to a small card instead of
+          // white-screening the whole thread.
+          <ErrorBoundary
             key={turn.id}
-            turn={turn}
-            isActive={activeAgentId === turn.id}
-            busy={busy}
-            onRetryLast={onRetryLast}
-            onExecuteBuild={onExecuteBuild}
-            onBuildOption={onBuildOption}
-            onBuildSomethingDifferent={onBuildSomethingDifferent}
-            onOpenSettings={onOpenSettings}
-            onSaveBrief={onSaveBrief}
-            onDismissBrief={onDismissBrief}
-            onEditBrief={onEditBrief}
-          />
+            scope="turn"
+            fallback={
+              <div className="ai-turn ai-tool-card">
+                <div className="ai-error-title">This message couldn't be displayed</div>
+                <div className="ai-error-help">It hit a rendering error and was skipped — the rest of your conversation is fine.</div>
+              </div>
+            }
+          >
+            <TurnRow
+              turn={turn}
+              isActive={activeAgentId === turn.id}
+              busy={busy}
+              onRetryLast={onRetryLast}
+              onExecuteBuild={onExecuteBuild}
+              onBuildOption={onBuildOption}
+              onBuildSomethingDifferent={onBuildSomethingDifferent}
+              onOpenSettings={onOpenSettings}
+              onSaveBrief={onSaveBrief}
+              onDismissBrief={onDismissBrief}
+              onEditBrief={onEditBrief}
+            />
+          </ErrorBoundary>
         ))}
 
         {/* Mid-conversation: grounded next-step suggestions once a short
@@ -1689,11 +1718,27 @@ function IconButton({ children, onClick, title, active, expanded }) {
 }
 
 async function proxyFetch(path, body, extraHeaders = {}) {
-  return fetch(`${PROXY}/${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...(await authHeader()), ...extraHeaders },
-    body: JSON.stringify(body),
-  })
+  // Shared by every registry tool AND the agentic builder. Without a timeout a
+  // hung upstream left the tool/build promise pending forever — the exact hang
+  // class fetchTimeout.js exists to kill, but this path skipped it. Some worker
+  // routes poll synchronously for up to ~200s (runway/shotstack/heygen) and
+  // return one JSON at the end, so this is a generous 240s total ceiling (not the
+  // 90s idle window the streaming agent calls use) — long enough for any real
+  // poll, short enough that a true hang surfaces as an error.
+  const t = makeIdleTimeout(240_000)
+  try {
+    return await fetch(`${PROXY}/${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(await authHeader()), ...extraHeaders },
+      body: JSON.stringify(body),
+      signal: t.signal,
+    })
+  } catch (e) {
+    if (isAbort(e)) throw new Error(`${path} timed out — no response in 240s`)
+    throw e
+  } finally {
+    t.clear()
+  }
 }
 
 /**

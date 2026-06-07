@@ -171,8 +171,17 @@ Write ALL real content YOURSELF — headlines, bullets, prose, numbers — never
   console.log('[agentic] start —', deliverable, '·', request?.slice(0, 80))
   for (let turn = 0; turn < 14; turn++) {
     const res = await proxy('claude', { model: MODEL, max_tokens: 4096, system, messages, tools: BUILDER_TOOLS }, { 'x-api-key': claudeKey })
-    if (!res.ok) { console.error('[agentic] claude not ok', res.status); errors.push({ stepId: '_agent', error: `claude_${res.status}` }); break }
+    if (!res.ok) { console.error('[agentic] claude not ok', res.status); errors.push({ stepId: '_agent', tool: 'claude', code: 'agent_http', error: `claude_${res.status}` }); break }
     const data = await res.json().catch(() => ({}))
+    // Anthropic can return HTTP 200 with an error envelope (overloaded, etc.).
+    // Without this check `content` is [], no tools fire, the loop breaks, and the
+    // build silently produces nothing — an opaque "no deliverable". Surface it.
+    if (data.type === 'error' || data.error) {
+      const msg = data.error?.message || data.error?.type || 'Claude returned an error'
+      console.error('[agentic] claude error envelope', msg)
+      errors.push({ stepId: '_agent', tool: 'claude', code: 'agent_error', error: msg })
+      break
+    }
     const content = data.content || []
     messages.push({ role: 'assistant', content })
     const toolUses = content.filter(c => c.type === 'tool_use')
@@ -184,12 +193,12 @@ Write ALL real content YOURSELF — headlines, bullets, prose, numbers — never
     for (const tu of toolUses) {
       try {
         const r = await execTool(tu.name, tu.input || {})
-        if (r.status === 'error') errors.push({ stepId: tu.name, error: r.note })
+        if (r.status === 'error') errors.push({ stepId: tu.name, tool: tu.name, code: 'tool_error', error: r.note })
         results.push({ type: 'tool_result', tool_use_id: tu.id, content: JSON.stringify(r) })
       } catch (e) {
         console.error('[agentic] tool error', tu.name, e?.message)
         onStep(tu.name, tu.name, 'failed', e.message)
-        errors.push({ stepId: tu.name, error: e.message })
+        errors.push({ stepId: tu.name, tool: tu.name, code: 'exception', error: e.message })
         results.push({ type: 'tool_result', tool_use_id: tu.id, content: `error: ${e.message}`, is_error: true })
       }
     }

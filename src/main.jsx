@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom'
 import './index.css'
 import './App.css'
 import App from './App.jsx'
+import ErrorBoundary from './components/ErrorBoundary.jsx'
 
 // Self-heal stale lazy-chunk loads after a redeploy. A tab opened before a new
 // deploy holds a module graph pointing at old hashed chunk URLs; when it later
@@ -26,8 +27,10 @@ document.documentElement.dataset.theme = 'dark'
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <BrowserRouter>
-      <App />
-    </BrowserRouter>
+    <ErrorBoundary scope="app">
+      <BrowserRouter>
+        <App />
+      </BrowserRouter>
+    </ErrorBoundary>
   </StrictMode>,
 )

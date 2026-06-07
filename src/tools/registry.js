@@ -776,7 +776,9 @@ const videoRender = {
   status: 'live',
   async run({ structuredInput, key, proxy }) {
     if (!key) throw new ToolError('video_render', 'missing_key', 'Video Render needs a Shotstack API key.')
-    const cfg = (typeof structuredInput === 'string' ? JSON.parse(structuredInput) : structuredInput) || {}
+    let cfg
+    try { cfg = (typeof structuredInput === 'string' ? JSON.parse(structuredInput) : structuredInput) || {} }
+    catch { throw new ToolError('video_render', 'bad_input', 'Video Render got malformed input — could not parse the clips list.') }
     const clips = Array.isArray(cfg.clips) ? cfg.clips : []
     if (!clips.length) throw new ToolError('video_render', 'no_clips', 'Provide clips: [{ url, type?, length? }] to render.')
     let cursor = 0
@@ -814,7 +816,9 @@ const capcutBundle = {
   setupHint: 'CapCut has no public render API, so this is an edit-plan (clip order, timings, asset links) you import into CapCut — not a finished video. For a ready MP4, use Video Render.',
   async run({ structuredInput, label }) {
     const { default: JSZip } = await import('jszip')
-    const cfg = (typeof structuredInput === 'string' ? JSON.parse(structuredInput) : structuredInput) || {}
+    let cfg
+    try { cfg = (typeof structuredInput === 'string' ? JSON.parse(structuredInput) : structuredInput) || {} }
+    catch { throw new ToolError('capcut_bundle', 'bad_input', 'CapCut Export got malformed input — could not parse the clips list.') }
     const clips = Array.isArray(cfg.clips) ? cfg.clips : []
     if (!clips.length) throw new ToolError('capcut_bundle', 'no_clips', 'Provide clips: [{ url, type?, length? }].')
     let cursor = 0
@@ -2404,9 +2408,14 @@ const adRender = {
     if (!voiceUrl) throw new ToolError('ad_render', 'no_voiceover', 'ad_render needs a voiceover track.')
     if (images.length > 60) throw new ToolError('ad_render', 'too_many_frames', `Too many frames to render in-browser (${images.length}). Split it up.`)
 
-    const { getFFmpeg, fetchFile } = await import('../utils/ffmpegLoader')
+    const { getFFmpeg, fetchFile, acquireFFmpegLock } = await import('../utils/ffmpegLoader')
     const { arrayBufferToBase64 } = await import('../utils/base64')
-    const ff = await getFFmpeg()
+    // Serialize the whole composition — ffmpeg.wasm is a single shared instance
+    // with fixed virtual-FS filenames, so concurrent renders corrupt each other.
+    const releaseFFmpeg = await acquireFFmpegLock()
+    let ff
+    try { ff = await getFFmpeg() }
+    catch (e) { releaseFFmpeg(); throw e }
 
     // Keep a rolling tail of ffmpeg's own log so a render failure surfaces the
     // REAL reason (codec/concat/memory) instead of an opaque "render_failed".
@@ -2439,6 +2448,10 @@ const adRender = {
       if (musicUrl) await ff.writeFile('music.mp3', await fetchFile(musicUrl))
 
       const total = await probeDuration('vo.mp3') || images.length * 5
+      // Bound output size/time: the frame-count guard above doesn't cap DURATION,
+      // so a long voiceover + one hero image would still render a huge MP4 that
+      // can exceed the storage upload limit or freeze the tab. Cap at 5 minutes.
+      if (total > 300) throw new ToolError('ad_render', 'too_long', `Voiceover is ${Math.round(total)}s — too long to assemble in-browser (max 300s). Shorten the script or split it.`)
       const per = Math.max(1, total / images.length)
 
       // One silent video segment per frame, each held for an equal slice of
@@ -2501,6 +2514,8 @@ const adRender = {
       // diagnosable instead of an opaque "render_failed".
       const detail = logTail.filter(l => /error|invalid|fail|abort|no such|unable|not found|conversion/i.test(l)).slice(-3).join(' / ')
       throw new ToolError('ad_render', 'render_failed', `Couldn't render the ad: ${e?.message || e}${detail ? ` — ffmpeg: ${detail}` : ''}`)
+    } finally {
+      releaseFFmpeg()
     }
   },
 }
