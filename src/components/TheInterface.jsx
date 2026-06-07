@@ -347,6 +347,11 @@ export default function TheInterface() {
   const [showMemory, setShowMemory] = useState(false)
   const [showPrompts, setShowPrompts] = useState(false)
   const [agentMemory, setAgentMemory] = useState([])
+  // Load saved memories on mount. Previously agentMemory was only populated when
+  // the user opened AND closed the Memory panel, so scopedMemory (threaded into
+  // every system prompt) stayed empty all session — "it remembers" was silently
+  // inert. Load it up front so memories influence the panel from the first turn.
+  useEffect(() => { loadMemory().then(setAgentMemory).catch(() => {}) }, [loadMemory])
   const [projectConvos, setProjectConvos] = useState([])
   const [setupNotices, setSetupNotices] = useState([])
   const [skippedOnboarding, setSkippedOnboarding] = useState(false)

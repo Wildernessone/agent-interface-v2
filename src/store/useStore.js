@@ -11,7 +11,24 @@ import { logError } from '../utils/telemetry'
 // so short chats still rehydrate fully.
 const HEAVY_URL_CHARS = 200_000 // ~150KB of base64
 function isHeavy(url) {
-  return typeof url === 'string' && url.startsWith('data:') && url.length > HEAVY_URL_CHARS
+  if (typeof url !== 'string') return false
+  // blob: object URLs are invalid after a page reload, so persisting them saves
+  // a dead embed that renders broken on reopen. Drop them (the "Saved · Open ↗"
+  // fallback shows instead), same as oversized data: URLs.
+  if (url.startsWith('blob:')) return true
+  return url.startsWith('data:') && url.length > HEAVY_URL_CHARS
+}
+// Revoke object URLs a set of turns holds, so their blobs (tens of MB each for
+// generated media) don't leak for the tab's lifetime when turns are cleared.
+function revokeTurnBlobs(turns) {
+  const urls = []
+  const collect = (o) => {
+    if (!o || typeof o !== 'object') return
+    if (typeof o.url === 'string' && o.url.startsWith('blob:')) urls.push(o.url)
+    if (Array.isArray(o.files)) o.files.forEach(collect)
+  }
+  for (const t of (turns || [])) { collect(t?.output); if (Array.isArray(t?.files)) t.files.forEach(f => collect(f?.output)) }
+  for (const u of urls) { try { URL.revokeObjectURL(u) } catch { /* noop */ } }
 }
 function lightenOutput(output) {
   if (!output || typeof output !== 'object') return output
@@ -256,7 +273,10 @@ export const useStore = create((set, get) => ({
   })),
   addErrorTurn: (agentId, errorType, detail = null) => set(state => ({ turns: [...state.turns, { id: `err-${agentId}-${Date.now()}`, type: 'error', agent: agentId, errorType, detail }], activeAgentId: null })),
   addToolErrorTurn: (tool, errorType, message) => set(state => ({ turns: [...state.turns, { id: `tool-err-${tool}-${Date.now()}`, type: 'tool_error', tool, errorType, message }] })),
-  clearTurns: () => set({ turns: [], activeAgentId: null, conversationId: null, justCreatedConversationId: null, saveStatus: 'idle' }),
+  clearTurns: () => set(state => {
+    revokeTurnBlobs(state.turns)
+    return { turns: [], activeAgentId: null, conversationId: null, justCreatedConversationId: null, saveStatus: 'idle' }
+  }),
 
   saveStatus: 'idle', // 'idle' | 'saving' | 'saved' | 'error'
   justCreatedConversationId: null, // one-shot: set on insert, consumed by title-gen UI
@@ -342,7 +362,21 @@ export const useStore = create((set, get) => ({
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
       const { data } = await supabase.from("conversations").select("*").eq("id", id).eq("user_id", user.id).single()
-      if (data?.turns_data) useStore.setState({ turns: JSON.parse(data.turns_data), conversationId: id, activeAgentId: null, saveStatus: 'saved' })
+      if (!data?.turns_data) return
+      // Guard the parse: a corrupt/truncated turns_data used to throw and the
+      // catch swallowed it, so clicking that History item did nothing (silent
+      // dead-end). Now we surface a readable error turn instead of a no-op.
+      let parsed = null
+      try { parsed = JSON.parse(data.turns_data) } catch { parsed = null }
+      if (!Array.isArray(parsed)) {
+        logError("loadConversation", new Error("corrupt turns_data"), { id })
+        useStore.setState({
+          turns: [{ id: `load-err-${id}`, type: 'tool_error', tool: 'history', errorType: 'load_failed', message: "This conversation couldn't be opened — its saved data is corrupted." }],
+          conversationId: id, activeAgentId: null, saveStatus: 'saved',
+        })
+        return
+      }
+      useStore.setState({ turns: parsed, conversationId: id, activeAgentId: null, saveStatus: 'saved' })
     } catch(e) { logError("loadConversation", e) }
   },
 
