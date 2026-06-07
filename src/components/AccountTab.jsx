@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useStore } from '../store/useStore'
 import { entitlements } from '../utils/entitlements'
 import { trialInfo } from '../utils/tier'
+import { startCheckout, openBillingPortal } from '../utils/billing'
 
 // Account & data controls: plan/trial status, GDPR data export, and account
 // deletion. Deletion is gated behind a typed confirmation because it is
@@ -13,6 +14,14 @@ export default function AccountTab() {
   const [confirmText, setConfirmText] = useState('')
   const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState('')
+  const [billingBusy, setBillingBusy] = useState('')
+
+  const isPaid = billing?.subscription_status === 'active'
+  const runBilling = async (action, fn) => {
+    setBillingBusy(action); setError('')
+    try { await fn() } // redirects to Stripe on success
+    catch (e) { setError(e.message || 'Billing is unavailable right now.'); setBillingBusy('') }
+  }
 
   // Effective tier (honors the trial clock), not just the raw subscription row.
   const ent = entitlements(billing)
@@ -86,12 +95,33 @@ export default function AccountTab() {
             </div>
           ))}
         </div>
-        {tier !== 'pro' && (
-          <p className="settings-help" style={{ marginTop: 'var(--space-3)' }}>
-            <strong>Pro</strong> unlocks the full multi-agent panel (all agents debating), every tool at once,
-            memory, and cloud storage. Paid plans aren't open yet — you'll be able to upgrade here soon.
-          </p>
+        {!isPaid && (
+          <>
+            <p className="settings-help" style={{ marginTop: 'var(--space-3)' }}>
+              <strong>Pro</strong> unlocks the full multi-agent panel (all agents debating), every tool at once,
+              memory, and cloud storage. Your keys, zero markup — you only pay for the app.
+            </p>
+            <div className="settings-row" style={{ gap: 'var(--space-2)', marginTop: 'var(--space-2)' }}>
+              <button className="ai-btn ai-btn--primary" disabled={!!billingBusy}
+                onClick={() => runBilling('pro', () => startCheckout('pro'))}>
+                {billingBusy === 'pro' ? 'Opening checkout…' : 'Upgrade to Pro — $25/mo'}
+              </button>
+              <button className="ai-btn" disabled={!!billingBusy}
+                onClick={() => runBilling('standard', () => startCheckout('standard'))}>
+                {billingBusy === 'standard' ? 'Opening…' : 'Standard — $10/mo'}
+              </button>
+            </div>
+          </>
         )}
+        {isPaid && (
+          <div style={{ marginTop: 'var(--space-3)' }}>
+            <button className="ai-btn" disabled={!!billingBusy}
+              onClick={() => runBilling('portal', openBillingPortal)}>
+              {billingBusy === 'portal' ? 'Opening…' : 'Manage billing'}
+            </button>
+          </div>
+        )}
+        {error && <p className="settings-help" style={{ color: 'var(--danger, #e5484d)', marginTop: 'var(--space-2)' }}>{error}</p>}
       </section>
 
       <section className="settings-card">

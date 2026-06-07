@@ -28,6 +28,21 @@ export default function App() {
   useEffect(() => { finishDropboxAuth() }, [])
   useEffect(() => { finishRedditAuth() }, [])
 
+  // Returning from Stripe Checkout — the webhook updates the tier asynchronously,
+  // so re-pull settings a few times to reflect the new plan, then clean the URL.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const checkout = params.get('checkout')
+    if (!checkout) return
+    if (checkout === 'success') {
+      ;[1000, 3000, 6000].forEach(ms => setTimeout(() => loadSettings(), ms))
+    }
+    params.delete('checkout')
+    const qs = params.toString()
+    window.history.replaceState({}, '', window.location.pathname + (qs ? `?${qs}` : ''))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   useEffect(() => {
     trackSessionStart()
     supabase.auth.getSession().then(({ data: { session } }) => {
