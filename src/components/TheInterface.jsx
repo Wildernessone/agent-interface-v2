@@ -21,7 +21,7 @@ import { detectSignalsFromUserMessage, logSignals, logAuditFail, getRecentRolePe
 import { logUsage, logError, checkTierLimits } from '../utils/telemetry'
 import { track } from '../utils/track'
 import { saveToCloud, pickProvider, listStorageConnections } from '../utils/cloudStorage'
-import { TOOLS_BY_ID, ToolError, readKey } from '../tools/registry'
+import { TOOLS_BY_ID, ToolError, readKey, generateImageWithFallback } from '../tools/registry'
 import { runBuild } from '../utils/buildExecutor'
 import { runAgenticBuild } from '../utils/agenticBuild'
 import { brandBriefFrom } from '../utils/brandContext'
@@ -1037,6 +1037,67 @@ export default function TheInterface() {
     setToolsWorking(false)
   }
 
+  // Regenerate ONE component of a finished video build (voiceover / music /
+  // image) and re-stitch the MP4 — without rebuilding the whole thing. Re-runs
+  // that one tool with its original prompt/script (voiceover also picks up the
+  // current Settings → Narrator voice), then re-renders via ad_render with the
+  // other pieces unchanged. Works in the live session: the components' data:
+  // URLs live in memory and are stripped on reload, so the buttons only show
+  // while they're still available.
+  const regenerateComponent = async (buildTurnId, kind) => {
+    const turn = useStore.getState().turns.find(t => t.id === buildTurnId)
+    if (!turn) return
+    const files = turn.files || []
+    const videoFile = files.find(f => f.output?.type === 'video' && f.output?.url)
+    const comp = (k) => files.find(f => f.output?.regenKind === k && f.output?.url)
+    let image = comp('image')?.output
+    let voice = comp('voiceover')?.output
+    let music = comp('music')?.output
+    if (!videoFile || !image?.url || !voice?.url) {
+      addToolErrorTurn('regenerate', 'unavailable', "The original pieces aren't in memory anymore (they're cleared on reload) — rebuild to make changes.")
+      return
+    }
+    setToolsWorking(true)
+    try {
+      if (kind === 'voiceover') {
+        const elevenKey = readKey(settings, 'tool_keys.elevenlabs')
+        const tool = elevenKey ? TOOLS_BY_ID.elevenlabs : TOOLS_BY_ID.openai_tts
+        const key = elevenKey || readKey(settings, 'agent.gpt')
+        if (!key) throw new Error('Add an ElevenLabs or OpenAI key to regenerate the voiceover.')
+        const out = await tool.run({ prompt: voice.regenParam, structuredInput: { text: voice.regenParam }, key, proxy: proxyFetch, settings })
+        voice = { ...out, regenKind: 'voiceover', regenParam: voice.regenParam }
+      } else if (kind === 'music') {
+        const key = readKey(settings, 'tool_keys.stability')
+        if (!key) throw new Error('Add a Stability key to regenerate the music.')
+        const prompt = music?.regenParam || 'instrumental backing track, no vocals'
+        const out = await TOOLS_BY_ID.stable_audio.run({ prompt, structuredInput: { prompt, duration: music?.regenDuration || 15 }, key, proxy: proxyFetch })
+        music = { ...out, regenKind: 'music', regenParam: prompt }
+      } else if (kind === 'image') {
+        const out = await generateImageWithFallback({ prompt: image.regenParam, structuredInput: { prompt: image.regenParam }, settings, proxy: proxyFetch })
+        image = { ...out, regenKind: 'image', regenParam: image.regenParam }
+      }
+      const finalOut = await TOOLS_BY_ID.ad_render.run({ structuredInput: { images: image, voiceover: voice, music: music || null }, label: turn.deliverable, context: { sourceImageUrl: image.url } })
+      // Swap the regenerated piece + the new video back into the build turn. The
+      // re-stitched video is inline-only (savedLink cleared) — the user can
+      // download it or rebuild to re-save to Drive.
+      updateBuildTurn(buildTurnId, {
+        files: (fs) => (fs || []).map(f => {
+          if (f.output?.type === 'video') return { ...f, output: { ...finalOut }, savedLink: null }
+          if (kind === 'voiceover' && f.output?.regenKind === 'voiceover') return { ...f, output: voice }
+          if (kind === 'music' && f.output?.regenKind === 'music') return { ...f, output: music }
+          if (kind === 'image' && f.output?.regenKind === 'image') return { ...f, output: image }
+          return f
+        }),
+      })
+      track('tool_use', { feature: `regen_${kind}` })
+    } catch (e) {
+      logError('regenerateComponent', e)
+      addToolErrorTurn('regenerate', 'regen_failed', e?.message || 'Regeneration failed.')
+    } finally {
+      setToolsWorking(false)
+    }
+  }
+
   // Stable callback identities for the memoized TurnRow rows. We keep the
   // latest sendMessage/executeBuild in a ref so settled rows don't re-render on
   // every streamed token just because these closures are recreated each render.
@@ -1046,12 +1107,14 @@ export default function TheInterface() {
   useEffect(() => {
     fnRefs.current.sendMessage = sendMessage
     fnRefs.current.executeBuild = executeBuild
+    fnRefs.current.regenerateComponent = regenerateComponent
   })
   const onRetryLast = useCallback(() => {
     const ts = useStore.getState().turns
     fnRefs.current.sendMessage(ts.filter(t => t.type === "user").slice(-1)[0]?.text || "")
   }, [])
   const onExecuteBuild = useCallback((plan) => fnRefs.current.executeBuild(plan), [])
+  const onRegenerate = useCallback((buildTurnId, kind) => fnRefs.current.regenerateComponent(buildTurnId, kind), [])
   // Build a chosen panel-first option. Feed the debate into the first agent_synth
   // step so it builds FROM the panel's reasoning, not from scratch.
   const onBuildOption = useCallback((option, debate, basePlan) => {
@@ -1255,6 +1318,7 @@ export default function TheInterface() {
               busy={busy}
               onRetryLast={onRetryLast}
               onExecuteBuild={onExecuteBuild}
+              onRegenerate={onRegenerate}
               onBuildOption={onBuildOption}
               onBuildSomethingDifferent={onBuildSomethingDifferent}
               onOpenSettings={onOpenSettings}
@@ -1378,7 +1442,7 @@ export default function TheInterface() {
   )
 }
 
-const TurnRow = memo(function TurnRow({ turn, isActive, busy, onRetryLast, onExecuteBuild, onBuildOption, onBuildSomethingDifferent, onOpenSettings, onSaveBrief, onDismissBrief, onEditBrief }) {
+const TurnRow = memo(function TurnRow({ turn, isActive, busy, onRetryLast, onExecuteBuild, onRegenerate, onBuildOption, onBuildSomethingDifferent, onOpenSettings, onSaveBrief, onDismissBrief, onEditBrief }) {
           if (turn.type === "user") return (
             <div key={turn.id} className="ai-turn ai-turn--user">
               <div className="ai-user-bubble">{turn.text}</div>
@@ -1544,6 +1608,44 @@ const TurnRow = memo(function TurnRow({ turn, isActive, busy, onRetryLast, onExe
                     ))}
                   </div>
                 )}
+                {/* Inline previews — play/show the finished media right in the
+                    chat instead of only a download link. Only when the url is
+                    present (live session); after reload heavy data: URLs are
+                    stripped, so the folder/download links below carry it. */}
+                {done && fileItems.some(f => ['video', 'image', 'audio'].includes(f.output?.type) && f.output?.url) && (
+                  <div className="ai-build-previews">
+                    {fileItems
+                      .filter(f => ['video', 'image', 'audio'].includes(f.output?.type) && f.output?.url)
+                      .map(f => (
+                        <ToolOutput key={`preview-${f.stepId}`} output={f.savedLink ? { ...f.output, driveUrl: f.savedLink } : f.output} />
+                      ))}
+                  </div>
+                )}
+                {/* Component-level regen: redo one piece + re-stitch, no full
+                    rebuild. Only for a finished video whose pieces are still in
+                    memory (cleared on reload). Voiceover redo picks up the
+                    current Settings → Narrator voice. */}
+                {done && turn.files?.some(f => f.output?.type === 'video' && f.output?.url) && (() => {
+                  const has = (k) => turn.files?.some(f => f.output?.regenKind === k && f.output?.url)
+                  const btns = [
+                    has('voiceover') && { k: 'voiceover', label: 'voiceover', hint: 'Re-records the voiceover — set a different voice in Settings → Narrator voice first' },
+                    has('music') && { k: 'music', label: 'music', hint: 'Generates a fresh backing track' },
+                    has('image') && { k: 'image', label: 'background', hint: 'Generates a new background image' },
+                  ].filter(Boolean)
+                  if (!btns.length) return null
+                  return (
+                    <div className="ai-build-regen" style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', margin: '4px 0 8px' }}>
+                      <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontFamily: 'monospace' }}>Tweak one piece:</span>
+                      {btns.map(b => (
+                        <button key={b.k} type="button" disabled={busy} title={b.hint}
+                          onClick={() => onRegenerate?.(turn.id, b.k)}
+                          style={{ fontSize: 11, fontFamily: 'monospace', color: 'rgba(255,255,255,0.7)', padding: '4px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.04)', cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.5 : 1 }}>
+                          ↻ Redo {b.label}
+                        </button>
+                      ))}
+                    </div>
+                  )
+                })()}
                 {done && fileItems.length > 0 && (
                   <div className="ai-build-files">
                     <span>{fileItems.length} file{fileItems.length === 1 ? '' : 's'} {folderHref ? 'bundled' : 'generated'}</span>

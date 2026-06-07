@@ -70,6 +70,7 @@ export async function runAgenticBuild({ request, deliverable: deliverableIn, bra
 
   const store = {}              // id -> real tool output (image/audio/doc/video object)
   const finals = []             // { out, kind } in the order produced
+  let renderInputs = null       // which component ids fed the final video — lets the UI re-stitch on a component regen
   const counts = {}
   const files = [], errors = []
   const deliverable = (deliverableIn || 'Build').toString().slice(0, 70)
@@ -88,7 +89,7 @@ export async function runAgenticBuild({ request, deliverable: deliverableIn, bra
       const id = newId('image')
       onStep(id, 'Generate image', 'started')
       const out = await generateImageWithFallback({ prompt: input.prompt, structuredInput: { prompt: input.prompt }, settings, proxy })
-      store[id] = out; onStep(id, 'Generate image', 'done')
+      store[id] = { ...out, regenKind: 'image', regenParam: input.prompt }; onStep(id, 'Generate image', 'done')
       return { id, status: 'ok', note: `image generated via ${out.provider}` }
     }
     if (name === 'record_voiceover') {
@@ -99,7 +100,7 @@ export async function runAgenticBuild({ request, deliverable: deliverableIn, bra
       const id = newId('voiceover')
       onStep(id, 'Record voiceover', 'started')
       const out = await tool.run({ prompt: input.script, structuredInput: { text: input.script }, key, proxy, settings })
-      store[id] = out; onStep(id, 'Record voiceover', 'done')
+      store[id] = { ...out, regenKind: 'voiceover', regenParam: input.script }; onStep(id, 'Record voiceover', 'done')
       return { id, status: 'ok' }
     }
     if (name === 'generate_music') {
@@ -108,7 +109,7 @@ export async function runAgenticBuild({ request, deliverable: deliverableIn, bra
       const id = newId('music')
       onStep(id, 'Generate backing track', 'started')
       const out = await TOOLS_BY_ID.stable_audio.run({ prompt: input.prompt, structuredInput: { prompt: input.prompt, duration: Math.min(30, Math.max(3, input.duration_sec || 5)) }, key, proxy })
-      store[id] = out; onStep(id, 'Generate backing track', 'done')
+      store[id] = { ...out, regenKind: 'music', regenParam: input.prompt, regenDuration: input.duration_sec || 5 }; onStep(id, 'Generate backing track', 'done')
       return { id, status: 'ok' }
     }
     if (name === 'render_video') {
@@ -118,6 +119,7 @@ export async function runAgenticBuild({ request, deliverable: deliverableIn, bra
       onStep('render_video', 'Render the finished MP4', 'started')
       const out = await TOOLS_BY_ID.ad_render.run({ structuredInput: { images: img, voiceover: vo, music: mu }, label: deliverable, context: { sourceImageUrl: img.url } })
       store.final_video = out; finals.push({ out, kind: 'render_video' }); onStep('render_video', 'Render the finished MP4', 'done')
+      renderInputs = { image: input.image_id, voiceover: input.voiceover_id, music: input.music_id || null }
       return { id: 'final_video', status: 'ok', note: 'finished MP4 rendered' }
     }
     if (name === 'build_deck') {
@@ -212,13 +214,15 @@ Write ALL real content YOURSELF — headlines, bullets, prose, numbers — never
   // so a finished video ALWAYS results.
   if (!finals.length) {
     const last = (k) => Object.keys(store).filter(id => id.startsWith(k)).pop()
-    const img = store[last('image_')], vo = store[last('voiceover_')], mu = store[last('music_')]
+    const imgId = last('image_'), voId = last('voiceover_'), muId = last('music_')
+    const img = store[imgId], vo = store[voId], mu = store[muId]
     console.log('[agentic] post-loop, finals?', finals.length, 'img?', !!img, 'vo?', !!vo)
     if (img?.url && vo?.url) {
       try {
         onStep('render_video', 'Render the finished MP4', 'started')
         const out = await TOOLS_BY_ID.ad_render.run({ structuredInput: { images: img, voiceover: vo, music: mu || null }, label: deliverable, context: { sourceImageUrl: img.url } })
         store.final_video = out; finals.push({ out, kind: 'render_video' })
+        renderInputs = { image: imgId, voiceover: voId, music: muId || null }
         onStep('render_video', 'Render the finished MP4', 'done')
         console.log('[agentic] auto-render OK')
       } catch (e) {
@@ -251,5 +255,5 @@ Write ALL real content YOURSELF — headlines, bullets, prose, numbers — never
   }
 
   console.log('[agentic] DONE — finals:', finals.length, 'files:', files.length, 'errors:', JSON.stringify(errors))
-  return { deliverable, folderName, files, errors, folderLink, folderProvider, agentic: true }
+  return { deliverable, folderName, files, errors, folderLink, folderProvider, agentic: true, renderInputs }
 }
