@@ -183,7 +183,7 @@ export async function runAgenticBuild({ request, deliverable: deliverableIn, bra
 
   const webappIntent = /\b(game|web ?app|web ?site|app|playable|tower[ -]?defen[sc]e|arcade|simulator|interactive|mini[- ]?game|html game)\b/i.test(`${request || ''} ${deliverable || ''}`)
   const webappDirective = webappIntent
-    ? `\n\n⚠ THIS REQUEST IS A GAME / INTERACTIVE APP. Your ONLY acceptable final action is build_webapp, emitting ONE self-contained .html with the COMPLETE working code (vanilla HTML/CSS/JS, canvas where it's a game, real logic you write in full). Do NOT call generate_image and do NOT stop after making any image — a game/app is built from CODE, not pictures. Describing it, planning it, or producing an image instead of calling build_webapp = the build FAILS and the user gets nothing playable. Write the entire thing and call build_webapp.`
+    ? `\n\n⚠ THIS REQUEST IS A GAME / INTERACTIVE APP. Your ONLY acceptable final action is build_webapp, emitting ONE self-contained .html with the COMPLETE working code (vanilla HTML/CSS/JS, canvas where it's a game, real logic you write in full). Do NOT call generate_image and do NOT stop after making any image — a game/app is built from CODE, not pictures. Describing it, planning it, or producing an image instead of calling build_webapp = the build FAILS and the user gets nothing playable. CRITICAL: keep the code TIGHT and efficient so the ENTIRE thing fits in ONE response — compact, working code with minimal comments. If the scope is getting too large to finish in one go, SIMPLIFY it (fewer tower types, simpler art) rather than leaving the file truncated and unplayable. The .html MUST be complete, ending with </html>. Write the whole thing and call build_webapp.`
     : ''
   const system = `You are the Builder inside Agent Interface — it produces REAL finished files, not descriptions or plans. Read what the user wants and BUILD IT by calling tools, using the real result of each call to construct the next. Do NOT write a "plan" or a "production doc" — perform the work and emit the actual file.${webappDirective}
 
@@ -201,9 +201,11 @@ Write ALL real content YOURSELF — headlines, bullets, prose, numbers — never
   let messages = [{ role: 'user', content: request || deliverable }]
   console.log('[agentic] start —', deliverable, '·', request?.slice(0, 80))
   for (let turn = 0; turn < 14; turn++) {
-    // 16k cap so a full self-contained app/game (build_webapp) isn't truncated
-    // mid-code — it's a ceiling, not a target, so other builds stop early as before.
-    const res = await proxy('claude', { model: MODEL, max_tokens: 16000, system, messages, tools: BUILDER_TOOLS }, { 'x-api-key': claudeKey })
+    // 24k cap so a full self-contained app/game (build_webapp) isn't truncated
+    // mid-code — verified a complete tower-defense game lands in ~8k with the
+    // "keep it tight" directive, so 24k is generous headroom. It's a ceiling, not
+    // a target, so other builds stop early as before.
+    const res = await proxy('claude', { model: MODEL, max_tokens: 24000, system, messages, tools: BUILDER_TOOLS }, { 'x-api-key': claudeKey })
     if (!res.ok) { console.error('[agentic] claude not ok', res.status); errors.push({ stepId: '_agent', tool: 'claude', code: 'agent_http', error: `claude_${res.status}` }); break }
     const data = await res.json().catch(() => ({}))
     // Anthropic can return HTTP 200 with an error envelope (overloaded, etc.).
