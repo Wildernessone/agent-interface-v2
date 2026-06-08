@@ -887,7 +887,7 @@ export default function TheInterface() {
     // words, or a plan that already includes a document/video generator.
     const _docToolIds = ['pptxgen', 'docgen', 'xlsxgen', 'pdfgen', 'mdgen']
     const wantsDirectBuild = (isBuildMode || isBuildOptions) && (
-      /\b(video|promo|mp4|reel|trailer|clip|spot|advert|commercial|deck|slides?|powerpoint|presentation|pitch|keynote|document|report|one[- ]?pager|whitepaper|memo|proposal|spreadsheet|excel|workbook|budget|pdf|blog post|article|newsletter)\b/i.test(text || '') ||
+      /\b(video|promo|mp4|reel|trailer|clip|spot|advert|commercial|deck|slides?|powerpoint|presentation|pitch|keynote|document|report|one[- ]?pager|whitepaper|memo|proposal|spreadsheet|excel|workbook|budget|pdf|blog post|article|newsletter|game|web ?app|web ?site|interactive|playable|arcade|simulator|tower defense|html)\b/i.test(text || '') ||
       steps.some(s => _docToolIds.includes(s.tool)) ||
       (steps.some(s => ['dalle', 'stability', 'ideogram', 'flux', 'recraft', 'image_per_slide'].includes(s.tool)) &&
         steps.some(s => ['elevenlabs', 'openai_tts'].includes(s.tool)))
@@ -959,7 +959,8 @@ export default function TheInterface() {
       /\b(video|promo|mp4|reel|trailer|clip|spot|advert|commercial)\b/i.test(_text) ||
       (_hasImage && _hasVoice && !_hasDoc)
     // The agentic builder owns any build whose deliverable is a finished file.
-    const isAgentic = isVideoBuild || _hasDoc ||
+    const isWebappBuild = /\b(game|web ?app|web ?site|interactive|playable|arcade|simulator|tower defense|calculator|landing page|html)\b/i.test(_text)
+    const isAgentic = isVideoBuild || isWebappBuild || _hasDoc ||
       /\b(deck|slides?|powerpoint|presentation|pitch|keynote|document|report|one[- ]?pager|brief|whitepaper|memo|letter|proposal|spreadsheet|excel|workbook|budget|pdf|blog post|article|newsletter)\b/i.test(_text)
     const cost = estimateBuildCents(planToRun.steps || [])
     addToolTurn({
@@ -1643,10 +1644,10 @@ const TurnRow = memo(function TurnRow({ turn, isActive, busy, onRetryLast, onExe
                     chat instead of only a download link. Only when the url is
                     present (live session); after reload heavy data: URLs are
                     stripped, so the folder/download links below carry it. */}
-                {done && fileItems.some(f => ['video', 'image', 'audio'].includes(f.output?.type) && f.output?.url) && (
+                {done && fileItems.some(f => (['video', 'image', 'audio'].includes(f.output?.type) && f.output?.url) || (f.output?.type === 'webapp' && (f.output?.html || f.output?.url))) && (
                   <div className="ai-build-previews">
                     {fileItems
-                      .filter(f => ['video', 'image', 'audio'].includes(f.output?.type) && f.output?.url)
+                      .filter(f => (['video', 'image', 'audio'].includes(f.output?.type) && f.output?.url) || (f.output?.type === 'webapp' && (f.output?.html || f.output?.url)))
                       .map(f => (
                         <ToolOutput key={`preview-${f.stepId}`} output={f.savedLink ? { ...f.output, driveUrl: f.savedLink } : f.output} />
                       ))}
