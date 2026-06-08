@@ -47,6 +47,8 @@ const BUILDER_TOOLS = [
       sections: { type: 'array', items: { type: 'object', properties: {
         heading: { type: 'string' }, paragraphs: { type: 'array', items: { type: 'string' } } } } },
     }, required: ['sections'] } },
+  { name: 'build_webapp', description: 'FINAL (game / interactive app / playable demo / tool / website): emit a SINGLE self-contained .html file that runs on its own — ALL html, css and js inlined, no external files/CDNs/imports. Write the COMPLETE, working code yourself (real game logic / app behavior, not a stub or description). Use this for anything the user wants to PLAY or INTERACT with.',
+    input_schema: { type: 'object', properties: { html: { type: 'string', description: 'the entire self-contained HTML document' }, title: { type: 'string' } }, required: ['html'] } },
   { name: 'write_markdown', description: 'FINAL (blog post / markdown / static-site content): emit a real .md with frontmatter. Write the full body yourself.',
     input_schema: { type: 'object', properties: {
       title: { type: 'string' },
@@ -56,8 +58,8 @@ const BUILDER_TOOLS = [
 ]
 
 // Which tools emit an actual deliverable file (vs. a reusable component).
-const FINAL_TOOLS = new Set(['render_video', 'build_deck', 'write_document', 'build_spreadsheet', 'build_pdf', 'write_markdown'])
-const FINAL_EXT = { build_deck: 'Deck', write_document: 'Document', build_spreadsheet: 'Spreadsheet', build_pdf: 'PDF', write_markdown: 'Post', render_video: 'Video' }
+const FINAL_TOOLS = new Set(['render_video', 'build_deck', 'write_document', 'build_spreadsheet', 'build_pdf', 'write_markdown', 'build_webapp'])
+const FINAL_EXT = { build_deck: 'Deck', write_document: 'Document', build_spreadsheet: 'Spreadsheet', build_pdf: 'PDF', write_markdown: 'Post', render_video: 'Video', build_webapp: 'App' }
 
 function buildFolderName(deliverable) {
   const safe = (deliverable || 'Build').replace(/[<>:"/\\|?*]/g, '').slice(0, 70).trim()
@@ -165,6 +167,17 @@ export async function runAgenticBuild({ request, deliverable: deliverableIn, bra
       finals.push({ out, kind: 'write_markdown' }); onStep('write_markdown', 'Write the post', 'done')
       return { status: 'ok', note: 'post written' }
     }
+    if (name === 'build_webapp') {
+      onStep('build_webapp', 'Build the app', 'started')
+      const html = String(input.html || '')
+      if (!/<\/?[a-z]/i.test(html)) throw new Error('build_webapp got no HTML')
+      const blob = new Blob([html], { type: 'text/html' })
+      const url = URL.createObjectURL(blob)
+      const safe = (input.title || deliverable || 'app').replace(/[^a-z0-9-_ ]/gi, '').trim() || 'app'
+      const out = { type: 'webapp', html, url, filename: `${safe}.html`, title: input.title || deliverable, tool: 'build_webapp' }
+      finals.push({ out, kind: 'build_webapp' }); onStep('build_webapp', 'Build the app', 'done')
+      return { status: 'ok', note: 'web app built' }
+    }
     return { status: 'error', note: `unknown tool ${name}` }
   }
 
@@ -177,13 +190,16 @@ Pick the right FINAL tool for the deliverable:
 - PDF → build_pdf.
 - Blog post / article / markdown → write_markdown.
 - Promo video / ad / reel / trailer → generate_image, then record_voiceover (the EXACT words, never an instruction), then generate_music (skip gracefully if "skipped"), then render_video LAST with the ids.
+- Game / interactive app / playable demo / tool / website → build_webapp: ONE self-contained .html with all html/css/js inlined and the REAL, fully-working logic written by you (no external libraries, no placeholders, no "// add game logic here"). Make it actually playable/usable.
 
 Write ALL real content YOURSELF — headlines, bullets, prose, numbers — never placeholders, never "insert X here". When the final file is produced, confirm in ONE short sentence and STOP (no further tool calls).${brandContext ? `\n\nBRAND CONTEXT (ground everything in this; do not contradict it):\n${String(brandContext).slice(0, 1500)}` : ''}`
 
   let messages = [{ role: 'user', content: request || deliverable }]
   console.log('[agentic] start —', deliverable, '·', request?.slice(0, 80))
   for (let turn = 0; turn < 14; turn++) {
-    const res = await proxy('claude', { model: MODEL, max_tokens: 4096, system, messages, tools: BUILDER_TOOLS }, { 'x-api-key': claudeKey })
+    // 16k cap so a full self-contained app/game (build_webapp) isn't truncated
+    // mid-code — it's a ceiling, not a target, so other builds stop early as before.
+    const res = await proxy('claude', { model: MODEL, max_tokens: 16000, system, messages, tools: BUILDER_TOOLS }, { 'x-api-key': claudeKey })
     if (!res.ok) { console.error('[agentic] claude not ok', res.status); errors.push({ stepId: '_agent', tool: 'claude', code: 'agent_http', error: `claude_${res.status}` }); break }
     const data = await res.json().catch(() => ({}))
     // Anthropic can return HTTP 200 with an error envelope (overloaded, etc.).

@@ -7,7 +7,44 @@ export default function ToolOutput({ output }) {
   if (output.type === 'search') return <SearchOutput output={output} />
   if (output.type === 'audio') return <AudioOutput output={output} />
   if (output.type === 'video') return <VideoOutput output={output} />
+  if (output.type === 'webapp') return <WebappOutput output={output} />
   return null
+}
+
+// Playable inline preview of a self-contained HTML app/game. Uses srcdoc (the
+// raw html survives a reload even though blob/data urls are stripped), sandboxed
+// to allow scripts. "Open full screen" pops it large for real play-testing.
+function WebappOutput({ output }) {
+  const [full, setFull] = useState(false)
+  if (!output.html && !output.url) return null
+  const frame = (style) => (
+    <iframe
+      title={output.title || 'app'}
+      srcDoc={output.html || undefined}
+      src={output.html ? undefined : output.url}
+      sandbox="allow-scripts allow-pointer-lock allow-modals allow-popups allow-same-origin"
+      style={style}
+    />
+  )
+  return (
+    <div style={{ marginTop: 8 }}>
+      {output.label && <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', fontFamily: 'monospace', marginBottom: 6, letterSpacing: '0.05em' }}>{output.label}</div>}
+      {frame({ width: '100%', maxWidth: 480, height: 540, border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, background: '#fff', display: 'block' })}
+      <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+        <button onClick={() => setFull(true)} style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', fontFamily: 'monospace', padding: '4px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.04)', cursor: 'pointer' }}>▶ Play full screen</button>
+        {output.url && <a href={output.url} download={output.filename} target="_blank" rel="noreferrer" onClick={e => { e.preventDefault(); downloadFile(output.url, output.filename) }} style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', fontFamily: 'monospace', textDecoration: 'none', padding: '4px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)' }}>⬇ Download .html</a>}
+        <DriveBadge url={output.driveUrl}/>
+      </div>
+      {full && (
+        <div onClick={() => setFull(false)} style={{ position: 'fixed', inset: 0, zIndex: 600, background: 'rgba(0,0,0,0.92)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 900, height: '90vh', position: 'relative' }}>
+            <button onClick={() => setFull(false)} style={{ position: 'absolute', top: -34, right: 0, fontSize: 13, color: '#fff', background: 'transparent', border: 'none', cursor: 'pointer' }}>✕ Close</button>
+            {frame({ width: '100%', height: '100%', border: 'none', borderRadius: 12, background: '#fff' })}
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 function VideoOutput({ output }) {

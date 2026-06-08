@@ -394,6 +394,19 @@ DECISION TREE (first match wins)
        "should I even make a spreadsheet?") do NOT build — fall through to discuss.
        Only build when both the deliverable AND its contents are clear.
 
+2c. GAME / INTERACTIVE APP / PLAYABLE TOOL — if the user asks for something to
+    PLAY or INTERACT with (a game, web app, interactive demo, simulator,
+    calculator, playable widget, an interactive website) AND there's enough to
+    act on:
+     → mode = "build", agents_to_respond = [], deliverable = short folder name
+     → The build emits ONE self-contained, actually-working .html — the builder's
+       build_webapp tool writes the REAL code. NEVER a doc that describes the game
+       or "here's how to build it", and NEVER tell the user to copy-paste code or
+       use StackBlitz. Seed plan (the agentic builder writes the real app):
+         { "steps": [ { "id": "s1", "tool": "agent_synth", "needs": [],
+           "output_schema": "page", "input": "<the app/game spec + mechanics>",
+           "label": "Design the app" } ] }
+
 2b. AD / VIDEO ASSET BUILD — if the user DIRECTLY asks to build an ad, promo,
     storyboard, or short video ("make me a 30s ad about X", "build a promo video
     for Y", "storyboard an ad for Z") AND the request has enough detail to act on:
