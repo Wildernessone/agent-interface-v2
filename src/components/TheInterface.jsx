@@ -657,7 +657,7 @@ export default function TheInterface() {
     // classify this: if the message plainly asks to BUILD something interactive,
     // force a webapp build here. executeBuild then routes it to the agentic builder,
     // which writes one self-contained .html via build_webapp.
-    const FORCE_WEBAPP = /\b(make|build|create|code|program|develop|design|turn (?:it|this) into|do)\b[^.?!]{0,60}\b(game|web ?app|web ?site|app|playable|tower[ -]?defen[sc]e|arcade|simulator|interactive|html)\b/i.test(text)
+    const FORCE_WEBAPP = /\b(make|build|create|code|program|develop|design|turn (?:it|this) into|do)\b[^.?!]{0,60}\b(game|web ?app|web ?site|app|playable|tower[ -]?defen[sc]e|arcade|simulator|interactive|html|chart|graph|diagram|flow ?chart|mind ?map|org ?chart|form|survey|quiz|calculator|dashboard|qr ?code)\b/i.test(text)
       || /\b(tower[ -]?defen[sc]e|playable game|html game|mini[- ]?game)\b/i.test(text)
     if (FORCE_WEBAPP) {
       const nm = (text.replace(/^(ok,?\s*|please\s*|can you\s*|now\s*|so\s*|let'?s\s*)/i, '').replace(/[^a-z0-9 ]/gi, ' ').trim().split(/\s+/).slice(0, 6).join(' ') || 'App')
@@ -979,7 +979,7 @@ export default function TheInterface() {
       /\b(video|promo|mp4|reel|trailer|clip|spot|advert|commercial)\b/i.test(_text) ||
       (_hasImage && _hasVoice && !_hasDoc)
     // The agentic builder owns any build whose deliverable is a finished file.
-    const isWebappBuild = /\b(game|web ?app|web ?site|interactive|playable|arcade|simulator|tower defense|calculator|landing page|html)\b/i.test(_text)
+    const isWebappBuild = /\b(game|web ?app|web ?site|interactive|playable|arcade|simulator|tower defense|calculator|landing page|html|chart|graph|diagram|flow ?chart|mind ?map|org ?chart|form|survey|quiz|dashboard|qr ?code)\b/i.test(_text)
     const isAgentic = isVideoBuild || isWebappBuild || _hasDoc ||
       /\b(deck|slides?|powerpoint|presentation|pitch|keynote|document|report|one[- ]?pager|brief|whitepaper|memo|letter|proposal|spreadsheet|excel|workbook|budget|pdf|blog post|article|newsletter)\b/i.test(_text)
     const cost = estimateBuildCents(planToRun.steps || [])

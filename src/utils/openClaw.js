@@ -394,10 +394,11 @@ DECISION TREE (first match wins)
        "should I even make a spreadsheet?") do NOT build — fall through to discuss.
        Only build when both the deliverable AND its contents are clear.
 
-2c. GAME / INTERACTIVE APP / PLAYABLE TOOL — if the user asks for something to
-    PLAY or INTERACT with (a game, web app, interactive demo, simulator,
-    calculator, playable widget, an interactive website) AND there's enough to
-    act on:
+2c. GAME / INTERACTIVE APP / VISUAL — if the user asks for something to PLAY,
+    INTERACT with, or VISUALIZE (a game, web app, interactive demo, simulator,
+    calculator, playable widget, interactive website, OR a chart / graph /
+    diagram / flowchart / mind map / org chart / form / survey / quiz /
+    dashboard / QR code) AND there's enough to act on:
      → mode = "build", agents_to_respond = [], deliverable = short folder name
      → The build emits ONE self-contained, actually-working .html — the builder's
        build_webapp tool writes the REAL code. NEVER a doc that describes the game

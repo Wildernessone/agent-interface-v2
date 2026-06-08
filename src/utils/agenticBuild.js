@@ -47,7 +47,7 @@ const BUILDER_TOOLS = [
       sections: { type: 'array', items: { type: 'object', properties: {
         heading: { type: 'string' }, paragraphs: { type: 'array', items: { type: 'string' } } } } },
     }, required: ['sections'] } },
-  { name: 'build_webapp', description: 'FINAL (game / interactive app / playable demo / tool / website): emit a SINGLE self-contained .html file that runs on its own — ALL html, css and js inlined, no external files/CDNs/imports. Write the COMPLETE, working code yourself (real game logic / app behavior, not a stub or description). Use this for anything the user wants to PLAY or INTERACT with.',
+  { name: 'build_webapp', description: 'FINAL (game / interactive app / tool / website / chart / graph / diagram / flowchart / mind map / form / survey / quiz / calculator / dashboard / QR code): emit a SINGLE self-contained .html file that runs on its own — inline ALL your html/css/js. Write the COMPLETE, working code yourself (real logic with REAL data/labels, not a stub). For charts/diagrams/QR you MAY load ONE well-known CDN library (Chart.js for charts, Mermaid for diagrams, a qrcode lib for QR) when it materially helps; otherwise no external deps. Use this for anything the user wants to PLAY with, INTERACT with, or VISUALIZE.',
     input_schema: { type: 'object', properties: { html: { type: 'string', description: 'the entire self-contained HTML document' }, title: { type: 'string' } }, required: ['html'] } },
   { name: 'write_markdown', description: 'FINAL (blog post / markdown / static-site content): emit a real .md with frontmatter. Write the full body yourself.',
     input_schema: { type: 'object', properties: {
@@ -181,7 +181,7 @@ export async function runAgenticBuild({ request, deliverable: deliverableIn, bra
     return { status: 'error', note: `unknown tool ${name}` }
   }
 
-  const webappIntent = /\b(game|web ?app|web ?site|app|playable|tower[ -]?defen[sc]e|arcade|simulator|interactive|mini[- ]?game|html game)\b/i.test(`${request || ''} ${deliverable || ''}`)
+  const webappIntent = /\b(game|web ?app|web ?site|app|playable|tower[ -]?defen[sc]e|arcade|simulator|interactive|mini[- ]?game|html game|chart|graph|diagram|flow ?chart|mind ?map|org ?chart|form|survey|quiz|calculator|dashboard|qr ?code)\b/i.test(`${request || ''} ${deliverable || ''}`)
   const webappDirective = webappIntent
     ? `\n\n⚠ THIS REQUEST IS A GAME / INTERACTIVE APP. Your ONLY acceptable final action is build_webapp, emitting ONE self-contained .html with the COMPLETE working code (vanilla HTML/CSS/JS, canvas where it's a game, real logic you write in full). Do NOT call generate_image and do NOT stop after making any image — a game/app is built from CODE, not pictures. Describing it, planning it, or producing an image instead of calling build_webapp = the build FAILS and the user gets nothing playable. CRITICAL: keep the code TIGHT and efficient so the ENTIRE thing fits in ONE response — compact, working code with minimal comments. If the scope is getting too large to finish in one go, SIMPLIFY it (fewer tower types, simpler art) rather than leaving the file truncated and unplayable. The .html MUST be complete, ending with </html>. Write the whole thing and call build_webapp.`
     : ''
