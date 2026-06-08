@@ -55,11 +55,18 @@ const BUILDER_TOOLS = [
       sections: { type: 'array', items: { type: 'object', properties: {
         heading: { type: 'string' }, body: { type: 'string' } } } },
     }, required: ['sections'] } },
+  { name: 'build_podcast', description: 'FINAL (podcast / audio show / two-host conversation / interview / dialogue audio): emit a real .mp3 episode. Write the COMPLETE script yourself as alternating spoken turns between speakers — natural back-and-forth conversation, real spoken language, NO stage directions / no "[Host]:" tags / no "(laughs)". Each turn is { speaker, text }. The system gives each distinct speaker its own voice and stitches all the lines into one audio file. Aim for 8-30 turns.',
+    input_schema: { type: 'object', properties: {
+      title: { type: 'string' },
+      segments: { type: 'array', items: { type: 'object', properties: {
+        speaker: { type: 'string', description: "speaker label, e.g. 'Alex' or 'Host A' — reuse the same labels so each gets a consistent voice" },
+        text: { type: 'string', description: 'the exact words this speaker says (spoken language only)' } }, required: ['speaker', 'text'] } },
+    }, required: ['segments'] } },
 ]
 
 // Which tools emit an actual deliverable file (vs. a reusable component).
-const FINAL_TOOLS = new Set(['render_video', 'build_deck', 'write_document', 'build_spreadsheet', 'build_pdf', 'write_markdown', 'build_webapp'])
-const FINAL_EXT = { build_deck: 'Deck', write_document: 'Document', build_spreadsheet: 'Spreadsheet', build_pdf: 'PDF', write_markdown: 'Post', render_video: 'Video', build_webapp: 'App' }
+const FINAL_TOOLS = new Set(['render_video', 'build_deck', 'write_document', 'build_spreadsheet', 'build_pdf', 'write_markdown', 'build_webapp', 'build_podcast'])
+const FINAL_EXT = { build_deck: 'Deck', write_document: 'Document', build_spreadsheet: 'Spreadsheet', build_pdf: 'PDF', write_markdown: 'Post', render_video: 'Video', build_webapp: 'App', build_podcast: 'Podcast' }
 
 function buildFolderName(deliverable) {
   const safe = (deliverable || 'Build').replace(/[<>:"/\\|?*]/g, '').slice(0, 70).trim()
@@ -234,6 +241,45 @@ export async function runAgenticBuild({ request, deliverable: deliverableIn, bra
       finals.push({ out, kind: 'build_webapp' }); onStep('build_webapp', 'Build the app', 'done')
       return { status: 'ok', note: 'web app built' }
     }
+    if (name === 'build_podcast') {
+      const elevenKey = readKey(settings, 'tool_keys.elevenlabs')
+      if (!elevenKey) throw new Error('A podcast needs an ElevenLabs key (Settings → Tools).')
+      const segs = (Array.isArray(input.segments) ? input.segments : []).filter(s => s && String(s.text || '').trim())
+      if (!segs.length) throw new Error('build_podcast got no dialogue.')
+      onStep('build_podcast', `Recording ${segs.length} lines…`, 'started')
+      // Distinct voice per speaker label: 1st speaker → voice A, 2nd → B, etc.
+      const VOICES = [settings?.narratorVoiceId || '21m00Tcm4TlvDq8ikWAM', 'pNInz6obpgDQGcFmaJgB', 'EXAVITQu4vr4xnSDxMaL', 'TxGEqnHWrfWFTfGW9XjX']
+      const order = []
+      const voiceFor = (sp) => { const k = String(sp || 'A'); if (!order.includes(k)) order.push(k); return VOICES[order.indexOf(k) % VOICES.length] }
+      const { getFFmpeg, fetchFile, acquireFFmpegLock } = await import('../utils/ffmpegLoader')
+      const { arrayBufferToBase64 } = await import('../utils/base64')
+      // TTS each line in order (sequential — preserves order + respects rate limits).
+      const clips = []
+      for (let i = 0; i < segs.length; i++) {
+        const r = await proxy('elevenlabs', { text: String(segs[i].text).slice(0, 1500), voice_id: voiceFor(segs[i].speaker) }, { 'x-api-key': elevenKey })
+        if (!r.ok) continue
+        const d = await r.json().catch(() => ({}))
+        if (d.audio) clips.push(d.audio)
+      }
+      if (!clips.length) throw new Error('podcast voiceover produced no audio.')
+      const release = await acquireFFmpegLock()
+      let ff
+      try { ff = await getFFmpeg() } catch (e) { release(); throw e }
+      try {
+        const names = []
+        for (let i = 0; i < clips.length; i++) { const nm = `p${i}.mp3`; await ff.writeFile(nm, await fetchFile(`data:audio/mpeg;base64,${clips[i]}`)); names.push(nm) }
+        await ff.writeFile('list.txt', new TextEncoder().encode(names.map(n => `file ${n}`).join('\n')))
+        // Re-encode on concat (not -c copy) so the mp3 frames join cleanly.
+        await ff.exec(['-f', 'concat', '-safe', '0', '-i', 'list.txt', '-c:a', 'libmp3lame', '-b:a', '128k', 'episode.mp3'])
+        const outBuf = await ff.readFile('episode.mp3')
+        const b64 = arrayBufferToBase64(outBuf)
+        for (const n of [...names, 'list.txt', 'episode.mp3']) { try { await ff.deleteFile(n) } catch {} }
+        const safe = (input.title || deliverable || 'podcast').replace(/[^a-z0-9-_ ]/gi, '').trim() || 'podcast'
+        const out = { type: 'audio', url: `data:audio/mpeg;base64,${b64}`, filename: `${safe}.mp3`, title: input.title || deliverable, tool: 'build_podcast' }
+        finals.push({ out, kind: 'build_podcast' }); onStep('build_podcast', 'Record the podcast', 'done')
+        return { status: 'ok', note: `podcast recorded (${clips.length} lines)` }
+      } finally { release() }
+    }
     return { status: 'error', note: `unknown tool ${name}` }
   }
 
@@ -241,7 +287,11 @@ export async function runAgenticBuild({ request, deliverable: deliverableIn, bra
   const webappDirective = webappIntent
     ? `\n\n⚠ THIS REQUEST IS A GAME / INTERACTIVE APP. Your ONLY acceptable final action is build_webapp, emitting ONE self-contained .html with the COMPLETE working code (vanilla HTML/CSS/JS, canvas where it's a game, real logic you write in full). Do NOT call generate_image and do NOT stop after making any image — a game/app is built from CODE, not pictures. Describing it, planning it, or producing an image instead of calling build_webapp = the build FAILS and the user gets nothing playable. CRITICAL: keep the code TIGHT and efficient so the ENTIRE thing fits in ONE response — compact, working code with minimal comments. If the scope is getting too large to finish in one go, SIMPLIFY it (fewer tower types, simpler art) rather than leaving the file truncated and unplayable. The .html MUST be complete, ending with </html>. Write the whole thing and call build_webapp.`
     : ''
-  const system = `You are the Builder inside Agent Interface — it produces REAL finished files, not descriptions or plans. Read what the user wants and BUILD IT by calling tools, using the real result of each call to construct the next. Do NOT write a "plan" or a "production doc" — perform the work and emit the actual file.${webappDirective}
+  const podcastIntent = /\b(podcast|audio (?:show|episode|drama)|two[- ]?host)\b/i.test(`${request || ''} ${deliverable || ''}`)
+  const podcastDirective = podcastIntent
+    ? `\n\n⚠ THIS REQUEST IS A PODCAST / AUDIO SHOW. Your ONLY acceptable final action is build_podcast — write the FULL dialogue yourself as alternating { speaker, text } turns (real spoken back-and-forth, no stage directions, no "[Host]:" labels in the text). Do NOT write a script document or call write_document — the deliverable is a real .mp3 the system voices and stitches. Aim for 8-30 natural turns. Call build_podcast.`
+    : ''
+  const system = `You are the Builder inside Agent Interface — it produces REAL finished files, not descriptions or plans. Read what the user wants and BUILD IT by calling tools, using the real result of each call to construct the next. Do NOT write a "plan" or a "production doc" — perform the work and emit the actual file.${webappDirective}${podcastDirective}
 
 Pick the right FINAL tool for the deliverable:
 - Slide deck / pitch deck / PowerPoint → build_deck (write COMPLETE slide content yourself; for a pitch deck, call generate_image first for a cover/key visuals and attach via slide.image_id).
@@ -251,6 +301,7 @@ Pick the right FINAL tool for the deliverable:
 - Blog post / article / markdown → write_markdown.
 - Promo video / ad / reel / trailer → generate_image, then record_voiceover (the EXACT words, never an instruction), then generate_music (skip gracefully if "skipped"), then render_video LAST with the ids.
 - Game / interactive app / playable demo / tool / website → build_webapp: ONE self-contained .html with all html/css/js inlined and the REAL, fully-working logic written by you (no external libraries, no placeholders, no "// add game logic here"). Make it actually playable/usable.
+- Podcast / audio show / two-host conversation / interview → build_podcast: write the FULL dialogue yourself as alternating { speaker, text } turns (natural spoken back-and-forth, no stage directions). The system voices each speaker distinctly and stitches one .mp3 episode.
 
 Write ALL real content YOURSELF — headlines, bullets, prose, numbers — never placeholders, never "insert X here". When the final file is produced, confirm in ONE short sentence and STOP (no further tool calls).${brandContext ? `\n\nBRAND CONTEXT (ground everything in this; do not contradict it):\n${String(brandContext).slice(0, 1500)}` : ''}`
 
