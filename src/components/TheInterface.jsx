@@ -659,14 +659,15 @@ export default function TheInterface() {
     // which writes one self-contained .html via build_webapp.
     const FORCE_WEBAPP = /\b(make|build|create|code|program|develop|design|turn (?:it|this) into|do)\b[^.?!]{0,60}\b(game|web ?app|web ?site|app|playable|tower[ -]?defen[sc]e|arcade|simulator|interactive|html|chart|graph|diagram|flow ?chart|mind ?map|org ?chart|form|survey|quiz|calculator|dashboard|qr ?code)\b/i.test(text)
       || /\b(tower[ -]?defen[sc]e|playable game|html game|mini[- ]?game)\b/i.test(text)
-    if (FORCE_WEBAPP) {
-      const nm = (text.replace(/^(ok,?\s*|please\s*|can you\s*|now\s*|so\s*|let'?s\s*)/i, '').replace(/[^a-z0-9 ]/gi, ' ').trim().split(/\s+/).slice(0, 6).join(' ') || 'App')
+    const FORCE_PODCAST = /\b(make|build|create|record|produce|generate|do|give me)\b[^.?!]{0,40}\b(podcast|audio (?:show|episode|drama)|two[- ]?host)\b/i.test(text)
+    if (FORCE_WEBAPP || FORCE_PODCAST) {
+      const nm = (text.replace(/^(ok,?\s*|please\s*|can you\s*|now\s*|so\s*|let'?s\s*)/i, '').replace(/[^a-z0-9 ]/gi, ' ').trim().split(/\s+/).slice(0, 6).join(' ') || (FORCE_PODCAST ? 'Podcast' : 'App'))
       clawDecision = {
         ...(clawDecision || {}),
         mode: 'build',
         agents_to_respond: [],
-        reasoning: 'Building a playable app directly.',
-        plan: { deliverable: nm, steps: [{ id: 's1', tool: 'agent_synth', needs: [], output_schema: 'page', input: text, label: 'Build the app' }], brandContext: null },
+        reasoning: FORCE_PODCAST ? 'Recording the podcast directly.' : 'Building a playable app directly.',
+        plan: { deliverable: nm, steps: [{ id: 's1', tool: 'agent_synth', needs: [], output_schema: FORCE_PODCAST ? 'document' : 'page', input: text, label: FORCE_PODCAST ? 'Write the podcast' : 'Build the app' }], brandContext: null },
         block: null,
       }
     }
@@ -907,7 +908,7 @@ export default function TheInterface() {
     // words, or a plan that already includes a document/video generator.
     const _docToolIds = ['pptxgen', 'docgen', 'xlsxgen', 'pdfgen', 'mdgen']
     const wantsDirectBuild = (isBuildMode || isBuildOptions) && (
-      /\b(video|promo|mp4|reel|trailer|clip|spot|advert|commercial|deck|slides?|powerpoint|presentation|pitch|keynote|document|report|one[- ]?pager|whitepaper|memo|proposal|spreadsheet|excel|workbook|budget|pdf|blog post|article|newsletter|game|web ?app|web ?site|interactive|playable|arcade|simulator|tower defense|html)\b/i.test(text || '') ||
+      /\b(video|promo|mp4|reel|trailer|clip|spot|advert|commercial|deck|slides?|powerpoint|presentation|pitch|keynote|document|report|one[- ]?pager|whitepaper|memo|proposal|spreadsheet|excel|workbook|budget|pdf|blog post|article|newsletter|game|web ?app|web ?site|interactive|playable|arcade|simulator|tower defense|html|podcast|audio show)\b/i.test(text || '') ||
       steps.some(s => _docToolIds.includes(s.tool)) ||
       (steps.some(s => ['dalle', 'stability', 'ideogram', 'flux', 'recraft', 'image_per_slide'].includes(s.tool)) &&
         steps.some(s => ['elevenlabs', 'openai_tts'].includes(s.tool)))
@@ -980,7 +981,8 @@ export default function TheInterface() {
       (_hasImage && _hasVoice && !_hasDoc)
     // The agentic builder owns any build whose deliverable is a finished file.
     const isWebappBuild = /\b(game|web ?app|web ?site|interactive|playable|arcade|simulator|tower defense|calculator|landing page|html|chart|graph|diagram|flow ?chart|mind ?map|org ?chart|form|survey|quiz|dashboard|qr ?code)\b/i.test(_text)
-    const isAgentic = isVideoBuild || isWebappBuild || _hasDoc ||
+    const isPodcast = /\b(podcast|audio (?:show|episode|drama)|two[- ]?host)\b/i.test(_text)
+    const isAgentic = isVideoBuild || isWebappBuild || isPodcast || _hasDoc ||
       /\b(deck|slides?|powerpoint|presentation|pitch|keynote|document|report|one[- ]?pager|brief|whitepaper|memo|letter|proposal|spreadsheet|excel|workbook|budget|pdf|blog post|article|newsletter)\b/i.test(_text)
     const cost = estimateBuildCents(planToRun.steps || [])
     addToolTurn({
