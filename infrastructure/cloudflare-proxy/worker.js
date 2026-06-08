@@ -404,10 +404,18 @@ const ROUTES = {
     if (!apiKey) return new Response(JSON.stringify({ error: 'missing_provider_key' }), { status: 400 })
     const body = await req.json()
     const voiceId = body.voice_id || '21m00Tcm4TlvDq8ikWAM'
+    // HIGH-QUALITY narration model, not the low-latency Turbo one (Turbo sounds
+    // flat/robotic — it's built for realtime, not voiceovers). eleven_multilingual_v2
+    // is ElevenLabs' most natural non-realtime model. Tuned voice_settings give
+    // expressive-but-stable narration. Client may override model_id/voice_settings.
     const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'xi-api-key': apiKey, Accept: 'audio/mpeg' },
-      body: JSON.stringify({ text: body.text, model_id: 'eleven_turbo_v2_5' }),
+      body: JSON.stringify({
+        text: body.text,
+        model_id: body.model_id || 'eleven_multilingual_v2',
+        voice_settings: body.voice_settings || { stability: 0.5, similarity_boost: 0.8, style: 0.15, use_speaker_boost: true },
+      }),
     })
     if (!r.ok) {
       const text = await r.text()
