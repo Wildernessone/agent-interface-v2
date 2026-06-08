@@ -129,7 +129,7 @@ async function readClaudeStream(res) {
   return { content, stop_reason, error }
 }
 
-export async function runAgenticBuild({ request, deliverable: deliverableIn, brandContext, settings, project, proxy, hasStorage }, onStep = () => {}) {
+export async function runAgenticBuild({ request, deliverable: deliverableIn, brandContext, settings, project, proxy, hasStorage, context }, onStep = () => {}) {
   const claudeKey = readKey(settings, 'agent.claude')
   if (!claudeKey) throw new Error('The agentic builder needs your Claude (Anthropic) key — add it in Settings → Agents.')
 
@@ -305,7 +305,13 @@ Pick the right FINAL tool for the deliverable:
 
 Write ALL real content YOURSELF — headlines, bullets, prose, numbers — never placeholders, never "insert X here". When the final file is produced, confirm in ONE short sentence and STOP (no further tool calls).${brandContext ? `\n\nBRAND CONTEXT (ground everything in this; do not contradict it):\n${String(brandContext).slice(0, 1500)}` : ''}`
 
-  let messages = [{ role: 'user', content: request || deliverable }]
+  // Thread the conversation so far into the build, so references like "make THIS
+  // game" / "build the thing we discussed" resolve to what was actually talked
+  // about — without it the builder only sees the bare request and asks "which
+  // game?" instead of building (the no_deliverable cause).
+  let messages = [{ role: 'user', content: context
+    ? `CONVERSATION SO FAR (the user is referring to what was discussed below — use it to know EXACTLY what to build; do not ask for clarification):\n${String(context).slice(0, 3000)}\n\n---\nNow BUILD what the user asked for: ${request || deliverable}`
+    : (request || deliverable) }]
   console.log('[agentic] start —', deliverable, '·', request?.slice(0, 80))
   for (let turn = 0; turn < 14; turn++) {
     // 24k cap so a full self-contained app/game (build_webapp) isn't truncated

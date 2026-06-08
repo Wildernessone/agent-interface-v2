@@ -1013,9 +1013,18 @@ export default function TheInterface() {
             : arr.map(x => x.id === id ? { ...x, label: label || x.label, status, reason } : x)
         },
       })
+      // Digest of the conversation so the builder can resolve references like
+      // "make THIS game" to what was actually discussed (otherwise it asks
+      // "which game?" and produces nothing).
+      const buildContext = (useStore.getState().turns || [])
+        .filter(t => (t.type === 'user' && t.text) || (t.type === 'agent' && t.text))
+        .slice(-10)
+        .map(t => `${t.type === 'user' ? 'USER' : (t.agent || 'AI')}: ${(t.text || '').replace(/\s+/g, ' ').slice(0, 600)}`)
+        .join('\n')
+        .slice(-3000)
       try {
         result = await runAgenticBuild(
-          { request: planToRun.request || planToRun.deliverable, deliverable: planToRun.deliverable, brandContext: planToRun.brandContext || null, settings, project: activeProject, proxy: proxyFetch, hasStorage },
+          { request: planToRun.request || planToRun.deliverable, deliverable: planToRun.deliverable, brandContext: planToRun.brandContext || null, settings, project: activeProject, proxy: proxyFetch, hasStorage, context: buildContext },
           addOrUpdate,
         )
       } catch (e) {
