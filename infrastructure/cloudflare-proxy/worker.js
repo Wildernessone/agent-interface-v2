@@ -292,6 +292,10 @@ const ROUTES = {
         ...(body.system ? { system: body.system } : {}),
         ...(body.tools ? { tools: body.tools } : {}),
         ...(body.tool_choice ? { tool_choice: body.tool_choice } : {}),
+        // Stream long generations (e.g. a full game via build_webapp). Without
+        // this, Cloudflare times out (524) waiting on a 60-120s non-streamed
+        // response — the worker forwards upstream.body, so the SSE streams through.
+        ...(body.stream ? { stream: true } : {}),
       }),
     })
   },

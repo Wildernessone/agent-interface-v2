@@ -66,6 +66,62 @@ function buildFolderName(deliverable) {
   return `${new Date().toISOString().slice(0, 10)} — ${safe}`
 }
 
+// Read Anthropic's streaming (SSE) response and reassemble it into the same
+// { content, stop_reason } shape the non-streaming API returns, so the builder
+// loop is unchanged. We stream so a long build (a full game/app via build_webapp)
+// keeps bytes flowing and doesn't 524 through Cloudflare. Tool-use inputs arrive
+// as input_json_delta fragments we concatenate and JSON.parse at the end.
+async function readClaudeStream(res) {
+  const reader = res.body.getReader()
+  const dec = new TextDecoder()
+  let buf = ''
+  const blocks = []
+  let stop_reason = null, error = null
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buf += dec.decode(value, { stream: true })
+      let nl
+      while ((nl = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, nl).trim()
+        buf = buf.slice(nl + 1)
+        if (!line.startsWith('data:')) continue
+        const payload = line.slice(5).trim()
+        if (!payload || payload === '[DONE]') continue
+        let ev
+        try { ev = JSON.parse(payload) } catch { continue }
+        if (ev.type === 'content_block_start') {
+          const cb = ev.content_block || {}
+          blocks[ev.index] = cb.type === 'tool_use'
+            ? { type: 'tool_use', id: cb.id, name: cb.name, json: '' }
+            : { type: 'text', text: '' }
+        } else if (ev.type === 'content_block_delta') {
+          const b = blocks[ev.index]
+          if (!b) continue
+          if (ev.delta?.type === 'text_delta') b.text = (b.text || '') + (ev.delta.text || '')
+          else if (ev.delta?.type === 'input_json_delta') b.json = (b.json || '') + (ev.delta.partial_json || '')
+        } else if (ev.type === 'message_delta') {
+          if (ev.delta?.stop_reason) stop_reason = ev.delta.stop_reason
+        } else if (ev.type === 'error') {
+          error = ev.error?.message || 'stream_error'
+        }
+      }
+    }
+  } catch (e) {
+    error = error || e?.message || 'stream_read_failed'
+  }
+  const content = blocks.filter(Boolean).map(b => {
+    if (b.type === 'tool_use') {
+      let input = {}
+      try { input = b.json ? JSON.parse(b.json) : {} } catch { input = {} }
+      return { type: 'tool_use', id: b.id, name: b.name, input }
+    }
+    return { type: 'text', text: b.text || '' }
+  })
+  return { content, stop_reason, error }
+}
+
 export async function runAgenticBuild({ request, deliverable: deliverableIn, brandContext, settings, project, proxy, hasStorage }, onStep = () => {}) {
   const claudeKey = readKey(settings, 'agent.claude')
   if (!claudeKey) throw new Error('The agentic builder needs your Claude (Anthropic) key — add it in Settings → Agents.')
@@ -205,16 +261,17 @@ Write ALL real content YOURSELF — headlines, bullets, prose, numbers — never
     // mid-code — verified a complete tower-defense game lands in ~8k with the
     // "keep it tight" directive, so 24k is generous headroom. It's a ceiling, not
     // a target, so other builds stop early as before.
-    const res = await proxy('claude', { model: MODEL, max_tokens: 24000, system, messages, tools: BUILDER_TOOLS }, { 'x-api-key': claudeKey })
+    // STREAM the call. A full game/app (build_webapp, 20k+ chars) takes 60-120s
+    // to generate; as a single non-streamed response that 524-times-out through
+    // Cloudflare → claude_524 / no_deliverable. Streaming keeps bytes flowing.
+    const res = await proxy('claude', { model: MODEL, max_tokens: 24000, stream: true, system, messages, tools: BUILDER_TOOLS }, { 'x-api-key': claudeKey })
     if (!res.ok) { console.error('[agentic] claude not ok', res.status); errors.push({ stepId: '_agent', tool: 'claude', code: 'agent_http', error: `claude_${res.status}` }); break }
-    const data = await res.json().catch(() => ({}))
-    // Anthropic can return HTTP 200 with an error envelope (overloaded, etc.).
-    // Without this check `content` is [], no tools fire, the loop breaks, and the
-    // build silently produces nothing — an opaque "no deliverable". Surface it.
-    if (data.type === 'error' || data.error) {
-      const msg = data.error?.message || data.error?.type || 'Claude returned an error'
-      console.error('[agentic] claude error envelope', msg)
-      errors.push({ stepId: '_agent', tool: 'claude', code: 'agent_error', error: msg })
+    const data = await readClaudeStream(res)
+    // Surface a stream/API error (overloaded, etc.) instead of silently breaking
+    // to an empty "no deliverable".
+    if (data.error) {
+      console.error('[agentic] claude stream error', data.error)
+      errors.push({ stepId: '_agent', tool: 'claude', code: 'agent_error', error: data.error })
       break
     }
     const content = data.content || []
