@@ -651,6 +651,26 @@ export default function TheInterface() {
       }
     }
 
+    // DETERMINISTIC BUILD FAST-PATH. A clear "make/build me a game / app / playable
+    // / website" MUST produce a real playable file — not a debate, and not a pile of
+    // generated tower images that go nowhere. We do NOT trust the LLM router to
+    // classify this: if the message plainly asks to BUILD something interactive,
+    // force a webapp build here. executeBuild then routes it to the agentic builder,
+    // which writes one self-contained .html via build_webapp.
+    const FORCE_WEBAPP = /\b(make|build|create|code|program|develop|design|turn (?:it|this) into|do)\b[^.?!]{0,60}\b(game|web ?app|web ?site|app|playable|tower[ -]?defen[sc]e|arcade|simulator|interactive|html)\b/i.test(text)
+      || /\b(tower[ -]?defen[sc]e|playable game|html game|mini[- ]?game)\b/i.test(text)
+    if (FORCE_WEBAPP) {
+      const nm = (text.replace(/^(ok,?\s*|please\s*|can you\s*|now\s*|so\s*|let'?s\s*)/i, '').replace(/[^a-z0-9 ]/gi, ' ').trim().split(/\s+/).slice(0, 6).join(' ') || 'App')
+      clawDecision = {
+        ...(clawDecision || {}),
+        mode: 'build',
+        agents_to_respond: [],
+        reasoning: 'Building a playable app directly.',
+        plan: { deliverable: nm, steps: [{ id: 's1', tool: 'agent_synth', needs: [], output_schema: 'page', input: text, label: 'Build the app' }], brandContext: null },
+        block: null,
+      }
+    }
+
     // BRAND-CONTEXT GATE: the dispatcher refused a brand-facing build because
     // there's no usable brand context. Respond AS the orchestrator asking for a
     // brief — do NOT run agents or a build (either would fabricate the product).

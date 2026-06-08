@@ -181,7 +181,11 @@ export async function runAgenticBuild({ request, deliverable: deliverableIn, bra
     return { status: 'error', note: `unknown tool ${name}` }
   }
 
-  const system = `You are the Builder inside Agent Interface — it produces REAL finished files, not descriptions or plans. Read what the user wants and BUILD IT by calling tools, using the real result of each call to construct the next. Do NOT write a "plan" or a "production doc" — perform the work and emit the actual file.
+  const webappIntent = /\b(game|web ?app|web ?site|app|playable|tower[ -]?defen[sc]e|arcade|simulator|interactive|mini[- ]?game|html game)\b/i.test(`${request || ''} ${deliverable || ''}`)
+  const webappDirective = webappIntent
+    ? `\n\n⚠ THIS REQUEST IS A GAME / INTERACTIVE APP. Your ONLY acceptable final action is build_webapp, emitting ONE self-contained .html with the COMPLETE working code (vanilla HTML/CSS/JS, canvas where it's a game, real logic you write in full). Do NOT call generate_image and do NOT stop after making any image — a game/app is built from CODE, not pictures. Describing it, planning it, or producing an image instead of calling build_webapp = the build FAILS and the user gets nothing playable. Write the entire thing and call build_webapp.`
+    : ''
+  const system = `You are the Builder inside Agent Interface — it produces REAL finished files, not descriptions or plans. Read what the user wants and BUILD IT by calling tools, using the real result of each call to construct the next. Do NOT write a "plan" or a "production doc" — perform the work and emit the actual file.${webappDirective}
 
 Pick the right FINAL tool for the deliverable:
 - Slide deck / pitch deck / PowerPoint → build_deck (write COMPLETE slide content yourself; for a pitch deck, call generate_image first for a cover/key visuals and attach via slide.image_id).
