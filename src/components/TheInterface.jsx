@@ -24,6 +24,7 @@ import { saveToCloud, pickProvider, listStorageConnections } from '../utils/clou
 import { TOOLS_BY_ID, ToolError, readKey, generateImageWithFallback } from '../tools/registry'
 import { runBuild } from '../utils/buildExecutor'
 import { runAgenticBuild } from '../utils/agenticBuild'
+import { createBuildJob, persistDeliverables, finishBuildJob } from '../utils/buildJobs'
 import { brandBriefFrom } from '../utils/brandContext'
 import { entitlements, capAgents, capTools, capNudge } from '../utils/entitlements'
 import { friendlyError, buildSummary, extractSlideTitles } from '../utils/buildErrors'
@@ -1044,6 +1045,16 @@ export default function TheInterface() {
       cost,
     })
 
+    // Server-side builds, Phase 1: record this build immediately (status running)
+    // so it survives a tab close, and we have a job to attach the deliverables to.
+    // Best-effort — a persistence failure never blocks the build.
+    const buildJobIdP = createBuildJob({
+      conversationId: useStore.getState().conversationId,
+      turnId: buildTurnId,
+      deliverable: planToRun.deliverable,
+      request: planToRun.request || planToRun.deliverable,
+    })
+
     // Resolve storage availability once so the build can keep outputs inline
     // (instead of failing every file step) when no Drive/Dropbox is connected.
     // Cloud storage is a Standard/Pro entitlement — Free builds stay inline.
@@ -1113,6 +1124,24 @@ export default function TheInterface() {
     }))
     // Surface which build tools get used as a hub feature signal (feeds top_features).
     result.files.forEach(f => track('tool_use', { feature: f.output?.tool || 'build' }))
+
+    // Server-side builds, Phase 1: upload the finished deliverable bytes to Storage
+    // and close out the job, so they survive a reload (cloud-saved files keep their
+    // savedLink; unsaved data: URLs — which get stripped on reload — are persisted).
+    // Background + best-effort: never delays the UI or breaks on failure.
+    ;(async () => {
+      try {
+        const jobId = await buildJobIdP
+        if (!jobId) return
+        updateBuildTurn(buildTurnId, { jobId })
+        const jobFiles = await persistDeliverables(jobId, result.files || [])
+        await finishBuildJob(jobId, {
+          files: jobFiles,
+          errors: (result.errors || []).map(e => ({ stepId: e.stepId, error: String(e.error || '').slice(0, 300) })),
+          status: (result.files || []).length ? 'done' : 'failed',
+        })
+      } catch (e) { console.warn('[buildJobs] persist failed:', e?.message) }
+    })()
 
     setToolsWorking(false)
   }

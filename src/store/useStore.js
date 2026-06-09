@@ -377,6 +377,42 @@ export const useStore = create((set, get) => ({
         return
       }
       useStore.setState({ turns: parsed, conversationId: id, activeAgentId: null, saveStatus: 'saved' })
+      // Rehydrate finished build deliverables from Storage — their in-memory data:
+      // URLs were stripped before save, so a reloaded build card would otherwise
+      // show no downloads. Best-effort and async; patches the build turns in place.
+      ;(async () => {
+        try {
+          const { loadConversationBuildJobs, signedUrlFor } = await import('../utils/buildJobs')
+          const jobs = await loadConversationBuildJobs(id)
+          if (!jobs.length || useStore.getState().conversationId !== id) return
+          const byTurn = {}
+          for (const j of jobs) { if (j.turn_id && !byTurn[j.turn_id]) byTurn[j.turn_id] = j }
+          const patches = {}
+          for (const [turnId, job] of Object.entries(byTurn)) {
+            const files = []
+            for (const jf of (job.files || [])) {
+              const url = jf.storagePath ? await signedUrlFor(jf.storagePath) : null
+              if (!url && !jf.savedLink) continue
+              files.push({
+                stepId: jf.label || 'File', label: jf.label || 'File', component: !!jf.component,
+                savedLink: jf.savedLink || null,
+                output: { type: jf.type || null, filename: jf.filename || null, url: url || undefined, tool: 'build' },
+                unsaved: !jf.savedLink && !!url,
+              })
+            }
+            if (files.length) patches[turnId] = files
+          }
+          if (!Object.keys(patches).length || useStore.getState().conversationId !== id) return
+          useStore.setState(state => ({
+            turns: state.turns.map(t => {
+              if (t.type !== 'build' || !patches[t.id]) return t
+              // Don't clobber a build whose files are still live in this session.
+              const hasLive = (t.files || []).some(f => f.output?.url || f.savedLink)
+              return hasLive ? t : { ...t, files: patches[t.id] }
+            }),
+          }))
+        } catch { /* best-effort rehydrate */ }
+      })()
     } catch(e) { logError("loadConversation", e) }
   },
 
