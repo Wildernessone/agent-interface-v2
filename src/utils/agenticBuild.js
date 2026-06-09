@@ -519,7 +519,13 @@ Write ALL real content YOURSELF — headlines, bullets, prose, numbers — never
     if (saved) {
       files.push({ stepId: displayName, label: displayName, output: out, savedLink: saved.webViewLink || null, savedProvider: saved.provider || null, component: !isFinal })
       if (isFinal && !folderLink) { folderLink = saved.folderLink; folderProvider = saved.provider }
-    } else errors.push({ stepId: displayName, error: 'save_failed' })
+    } else {
+      // Save failed (token revoked / quota / network blip) — DON'T discard the
+      // fully-produced file. Keep it inline as unsaved so the user can still
+      // preview/download it this session; only the reload copy is lost.
+      files.push({ stepId: displayName, label: displayName, output: out, unsaved: true, saveFailed: true, component: !isFinal })
+      errors.push({ stepId: displayName, error: 'save_failed' })
+    }
   }
   const multi = finals.length > 1
   for (const f of finals) {

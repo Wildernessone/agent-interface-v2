@@ -263,6 +263,7 @@ export async function saveToDropbox(output, project = null) {
     if (output.type === 'image') ext = 'png'
     if (output.type === 'audio') ext = 'mp3'
     if (output.type === 'video') ext = 'mp4'
+    if (output.type === 'webapp') ext = 'html'
     if (output.type === 'document') {
       const fn = output.filename || ''
       if (fn.endsWith('.pptx')) ext = 'pptx'

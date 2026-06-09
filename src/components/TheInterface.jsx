@@ -671,16 +671,31 @@ export default function TheInterface() {
     // are excluded so they still get discussed.
     const FORCE_DOC = /\b(make|build|create|write|draft|put together|generate|design|give me)\b[^.?!]{0,80}\b(deck|slides?|powerpoint|presentation|pitch|keynote|spreadsheet|excel|workbook|xlsx|budget|pricing|doc|document|report|one[- ]?pager|whitepaper|memo|proposal|pdf|newsletter)\b/i.test(text)
     const docExploratory = /\b(should (?:i|we)|do you think|is it worth|worth it|how (?:do|should|would) i|what (?:do|should|would) you|help me (?:decide|figure out (?:whether|if)))\b/i.test(text)
-    const docBrandCreative = /\b(deck|pitch|slides?|presentation|keynote|ad|advert|landing|newsletter|social|motto|logo|tagline|slogan|brand|campaign)\b/i.test(text)
-    const forceDocOk = FORCE_DOC && !docExploratory && (!docBrandCreative || !!brandBriefFrom(activeProject))
-    if (FORCE_WEBAPP || FORCE_PODCAST) {
-      const nm = (text.replace(/^(ok,?\s*|please\s*|can you\s*|now\s*|so\s*|let'?s\s*)/i, '').replace(/[^a-z0-9 ]/gi, ' ').trim().split(/\s+/).slice(0, 6).join(' ') || (FORCE_PODCAST ? 'Podcast' : 'App'))
+    // brandRef = the request is about the user's OWN brand/product, so building it
+    // without a brief would FABRICATE the brand identity (the exact thing the brand
+    // gate exists to prevent). neutralData keeps a "spreadsheet of my company
+    // expenses" buildable — numbers aren't brand-creative content.
+    const brandRef = /\b(?:our|my|the)\s+(?:\w+\s+){0,2}(?:brand|products?|company|business|startup|app|service|store|shop|product line)\b/i.test(text) || /\bbrand (?:voice|identity|guidelines|kit)\b/i.test(text) || /\bproduct line\b/i.test(text)
+    const neutralData = /\b(?:spreadsheet|excel|workbook|xlsx|budget|expenses?|invoice|csv|financial model|cash ?flow|p&l)\b/i.test(text)
+    const docBrandCreative = /\b(deck|pitch|slides?|presentation|keynote|ad|advert|landing|newsletter|social|motto|logo|tagline|slogan|brand|campaign|brochure|whitepaper|white ?paper)\b/i.test(text) || (brandRef && !neutralData)
+    const webappBrand = /\b(?:web ?site|landing page|\bsite\b|microsite|home ?page|web app)\b/i.test(text) && brandRef
+    const hasBrief = !!brandBriefFrom(activeProject)
+    // NEVER override the dispatcher's brand BLOCK (it refused for a missing brief),
+    // and never force a brand-bound build with no brief — the FORCE_* paths used to
+    // bypass the brand gate entirely (fabricating identity). Exploratory questions
+    // ("should I build a game?") fall through to the panel for ALL three paths now.
+    const notBlocked = clawDecision?.mode !== 'blocked'
+    const forceWebappOk = notBlocked && FORCE_WEBAPP && !docExploratory && (!webappBrand || hasBrief)
+    const forcePodcastOk = notBlocked && FORCE_PODCAST && !docExploratory && (!brandRef || hasBrief)
+    const forceDocOk = notBlocked && FORCE_DOC && !docExploratory && (!docBrandCreative || hasBrief)
+    if (forceWebappOk || forcePodcastOk) {
+      const nm = (text.replace(/^(ok,?\s*|please\s*|can you\s*|now\s*|so\s*|let'?s\s*)/i, '').replace(/[^a-z0-9 ]/gi, ' ').trim().split(/\s+/).slice(0, 6).join(' ') || (forcePodcastOk ? 'Podcast' : 'App'))
       clawDecision = {
         ...(clawDecision || {}),
         mode: 'build',
         agents_to_respond: [],
-        reasoning: FORCE_PODCAST ? 'Recording the podcast directly.' : 'Building a playable app directly.',
-        plan: { deliverable: nm, steps: [{ id: 's1', tool: 'agent_synth', needs: [], output_schema: FORCE_PODCAST ? 'document' : 'page', input: text, label: FORCE_PODCAST ? 'Write the podcast' : 'Build the app' }], brandContext: null },
+        reasoning: forcePodcastOk ? 'Recording the podcast directly.' : 'Building a playable app directly.',
+        plan: { deliverable: nm, steps: [{ id: 's1', tool: 'agent_synth', needs: [], output_schema: forcePodcastOk ? 'document' : 'page', input: text, label: forcePodcastOk ? 'Write the podcast' : 'Build the app' }], brandContext: brandBriefFrom(activeProject) || null },
         block: null,
       }
     } else if (forceDocOk) {
