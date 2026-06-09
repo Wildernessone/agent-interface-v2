@@ -1032,7 +1032,7 @@ export default function TheInterface() {
           const arr = s || []
           const i = arr.findIndex(x => x.id === id)
           return i < 0
-            ? [...arr, { id, label, tool: id, status, reason }]
+            ? [...arr, { id, label, tool: id.startsWith('_') ? '' : id, status, reason }]
             : arr.map(x => x.id === id ? { ...x, label: label || x.label, status, reason } : x)
         },
       })
@@ -1736,9 +1736,21 @@ const TurnRow = memo(function TurnRow({ turn, isActive, busy, onRetryLast, onExe
                   <div className="ai-build-files">
                     <span>{fileItems.length} file{fileItems.length === 1 ? '' : 's'} {folderHref ? 'bundled' : 'generated'}</span>
                     {folderHref ? (
-                      <a className="ai-build-folder-link" href={folderHref} target="_blank" rel="noreferrer">
-                        Open folder ↗
-                      </a>
+                      // Cloud-saved: link EACH finished deliverable (deck, spreadsheet)
+                      // directly in the chat, not just the bundle folder — otherwise
+                      // the user has to dig through the folder to open what they asked
+                      // for. Each saved file carries its own webViewLink (f.savedLink).
+                      <div className="ai-build-downloads">
+                        {fileItems.filter(f => !f.component && (f.savedLink || f.output?.url)).map(f => (
+                          <a key={f.stepId} className="ai-build-download"
+                             href={f.savedLink || f.output.url} target="_blank" rel="noreferrer">
+                            {(f.label || 'File').replace(/^FINAL — /, '')} ↗
+                          </a>
+                        ))}
+                        <a className="ai-build-folder-link" href={folderHref} target="_blank" rel="noreferrer">
+                          Open folder ↗
+                        </a>
+                      </div>
                     ) : (
                       <>
                         <div className="ai-build-downloads">
