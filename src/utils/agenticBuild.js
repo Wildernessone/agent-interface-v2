@@ -135,15 +135,19 @@ async function readClaudeStream(res, onProgress = () => {}) {
   } catch (e) {
     error = error || e?.message || 'stream_read_failed'
   }
+  // Track tool calls whose JSON didn't parse — almost always because the 24k
+  // length cap cut the input off mid-stream. Executing those would emit an
+  // empty/garbage file, so the caller regenerates them instead.
+  const truncated = []
   const content = blocks.filter(Boolean).map(b => {
     if (b.type === 'tool_use') {
       let input = {}
-      try { input = b.json ? JSON.parse(b.json) : {} } catch { input = {} }
+      if (b.json) { try { input = JSON.parse(b.json) } catch { input = {}; truncated.push(b.id) } }
       return { type: 'tool_use', id: b.id, name: b.name, input }
     }
     return { type: 'text', text: b.text || '' }
   })
-  return { content, stop_reason, error }
+  return { content, stop_reason, error, truncated }
 }
 
 export async function runAgenticBuild({ request, deliverable: deliverableIn, brandContext, settings, project, proxy, hasStorage, context }, onStep = () => {}) {
@@ -364,7 +368,7 @@ Write ALL real content YOURSELF — headlines, bullets, prose, numbers — never
     ? `CONVERSATION SO FAR (the user is referring to what was discussed below — use it to know EXACTLY what to build; do not ask for clarification):\n${String(context).slice(0, 3000)}\n\n---\nNow BUILD what the user asked for: ${request || deliverable}`
     : (request || deliverable) }]
   console.log('[agentic] start —', deliverable, '·', request?.slice(0, 80))
-  let nudged = false
+  let nudged = false, truncRetries = 0
   for (let turn = 0; turn < 14; turn++) {
     // 24k cap so a full self-contained app/game (build_webapp) isn't truncated
     // mid-code — verified a complete tower-defense game lands in ~8k with the
@@ -443,8 +447,23 @@ Write ALL real content YOURSELF — headlines, bullets, prose, numbers — never
       }
       break
     }
+    // Tool inputs cut off by the length cap: do NOT execute them (the JSON is
+    // incomplete → an empty/garbage file). Ask the model to regenerate that
+    // deliverable more concisely, escalating after repeated truncation.
+    const truncatedIds = new Set(data.truncated || [])
+    let hadTruncation = false
     const results = []
     for (const tu of toolUses) {
+      if (truncatedIds.has(tu.id)) {
+        hadTruncation = true
+        onStep(tu.name, `${WRITING_LABEL[tu.name] || tu.name} ran long — regenerating tighter…`, 'started')
+        const harder = truncRetries >= 2
+          ? `DRASTICALLY cut the scope (far fewer slides/rows, much shorter copy)`
+          : `MORE CONCISELY (fewer slides/rows, shorter copy)`
+        results.push({ type: 'tool_result', tool_use_id: tu.id, is_error: true,
+          content: `Your ${tu.name} call was cut off by the length limit before its content finished — it is incomplete and was NOT used. Regenerate ${tu.name} ${harder} so the ENTIRE tool call fits in one response.` })
+        continue
+      }
       try {
         const r = await execTool(tu.name, tu.input || {})
         if (r.status === 'error') errors.push({ stepId: tu.name, tool: tu.name, code: 'tool_error', error: r.note })
@@ -457,6 +476,10 @@ Write ALL real content YOURSELF — headlines, bullets, prose, numbers — never
       }
     }
     messages.push({ role: 'user', content: results })
+    // Truncation happened → loop again so the model re-emits the cut-off deliverable
+    // (the 14-turn cap bounds runaway). Don't let the break below end the build with
+    // a missing file just because the other tools this turn were finals.
+    if (hadTruncation) { truncRetries++; if (turn < 13) continue }
     // Stop once ALL requested deliverables exist and the agent has nothing else
     // queued. Using expectedDeliverables (not just `finals.length`) keeps a
     // multi-part build ("a deck AND a spreadsheet") going past the first file.
