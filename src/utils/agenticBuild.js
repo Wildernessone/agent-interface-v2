@@ -396,8 +396,22 @@ Write ALL real content YOURSELF — headlines, bullets, prose, numbers — never
         if (kb >= 1) onStep(ev.name, `Writing ${WRITING_LABEL[ev.name] || ev.name}… (${kb} KB)`, 'started')
       }
     }
-    const res = await proxy('claude', { model: MODEL, max_tokens: 24000, stream: true, system, messages, tools: BUILDER_TOOLS, ...(toolChoice ? { tool_choice: toolChoice } : {}) }, { 'x-api-key': claudeKey })
-    if (!res.ok) { console.error('[agentic] claude not ok', res.status); onStep('_working', '', 'done'); errors.push({ stepId: '_agent', tool: 'claude', code: 'agent_http', error: `claude_${res.status}` }); break }
+    // Retry transient API failures (rate limit / overload / proxy timeout) with
+    // backoff. A heavy build makes several Claude calls; on a BYOK key a single
+    // 429 used to kill the whole build with no deliverable. Honor Retry-After when
+    // the provider sends it, else exponential backoff. 4xx other than 429 (bad
+    // request, auth) are NOT retried — they won't get better.
+    let res = null
+    for (let attempt = 0; attempt < 3; attempt++) {
+      res = await proxy('claude', { model: MODEL, max_tokens: 24000, stream: true, system, messages, tools: BUILDER_TOOLS, ...(toolChoice ? { tool_choice: toolChoice } : {}) }, { 'x-api-key': claudeKey })
+      if (res.ok || ![429, 503, 524, 529].includes(res.status) || attempt === 2) break
+      const ra = parseInt(res.headers.get('retry-after') || '', 10)
+      const waitMs = Number.isFinite(ra) ? Math.min(ra * 1000, 15000) : 1500 * (attempt + 1) * (attempt + 1)
+      console.warn(`[agentic] claude ${res.status} — retry ${attempt + 1}/2 in ${waitMs}ms`)
+      onStep('_working', `Provider busy (${res.status}) — retrying in ${Math.round(waitMs / 1000)}s…`, 'started')
+      await new Promise(r => setTimeout(r, waitMs))
+    }
+    if (!res || !res.ok) { console.error('[agentic] claude not ok', res?.status); onStep('_working', '', 'done'); errors.push({ stepId: '_agent', tool: 'claude', code: 'agent_http', error: `claude_${res?.status}` }); break }
     const data = await readClaudeStream(res, onProg)
     // Turn done streaming: clear the generic indicator and finish any streamed
     // component-tool steps (their execTool runs under a different id). FINAL tools
