@@ -836,7 +836,13 @@ export async function orchestrate({
   if (decision.mode === 'build' && steps.length > 0 && enabledAgents.length >= 2) {
     const buildClass = resolveBuildClass(decision.build_class, userMessage, { hasPriorDiscussion })
     decision.build_class = buildClass
-    if (buildClass === 'subjective') {
+    // An EXPLICIT build command ("build it", "make it", "do it now" — isBuildSignal)
+    // means the user has already decided: build it directly. The subjective debate
+    // (builder/skeptic/reality_checker) is for EXPLORATORY asks — when forced onto a
+    // clear build instruction it just piles on prerequisites ("define hype, confirm
+    // ad accounts") and stalls before any deliverable. The brand-context gate above
+    // already ran for mode==='build', so skipping the debate here stays safe.
+    if (buildClass === 'subjective' && !isBuildSignal) {
       const debaters = enabledAgents.slice(0, 3)
       const roles = assignDebateRoles(debaters)
       decision.mode = 'build_options'
