@@ -450,6 +450,16 @@ export default function TheInterface() {
     return () => clearTimeout(t)
   }, [turns, busy, activeProject, saveConversation])
 
+  // A build runs client-side and isn't persisted until it finishes, so a tab
+  // close/refresh mid-build throws away the work (and, for storage-less users,
+  // the only copy of the file). Warn before the page unloads while one is running.
+  useEffect(() => {
+    if (!toolsWorking) return
+    const warn = (e) => { e.preventDefault(); e.returnValue = '' }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [toolsWorking])
+
   // Load compact previews of prior conversations in the active project so the
   // panel can reference past discussions. Refreshes when the project switches
   // or a new conversation is created (conversationId), so the list stays current.

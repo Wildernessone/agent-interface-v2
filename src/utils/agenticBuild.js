@@ -293,13 +293,24 @@ export async function runAgenticBuild({ request, deliverable: deliverableIn, bra
       const { arrayBufferToBase64 } = await import('../utils/base64')
       // TTS each line in order (sequential — preserves order + respects rate limits).
       const clips = []
+      // Voice each line with one retry on a transient failure (the TTS provider
+      // 429s/5xx under load), and COUNT any line that still fails so a dropped
+      // turn doesn't silently vanish from the episode without the user being told.
+      let dropped = 0
       for (let i = 0; i < segs.length; i++) {
-        const r = await proxy('elevenlabs', { text: String(segs[i].text).slice(0, 1500), voice_id: voiceFor(segs[i].speaker) }, { 'x-api-key': elevenKey })
-        if (!r.ok) continue
-        const d = await r.json().catch(() => ({}))
-        if (d.audio) clips.push(d.audio)
+        let audio = null
+        for (let attempt = 0; attempt < 2 && !audio; attempt++) {
+          if (attempt) await new Promise(r => setTimeout(r, 1200))
+          const r = await proxy('elevenlabs', { text: String(segs[i].text).slice(0, 1500), voice_id: voiceFor(segs[i].speaker) }, { 'x-api-key': elevenKey })
+          if (!r.ok) continue
+          const d = await r.json().catch(() => ({}))
+          if (d.audio) audio = d.audio
+        }
+        if (audio) clips.push(audio); else dropped++
+        onStep('build_podcast', `Recording ${clips.length}/${segs.length} lines…`, 'started')
       }
       if (!clips.length) throw new Error('podcast voiceover produced no audio.')
+      if (dropped) errors.push({ stepId: 'build_podcast', code: 'partial', error: `${dropped} of ${segs.length} lines couldn't be voiced — the episode is missing those turns` })
       const release = await acquireFFmpegLock()
       let ff
       try { ff = await getFFmpeg() } catch (e) { release(); throw e }
