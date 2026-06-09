@@ -26,6 +26,8 @@
  * worker forwards it; we never store provider keys here.
  */
 
+import { DurableObject } from 'cloudflare:workers'
+
 const PER_MINUTE_LIMIT = 60
 
 // OpenAI image generation — DURABLE across OpenAI's model churn.
@@ -86,6 +88,147 @@ export function buildImageRequest(model, body = {}) {
     n: 1,
     size: SIZE_MAP[body.size] || '1024x1024',
     quality: body.quality === 'high' || body.quality === 'hd' ? 'hd' : 'standard',
+  }
+}
+
+// ── Server-side builds, PHASE 2: Durable Object build runner ───────────────
+// Runs the agentic build loop ON THE SERVER so a closed tab can't kill it. One DO
+// instance per build job (keyed by jobId). The client kicks it off and then polls
+// the build_jobs row (written here via Supabase REST) for status/deliverables.
+//
+// SCOPE (2a): only the string-output finals — build_webapp (games/apps/charts),
+// write_markdown, htmlgen — which need NO heavy npm libs, so they run in this
+// single-file worker with no bundler. The pptxgen/docx/pdf/xlsx + ffmpeg media
+// tools stay client-side until a bundling pipeline exists (2b).
+//
+// SECURITY: the user's Anthropic key is held in MEMORY for the single run only —
+// never written to DO storage. Progress is persisted to the build_jobs row (RLS
+// owner-scoped) using the user's own JWT, so the DO needs no service-role key.
+const SERVER_BUILD_TOOLS = [
+  { name: 'build_webapp', description: 'FINAL — emit ONE self-contained .html (game / interactive app / chart / dashboard / tool). Inline ALL html/css/js, write the COMPLETE working code yourself, no external deps, no placeholders. Keep it tight so it fits in one response and ends with </html>.',
+    input_schema: { type: 'object', properties: { html: { type: 'string' }, title: { type: 'string' } }, required: ['html'] } },
+  { name: 'write_markdown', description: 'FINAL — a markdown post/article. Provide the full markdown text.',
+    input_schema: { type: 'object', properties: { markdown: { type: 'string' }, title: { type: 'string' } }, required: ['markdown'] } },
+]
+const SERVER_FINAL = new Set(SERVER_BUILD_TOOLS.map(t => t.name))
+
+// Minimal SSE reader for Anthropic's streaming Messages API (mirrors the client's
+// readClaudeStream): reassembles content blocks + tool_use inputs, flags truncation.
+async function readAnthropicStream(res) {
+  const reader = res.body.getReader(); const dec = new TextDecoder()
+  let buf = '', stop_reason = null, error = null; const blocks = []
+  try {
+    for (;;) {
+      const { done, value } = await reader.read(); if (done) break
+      buf += dec.decode(value, { stream: true }); let nl
+      while ((nl = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, nl).trim(); buf = buf.slice(nl + 1)
+        if (!line.startsWith('data:')) continue
+        const p = line.slice(5).trim(); if (!p || p === '[DONE]') continue
+        let ev; try { ev = JSON.parse(p) } catch { continue }
+        if (ev.type === 'content_block_start') {
+          const cb = ev.content_block || {}
+          blocks[ev.index] = cb.type === 'tool_use' ? { type: 'tool_use', id: cb.id, name: cb.name, json: '' } : { type: 'text', text: '' }
+        } else if (ev.type === 'content_block_delta') {
+          const b = blocks[ev.index]; if (!b) continue
+          if (ev.delta?.type === 'text_delta') b.text = (b.text || '') + (ev.delta.text || '')
+          else if (ev.delta?.type === 'input_json_delta') b.json = (b.json || '') + (ev.delta.partial_json || '')
+        } else if (ev.type === 'message_delta') { if (ev.delta?.stop_reason) stop_reason = ev.delta.stop_reason }
+        else if (ev.type === 'error') { error = ev.error?.type || ev.error?.message || 'stream_error' }
+      }
+    }
+  } catch (e) { error = error || e?.message || 'stream_read_failed' }
+  const truncated = []
+  const content = blocks.filter(Boolean).map(b => {
+    if (b.type === 'tool_use') { let input = {}; if (b.json) { try { input = JSON.parse(b.json) } catch { input = {}; truncated.push(b.id) } } return { type: 'tool_use', id: b.id, name: b.name, input } }
+    return { type: 'text', text: b.text || '' }
+  })
+  return { content, stop_reason, error, truncated }
+}
+
+export class BuildRunner extends DurableObject {
+  // ctx (DurableObjectState) + env are set by the DurableObject base. Kicked off
+  // via RPC from the /build/run route. Runs the whole build in this single
+  // invocation (waitUntil keeps it alive after the ack returns) so the Anthropic
+  // key never has to be persisted. Returns immediately; work continues in bg.
+  async start(payload) {
+    // Don't await — let it run in the background; the client polls build_jobs.
+    this.ctx.waitUntil(this.run(payload).catch(e => this.fail(payload, e?.message || 'build_failed')))
+    return { ok: true }
+  }
+
+  async sb(method, path, body, jwt) {
+    return fetch(`${this.env.SUPABASE_URL}${path}`, {
+      method,
+      headers: {
+        apikey: this.env.SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${jwt}`,
+        'Content-Type': 'application/json',
+        ...(method === 'PATCH' ? { Prefer: 'return=minimal' } : {}),
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    })
+  }
+
+  async patchJob(payload, patch) {
+    try { await this.sb('PATCH', `/rest/v1/build_jobs?id=eq.${payload.jobId}`, { ...patch, updated_at: new Date().toISOString() }, payload.jwt) } catch {}
+  }
+
+  async fail(payload, message) {
+    await this.patchJob(payload, { status: 'failed', errors: [{ stepId: '_agent', error: String(message).slice(0, 300) }] })
+  }
+
+  async run(payload) {
+    const { jobId, request, context, brandContext, model, anthropicKey, jwt, userId } = payload
+    const system = `You are the Builder inside Agent Interface — produce a REAL finished file, not a description. ${'' + (context ? `CONVERSATION SO FAR:\n${String(context).slice(0, 3000)}\n\n` : '')}Build exactly what the user asked by calling the matching FINAL tool with the COMPLETE working content. Do not ask questions; do not stop until the file is emitted.${brandContext ? `\n\nBRAND CONTEXT (ground everything in this):\n${String(brandContext).slice(0, 1500)}` : ''}`
+    const messages = [{ role: 'user', content: request || 'Build what the user asked for.' }]
+    const files = []
+    let nudged = false
+    for (let turn = 0; turn < 8 && !files.length; turn++) {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({ model: model || 'claude-sonnet-4-6', max_tokens: 24000, stream: true, system, messages, tools: SERVER_BUILD_TOOLS }),
+      })
+      if (!res.ok) { if ([429, 503, 529].includes(res.status) && turn < 7) { await new Promise(r => setTimeout(r, 1500 * (turn + 1))); continue } return this.fail(payload, `claude_${res.status}`) }
+      const data = await readAnthropicStream(res)
+      if (data.error) { if (turn < 7 && /overload|rate|api_error|stream/i.test(data.error)) { await new Promise(r => setTimeout(r, 1500 * (turn + 1))); continue } return this.fail(payload, data.error) }
+      messages.push({ role: 'assistant', content: data.content })
+      const toolUses = (data.content || []).filter(c => c.type === 'tool_use')
+      if (!toolUses.length) { if (!nudged) { nudged = true; messages.push({ role: 'user', content: 'You produced no file. Call the FINAL tool now with the COMPLETE content — only the tool call.' }); continue } break }
+      const results = []
+      const truncatedIds = new Set(data.truncated || [])
+      for (const tu of toolUses) {
+        if (truncatedIds.has(tu.id)) { results.push({ type: 'tool_result', tool_use_id: tu.id, is_error: true, content: `${tu.name} was cut off — regenerate it MORE CONCISELY so it fits in one response.` }); continue }
+        const made = await this.emit(payload, tu.name, tu.input || {})
+        if (made) files.push(made)
+        results.push({ type: 'tool_result', tool_use_id: tu.id, content: made ? 'saved' : 'error: tool produced no file' })
+      }
+      messages.push({ role: 'user', content: results })
+    }
+    if (!files.length) return this.fail(payload, 'no_deliverable_produced')
+    await this.patchJob(payload, { status: 'done', files })
+  }
+
+  // Generate the file bytes and upload to Storage at <userId>/<jobId>/<file>.
+  async emit(payload, name, input) {
+    if (!SERVER_FINAL.has(name)) return null
+    let body, filename, type
+    if (name === 'build_webapp') {
+      const html = String(input.html || ''); if (!/<\/?[a-z]/i.test(html)) return null
+      body = html; type = 'webapp'; filename = `${(input.title || payload.deliverable || 'app').replace(/[^a-z0-9-_ ]/gi, '').trim() || 'app'}.html`
+    } else if (name === 'write_markdown') {
+      const md = String(input.markdown || ''); if (!md.trim()) return null
+      body = md; type = 'document'; filename = `${(input.title || payload.deliverable || 'post').replace(/[^a-z0-9-_ ]/gi, '').trim() || 'post'}.md`
+    } else return null
+    const path = `${payload.userId}/${payload.jobId}/${filename.replace(/[^a-z0-9._-]/gi, '_')}`
+    const up = await fetch(`${this.env.SUPABASE_URL}/storage/v1/object/build-deliverables/${path}`, {
+      method: 'POST',
+      headers: { apikey: this.env.SUPABASE_ANON_KEY, Authorization: `Bearer ${payload.jwt}`, 'Content-Type': type === 'webapp' ? 'text/html' : 'text/markdown', 'x-upsert': 'true' },
+      body,
+    })
+    if (!up.ok) return null
+    return { label: filename, type, filename, storagePath: path, savedLink: null, component: false }
   }
 }
 
@@ -272,6 +415,27 @@ function isSafeUrl(raw) {
 }
 
 const ROUTES = {
+  // Server-side build kickoff. The JWT is already verified by the fetch gate; we
+  // decode its sub for the storage path, hand the job to a per-jobId Durable
+  // Object, and return immediately (the DO runs the build + writes build_jobs).
+  'build/run': async (req, env) => {
+    if (!env.BUILD_RUNNER) return new Response(JSON.stringify({ error: 'server_builds_unavailable' }), { status: 501 })
+    const jwt = (req.headers.get('x-supabase-auth') || '').replace(/^Bearer /, '')
+    const anthropicKey = req.headers.get('x-api-key') || ''
+    if (!jwt || !anthropicKey) return new Response(JSON.stringify({ error: 'missing_auth_or_key' }), { status: 400 })
+    let userId = null
+    try { userId = JSON.parse(atob(jwt.split('.')[1])).sub } catch {}
+    if (!userId) return new Response(JSON.stringify({ error: 'invalid_auth' }), { status: 401 })
+    const b = await req.json().catch(() => ({}))
+    if (!b.jobId) return new Response(JSON.stringify({ error: 'missing_jobId' }), { status: 400 })
+    const stub = env.BUILD_RUNNER.getByName(b.jobId)
+    const ack = await stub.start({
+      jobId: b.jobId, request: b.request || '', context: b.context || '', brandContext: b.brandContext || '',
+      model: b.model || 'claude-sonnet-4-6', deliverable: b.deliverable || 'Build', anthropicKey, jwt, userId,
+    })
+    return new Response(JSON.stringify(ack), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  },
+
   claude: async (req) => {
     const apiKey = req.headers.get('x-api-key')
     if (!apiKey) return new Response(JSON.stringify({ error: 'missing_provider_key' }), { status: 400 })

@@ -7,6 +7,17 @@ account_id = "37466838b711d4510ec744042dd24121"
 binding = "RATE_LIMIT_KV"
 id = "1be093ccf88c4c8fb1d4164d419621c5"
 
+# Server-side builds (Phase 2): per-job Durable Object that runs the build loop so
+# a closed tab can't kill it. Needs `wrangler deploy` to take effect; uses the
+# already-set SUPABASE_ANON_KEY secret for Supabase REST/Storage writes.
+[[durable_objects.bindings]]
+name = "BUILD_RUNNER"
+class_name = "BuildRunner"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["BuildRunner"]
+
 [vars]
 SUPABASE_URL = "https://oqbpuspnmznqxgkmyzyb.supabase.co"
 ALLOWED_ORIGINS = "https://agentinterface.app,https://agent-interface-v2.pages.dev,http://localhost:5173"
