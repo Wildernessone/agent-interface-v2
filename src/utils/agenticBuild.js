@@ -88,16 +88,24 @@ function buildFolderName(deliverable) {
 // loop is unchanged. We stream so a long build (a full game/app via build_webapp)
 // keeps bytes flowing and doesn't 524 through Cloudflare. Tool-use inputs arrive
 // as input_json_delta fragments we concatenate and JSON.parse at the end.
-async function readClaudeStream(res, onProgress = () => {}) {
+async function readClaudeStream(res, onProgress = () => {}, idleMs = 90000) {
   const reader = res.body.getReader()
   const dec = new TextDecoder()
   let buf = ''
   const blocks = []
   let stop_reason = null, error = null
+  // The body read had NO timeout: a mid-stream stall (wedged TLS, upstream hang)
+  // left reader.read() pending FOREVER — the build froze with no error and no
+  // recovery. Arm an idle timer that cancels the read if no bytes arrive in idleMs;
+  // the cancel surfaces as a retryable error instead of a permanent hang.
+  let idleTimer = null, idledOut = false
+  const bump = () => { if (idleTimer) clearTimeout(idleTimer); idleTimer = setTimeout(() => { idledOut = true; try { reader.cancel() } catch { /* already closing */ } }, idleMs) }
   try {
+    bump()
     for (;;) {
       const { done, value } = await reader.read()
       if (done) break
+      bump()
       buf += dec.decode(value, { stream: true })
       let nl
       while ((nl = buf.indexOf('\n')) >= 0) {
@@ -128,22 +136,35 @@ async function readClaudeStream(res, onProgress = () => {}) {
         } else if (ev.type === 'message_delta') {
           if (ev.delta?.stop_reason) stop_reason = ev.delta.stop_reason
         } else if (ev.type === 'error') {
-          error = ev.error?.message || 'stream_error'
+          // Prefer the stable error TYPE (overloaded_error / rate_limit_error /
+          // api_error) so the retry matcher catches it regardless of message text.
+          error = ev.error?.type || ev.error?.message || 'stream_error'
         }
       }
     }
   } catch (e) {
     error = error || e?.message || 'stream_read_failed'
+  } finally {
+    if (idleTimer) clearTimeout(idleTimer)
   }
+  // A stalled stream (idle cancel) or a stream that ended without ANY content and
+  // without a terminal stop_reason was cut mid-flight — surface a retryable error
+  // rather than letting an empty/half result look like a clean finish.
+  if (idledOut && !error) error = 'stream_idle_timeout'
+  if (!error && !stop_reason && !blocks.some(b => b?.type === 'tool_use')) error = 'stream_incomplete'
+  // Track tool calls whose JSON didn't parse — almost always because the 24k
+  // length cap cut the input off mid-stream. Executing those would emit an
+  // empty/garbage file, so the caller regenerates them instead.
+  const truncated = []
   const content = blocks.filter(Boolean).map(b => {
     if (b.type === 'tool_use') {
       let input = {}
-      try { input = b.json ? JSON.parse(b.json) : {} } catch { input = {} }
+      if (b.json) { try { input = JSON.parse(b.json) } catch { input = {}; truncated.push(b.id) } }
       return { type: 'tool_use', id: b.id, name: b.name, input }
     }
     return { type: 'text', text: b.text || '' }
   })
-  return { content, stop_reason, error }
+  return { content, stop_reason, error, truncated }
 }
 
 export async function runAgenticBuild({ request, deliverable: deliverableIn, brandContext, settings, project, proxy, hasStorage, context }, onStep = () => {}) {
@@ -272,13 +293,24 @@ export async function runAgenticBuild({ request, deliverable: deliverableIn, bra
       const { arrayBufferToBase64 } = await import('../utils/base64')
       // TTS each line in order (sequential — preserves order + respects rate limits).
       const clips = []
+      // Voice each line with one retry on a transient failure (the TTS provider
+      // 429s/5xx under load), and COUNT any line that still fails so a dropped
+      // turn doesn't silently vanish from the episode without the user being told.
+      let dropped = 0
       for (let i = 0; i < segs.length; i++) {
-        const r = await proxy('elevenlabs', { text: String(segs[i].text).slice(0, 1500), voice_id: voiceFor(segs[i].speaker) }, { 'x-api-key': elevenKey })
-        if (!r.ok) continue
-        const d = await r.json().catch(() => ({}))
-        if (d.audio) clips.push(d.audio)
+        let audio = null
+        for (let attempt = 0; attempt < 2 && !audio; attempt++) {
+          if (attempt) await new Promise(r => setTimeout(r, 1200))
+          const r = await proxy('elevenlabs', { text: String(segs[i].text).slice(0, 1500), voice_id: voiceFor(segs[i].speaker) }, { 'x-api-key': elevenKey })
+          if (!r.ok) continue
+          const d = await r.json().catch(() => ({}))
+          if (d.audio) audio = d.audio
+        }
+        if (audio) clips.push(audio); else dropped++
+        onStep('build_podcast', `Recording ${clips.length}/${segs.length} lines…`, 'started')
       }
       if (!clips.length) throw new Error('podcast voiceover produced no audio.')
+      if (dropped) errors.push({ stepId: 'build_podcast', code: 'partial', error: `${dropped} of ${segs.length} lines couldn't be voiced — the episode is missing those turns` })
       const release = await acquireFFmpegLock()
       let ff
       try { ff = await getFFmpeg() } catch (e) { release(); throw e }
@@ -364,7 +396,7 @@ Write ALL real content YOURSELF — headlines, bullets, prose, numbers — never
     ? `CONVERSATION SO FAR (the user is referring to what was discussed below — use it to know EXACTLY what to build; do not ask for clarification):\n${String(context).slice(0, 3000)}\n\n---\nNow BUILD what the user asked for: ${request || deliverable}`
     : (request || deliverable) }]
   console.log('[agentic] start —', deliverable, '·', request?.slice(0, 80))
-  let nudged = false
+  let nudged = false, truncRetries = 0
   for (let turn = 0; turn < 14; turn++) {
     // 24k cap so a full self-contained app/game (build_webapp) isn't truncated
     // mid-code — verified a complete tower-defense game lands in ~8k with the
@@ -396,33 +428,43 @@ Write ALL real content YOURSELF — headlines, bullets, prose, numbers — never
         if (kb >= 1) onStep(ev.name, `Writing ${WRITING_LABEL[ev.name] || ev.name}… (${kb} KB)`, 'started')
       }
     }
-    // Retry transient API failures (rate limit / overload / proxy timeout) with
-    // backoff. A heavy build makes several Claude calls; on a BYOK key a single
-    // 429 used to kill the whole build with no deliverable. Honor Retry-After when
-    // the provider sends it, else exponential backoff. 4xx other than 429 (bad
-    // request, auth) are NOT retried — they won't get better.
-    let res = null
+    // Retry transient failures with backoff — both HTTP-status ones (rate limit /
+    // overload / proxy timeout) AND mid-stream ones that arrive on a 200 (an idle
+    // stall, an incomplete/cut stream, or an `overloaded_error` SSE event). On a
+    // BYOK key a single transient used to kill the whole build with no deliverable.
+    // Non-retryable HTTP (400/401) and clean responses fall straight through.
+    const backoff = (n) => new Promise(r => setTimeout(r, 1500 * (n + 1) * (n + 1)))
+    const RETRYABLE_STREAM = /idle_timeout|incomplete|overload|rate.?limit|api_error|stream_read_failed|stream_error/i
+    let res = null, data = null
     for (let attempt = 0; attempt < 3; attempt++) {
       res = await proxy('claude', { model: MODEL, max_tokens: 24000, stream: true, system, messages, tools: BUILDER_TOOLS, ...(toolChoice ? { tool_choice: toolChoice } : {}) }, { 'x-api-key': claudeKey })
-      if (res.ok || ![429, 503, 524, 529].includes(res.status) || attempt === 2) break
-      const ra = parseInt(res.headers.get('retry-after') || '', 10)
-      const waitMs = Number.isFinite(ra) ? Math.min(ra * 1000, 15000) : 1500 * (attempt + 1) * (attempt + 1)
-      console.warn(`[agentic] claude ${res.status} — retry ${attempt + 1}/2 in ${waitMs}ms`)
-      onStep('_working', `Provider busy (${res.status}) — retrying in ${Math.round(waitMs / 1000)}s…`, 'started')
-      await new Promise(r => setTimeout(r, waitMs))
+      if (!res.ok) {
+        if (![429, 503, 524, 529].includes(res.status) || attempt === 2) break
+        const ra = parseInt(res.headers.get('retry-after') || '', 10)
+        const waitMs = Number.isFinite(ra) ? Math.min(ra * 1000, 15000) : 1500 * (attempt + 1) * (attempt + 1)
+        console.warn(`[agentic] claude ${res.status} — retry ${attempt + 1}/2 in ${waitMs}ms`)
+        onStep('_working', `Provider busy (${res.status}) — retrying in ${Math.round(waitMs / 1000)}s…`, 'started')
+        await new Promise(r => setTimeout(r, waitMs)); continue
+      }
+      data = await readClaudeStream(res, onProg)
+      if (data.error && RETRYABLE_STREAM.test(data.error) && attempt < 2) {
+        console.warn('[agentic] retryable stream error:', data.error, `— retry ${attempt + 1}/2`)
+        onStep('_working', 'Connection hiccup — retrying…', 'started')
+        data = null; await backoff(attempt); continue
+      }
+      break
     }
     if (!res || !res.ok) { console.error('[agentic] claude not ok', res?.status); onStep('_working', '', 'done'); errors.push({ stepId: '_agent', tool: 'claude', code: 'agent_http', error: `claude_${res?.status}` }); break }
-    const data = await readClaudeStream(res, onProg)
     // Turn done streaming: clear the generic indicator and finish any streamed
     // component-tool steps (their execTool runs under a different id). FINAL tools
     // are left for execTool to transition in place.
     onStep('_working', '', 'done')
     streamed.forEach(name => { if (!FINAL_TOOLS.has(name)) onStep(name, `Wrote ${WRITING_LABEL[name] || name}`, 'done') })
-    // Surface a stream/API error (overloaded, etc.) instead of silently breaking
-    // to an empty "no deliverable".
-    if (data.error) {
-      console.error('[agentic] claude stream error', data.error)
-      errors.push({ stepId: '_agent', tool: 'claude', code: 'agent_error', error: data.error })
+    // A stream error that survived the retries (or a non-retryable one) ends the
+    // build with a real error instead of a silent empty result.
+    if (!data || data.error) {
+      console.error('[agentic] claude stream error', data?.error)
+      errors.push({ stepId: '_agent', tool: 'claude', code: 'agent_error', error: data?.error || 'stream_failed' })
       break
     }
     const content = data.content || []
@@ -443,8 +485,23 @@ Write ALL real content YOURSELF — headlines, bullets, prose, numbers — never
       }
       break
     }
+    // Tool inputs cut off by the length cap: do NOT execute them (the JSON is
+    // incomplete → an empty/garbage file). Ask the model to regenerate that
+    // deliverable more concisely, escalating after repeated truncation.
+    const truncatedIds = new Set(data.truncated || [])
+    let hadTruncation = false
     const results = []
     for (const tu of toolUses) {
+      if (truncatedIds.has(tu.id)) {
+        hadTruncation = true
+        onStep(tu.name, `${WRITING_LABEL[tu.name] || tu.name} ran long — regenerating tighter…`, 'started')
+        const harder = truncRetries >= 2
+          ? `DRASTICALLY cut the scope (far fewer slides/rows, much shorter copy)`
+          : `MORE CONCISELY (fewer slides/rows, shorter copy)`
+        results.push({ type: 'tool_result', tool_use_id: tu.id, is_error: true,
+          content: `Your ${tu.name} call was cut off by the length limit before its content finished — it is incomplete and was NOT used. Regenerate ${tu.name} ${harder} so the ENTIRE tool call fits in one response.` })
+        continue
+      }
       try {
         const r = await execTool(tu.name, tu.input || {})
         if (r.status === 'error') errors.push({ stepId: tu.name, tool: tu.name, code: 'tool_error', error: r.note })
@@ -457,6 +514,10 @@ Write ALL real content YOURSELF — headlines, bullets, prose, numbers — never
       }
     }
     messages.push({ role: 'user', content: results })
+    // Truncation happened → loop again so the model re-emits the cut-off deliverable
+    // (the 14-turn cap bounds runaway). Don't let the break below end the build with
+    // a missing file just because the other tools this turn were finals.
+    if (hadTruncation) { truncRetries++; if (turn < 13) continue }
     // Stop once ALL requested deliverables exist and the agent has nothing else
     // queued. Using expectedDeliverables (not just `finals.length`) keeps a
     // multi-part build ("a deck AND a spreadsheet") going past the first file.
@@ -496,7 +557,13 @@ Write ALL real content YOURSELF — headlines, bullets, prose, numbers — never
     if (saved) {
       files.push({ stepId: displayName, label: displayName, output: out, savedLink: saved.webViewLink || null, savedProvider: saved.provider || null, component: !isFinal })
       if (isFinal && !folderLink) { folderLink = saved.folderLink; folderProvider = saved.provider }
-    } else errors.push({ stepId: displayName, error: 'save_failed' })
+    } else {
+      // Save failed (token revoked / quota / network blip) — DON'T discard the
+      // fully-produced file. Keep it inline as unsaved so the user can still
+      // preview/download it this session; only the reload copy is lost.
+      files.push({ stepId: displayName, label: displayName, output: out, unsaved: true, saveFailed: true, component: !isFinal })
+      errors.push({ stepId: displayName, error: 'save_failed' })
+    }
   }
   const multi = finals.length > 1
   for (const f of finals) {

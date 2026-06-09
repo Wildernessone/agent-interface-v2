@@ -361,6 +361,7 @@ export async function saveToDrive(output, project = null) {
     if (output.type === 'image') { mimeType = 'image/png'; ext = 'png' }
     if (output.type === 'audio') { mimeType = 'audio/mpeg'; ext = 'mp3' }
     if (output.type === 'video') { mimeType = 'video/mp4'; ext = 'mp4' }
+    if (output.type === 'webapp') { mimeType = 'text/html'; ext = 'html' }
     if (output.type === 'document') {
       const fn = output.filename || ''
       if (fn.endsWith('.pptx')) { mimeType = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'; ext = 'pptx' }

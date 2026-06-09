@@ -1202,6 +1202,21 @@ const pptxgen = {
   },
 }
 
+// True if a doc-style payload has REAL section/slide content (not just a title).
+// A model that truncates or stubs can return {sections:[]} — valid JSON of the
+// right shape — and the generators would emit a blank-but-"successful" file.
+// This guard makes them throw 'empty_content' (caught by the build loop, which
+// then re-prompts) instead of shipping an empty deliverable.
+function docBodyContent(d) {
+  if (!d || typeof d !== 'object') return false
+  const arr = Array.isArray(d.sections) ? d.sections : Array.isArray(d.slides) ? d.slides : []
+  return arr.some(s => s && (
+    (s.heading && String(s.heading).trim()) || (s.title && String(s.title).trim()) ||
+    (s.body && String(s.body).trim()) || (s.notes && String(s.notes).trim()) ||
+    ['paragraphs', 'bullets', 'items'].some(k => Array.isArray(s[k]) && s[k].some(x => x && String(x).trim()))
+  ))
+}
+
 // ── docgen — generate .docx documents browser-side ────────────────
 const docgen = {
   id: 'docgen',
@@ -1216,6 +1231,7 @@ const docgen = {
     const docxMod = await import('docx')
     const { Document, Packer, Paragraph, HeadingLevel, TextRun } = docxMod
     const data = typeof structuredInput === 'string' ? JSON.parse(structuredInput) : structuredInput
+    if (!docBodyContent(data)) throw new ToolError('docgen', 'empty_content', 'docgen got no usable content — empty sections/slides')
 
     const children = []
     if (data?.title) {
@@ -1271,6 +1287,7 @@ const pdfgen = {
   async run({ structuredInput, label }) {
     const { jsPDF } = await import('jspdf')
     const data = typeof structuredInput === 'string' ? JSON.parse(structuredInput) : structuredInput
+    if (!docBodyContent(data)) throw new ToolError('pdfgen', 'empty_content', 'pdfgen got no usable content — empty sections/slides')
 
     const doc = new jsPDF({ unit: 'pt', format: 'letter' })
     const margin = 56
@@ -1461,6 +1478,11 @@ const xlsxgen = {
       : Array.isArray(data?.rows) ? [{ name: 'Sheet1', rows: data.rows }]
       : null
     if (!sheets?.length) throw new ToolError('xlsxgen', 'no_input', 'xlsxgen needs sheets[] or rows[][]')
+    // A non-empty sheets[] whose rows are all empty (model stub/truncation) would
+    // emit a blank-but-"successful" .xlsx — guard it like the doc generators.
+    if (!sheets.some(s => Array.isArray(s.rows) && s.rows.some(r => Array.isArray(r) && r.some(c => c !== '' && c != null)))) {
+      throw new ToolError('xlsxgen', 'empty_content', 'xlsxgen got only empty rows')
+    }
 
     const wb = XLSX.utils.book_new()
     for (const s of sheets) {
@@ -1583,6 +1605,7 @@ const mdgen = {
   hidden: true,
   async run({ structuredInput, label }) {
     const data = typeof structuredInput === 'string' ? JSON.parse(structuredInput) : structuredInput
+    if (!docBodyContent(data)) throw new ToolError('mdgen', 'empty_content', 'mdgen got no usable content — empty sections')
     const title = data?.title || label || 'Untitled'
     const sections = Array.isArray(data?.sections) ? data.sections : []
     const fm = { title, date: new Date().toISOString().slice(0, 10), ...(data?.frontmatter || {}) }
@@ -2276,6 +2299,12 @@ const narratePerSlide = {
       cumulativeSec += estSec
     }
 
+    // All lines failed to voice → don't report success with an empty bundle
+    // (which the no-storage UI path shows as a green "narration (N files)" with
+    // nothing playable). Throw like image_per_slide does when nothing succeeds.
+    if (!files.some(f => !f.error && f.url)) {
+      throw new ToolError('narrate_per_slide', 'no_audio', `every narration line failed (${files.map(f => f.error).filter(Boolean).join(', ').slice(0, 120)})`)
+    }
     return {
       type: 'audio_bundle',
       tool: 'narrate_per_slide',
