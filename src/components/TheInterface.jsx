@@ -24,7 +24,7 @@ import { saveToCloud, pickProvider, listStorageConnections } from '../utils/clou
 import { TOOLS_BY_ID, ToolError, readKey, generateImageWithFallback } from '../tools/registry'
 import { runBuild } from '../utils/buildExecutor'
 import { runAgenticBuild } from '../utils/agenticBuild'
-import { createBuildJob, persistDeliverables, finishBuildJob } from '../utils/buildJobs'
+import { createBuildJob, persistDeliverables, finishBuildJob, runServerBuild, SERVER_BUILDS_ENABLED } from '../utils/buildJobs'
 import { brandBriefFrom } from '../utils/brandContext'
 import { entitlements, capAgents, capTools, capNudge } from '../utils/entitlements'
 import { friendlyError, buildSummary, extractSlideTitles } from '../utils/buildErrors'
@@ -1081,7 +1081,35 @@ export default function TheInterface() {
         .map(t => `${t.type === 'user' ? 'USER' : (t.agent || 'AI')}: ${(t.text || '').replace(/\s+/g, ' ').slice(0, 600)}`)
         .join('\n')
         .slice(-3000)
-      try {
+      // Server-side execution (Phase 2, flag-gated): for string-output builds
+      // (webapp/games) run on the BuildRunner Durable Object so a closed tab can't
+      // kill it. ANY failure (incl. an undeployed worker) falls back to the client
+      // builder below — so this is safe to ship inert (flag off → skipped).
+      // Server-eligible: webapp/games + doc/deck/sheet/pdf builds (incl. images —
+      // the DO generates images via generate_image). Voice/video stay on the client
+      // (their final assembly is ffmpeg WASM, browser-only), so those aren't routed.
+      const claudeKey = readKey(settings, 'agent.claude')
+      const openaiKey = readKey(settings, 'agent.gpt')
+      const _isDocBuild = _hasDoc || /\b(deck|slides?|presentation|pitch|keynote|document|report|one[- ]?pager|whitepaper|memo|proposal|spreadsheet|excel|workbook|budget|pdf|\bdoc\b|markdown|blog post|article)\b/i.test(_text)
+      const _serverEligible = SERVER_BUILDS_ENABLED && claudeKey && !isVideoBuild && !_hasVoice && (isWebappBuild || _isDocBuild)
+      if (_serverEligible) {
+        try {
+          const jobId = await buildJobIdP
+          if (!jobId) throw new Error('no_job')
+          addOrUpdate('_server', 'Building on the server…', 'started')
+          const sr = await runServerBuild({
+            jobId, request: planToRun.request || planToRun.deliverable, context: buildContext,
+            brandContext: planToRun.brandContext || null, model: 'claude-sonnet-4-6',
+            deliverable: planToRun.deliverable, anthropicKey: claudeKey, openaiKey, authHeaders: await authHeader(),
+          })
+          addOrUpdate('_server', 'Built on the server', 'done')
+          result = { files: sr.files, errors: sr.errors, folderName: null, folderLink: null, folderProvider: null, serverBuilt: true }
+        } catch (e) {
+          console.warn('[serverBuild] falling back to client build:', e?.message)
+          addOrUpdate('_server', '', 'done')
+        }
+      }
+      if (!result) try {
         result = await runAgenticBuild(
           { request: planToRun.request || planToRun.deliverable, deliverable: planToRun.deliverable, brandContext: planToRun.brandContext || null, settings, project: activeProject, proxy: proxyFetch, hasStorage, context: buildContext },
           addOrUpdate,
@@ -1134,6 +1162,9 @@ export default function TheInterface() {
         const jobId = await buildJobIdP
         if (!jobId) return
         updateBuildTurn(buildTurnId, { jobId })
+        // A server build already wrote its job row + uploaded deliverables — don't
+        // re-persist (it would re-upload the signed-URL bytes).
+        if (result.serverBuilt) return
         const jobFiles = await persistDeliverables(jobId, result.files || [])
         await finishBuildJob(jobId, {
           files: jobFiles,

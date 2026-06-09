@@ -26,6 +26,8 @@
  * worker forwards it; we never store provider keys here.
  */
 
+import { DurableObject } from 'cloudflare:workers'
+
 const PER_MINUTE_LIMIT = 60
 
 // OpenAI image generation — DURABLE across OpenAI's model churn.
@@ -86,6 +88,246 @@ export function buildImageRequest(model, body = {}) {
     n: 1,
     size: SIZE_MAP[body.size] || '1024x1024',
     quality: body.quality === 'high' || body.quality === 'hd' ? 'hd' : 'standard',
+  }
+}
+
+// ── Server-side builds, PHASE 2: Durable Object build runner ───────────────
+// Runs the agentic build loop ON THE SERVER so a closed tab can't kill it. One DO
+// instance per build job (keyed by jobId). The client kicks it off and then polls
+// the build_jobs row (written here via Supabase REST) for status/deliverables.
+//
+// SCOPE (2a): only the string-output finals — build_webapp (games/apps/charts),
+// write_markdown, htmlgen — which need NO heavy npm libs, so they run in this
+// single-file worker with no bundler. The pptxgen/docx/pdf/xlsx + ffmpeg media
+// tools stay client-side until a bundling pipeline exists (2b).
+//
+// SECURITY: the user's Anthropic key is held in MEMORY for the single run only —
+// never written to DO storage. Progress is persisted to the build_jobs row (RLS
+// owner-scoped) using the user's own JWT, so the DO needs no service-role key.
+const SERVER_BUILD_TOOLS = [
+  { name: 'build_webapp', description: 'FINAL — emit ONE self-contained .html (game / interactive app / chart / dashboard / tool). Inline ALL html/css/js, write the COMPLETE working code yourself, no external deps, no placeholders. Keep it tight so it fits in one response and ends with </html>.',
+    input_schema: { type: 'object', properties: { html: { type: 'string' }, title: { type: 'string' } }, required: ['html'] } },
+  { name: 'write_markdown', description: 'FINAL — a markdown post/article. Provide the full markdown text.',
+    input_schema: { type: 'object', properties: { markdown: { type: 'string' }, title: { type: 'string' } }, required: ['markdown'] } },
+  { name: 'generate_image', description: 'Generate ONE image (logo / cover / visual) from a prompt. Returns an image_id. Call this BEFORE build_deck for any slide that needs a visual, then pass the returned image_id to that slide.',
+    input_schema: { type: 'object', properties: { prompt: { type: 'string' }, id: { type: 'string', description: 'optional stable id to reuse' } }, required: ['prompt'] } },
+  { name: 'build_deck', description: 'FINAL — a slide deck (.pptx). Write COMPLETE slide content yourself: each slide { title, bullets[], notes, image_id? }. Set image_id to an id returned by generate_image to put that image on the slide.',
+    input_schema: { type: 'object', properties: { title: { type: 'string' }, slides: { type: 'array', items: { type: 'object', properties: { title: { type: 'string' }, bullets: { type: 'array', items: { type: 'string' } }, notes: { type: 'string' }, image_id: { type: 'string' } } } } }, required: ['slides'] } },
+  { name: 'write_document', description: 'FINAL — a Word document (.docx). { title, sections:[{ heading, paragraphs[] }] }, real prose.',
+    input_schema: { type: 'object', properties: { title: { type: 'string' }, sections: { type: 'array', items: { type: 'object', properties: { heading: { type: 'string' }, paragraphs: { type: 'array', items: { type: 'string' } } } } } }, required: ['sections'] } },
+  { name: 'build_pdf', description: 'FINAL — a PDF (.pdf). { title, sections:[{ heading, paragraphs[] }] }, real prose.',
+    input_schema: { type: 'object', properties: { title: { type: 'string' }, sections: { type: 'array', items: { type: 'object', properties: { heading: { type: 'string' }, paragraphs: { type: 'array', items: { type: 'string' } } } } } }, required: ['sections'] } },
+  { name: 'build_spreadsheet', description: 'FINAL — a spreadsheet (.xlsx). { sheets:[{ name, rows:[[cell,...]] }] }, row 0 = header, REAL numbers.',
+    input_schema: { type: 'object', properties: { sheets: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, rows: { type: 'array', items: { type: 'array' } } } } } }, required: ['sheets'] } },
+]
+// generate_image is a COMPONENT (feeds build_deck), not a final deliverable.
+const SERVER_FINAL = new Set(['build_webapp', 'write_markdown', 'build_deck', 'write_document', 'build_pdf', 'build_spreadsheet'])
+
+// Minimal SSE reader for Anthropic's streaming Messages API (mirrors the client's
+// readClaudeStream): reassembles content blocks + tool_use inputs, flags truncation.
+async function readAnthropicStream(res) {
+  const reader = res.body.getReader(); const dec = new TextDecoder()
+  let buf = '', stop_reason = null, error = null; const blocks = []
+  try {
+    for (;;) {
+      const { done, value } = await reader.read(); if (done) break
+      buf += dec.decode(value, { stream: true }); let nl
+      while ((nl = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, nl).trim(); buf = buf.slice(nl + 1)
+        if (!line.startsWith('data:')) continue
+        const p = line.slice(5).trim(); if (!p || p === '[DONE]') continue
+        let ev; try { ev = JSON.parse(p) } catch { continue }
+        if (ev.type === 'content_block_start') {
+          const cb = ev.content_block || {}
+          blocks[ev.index] = cb.type === 'tool_use' ? { type: 'tool_use', id: cb.id, name: cb.name, json: '' } : { type: 'text', text: '' }
+        } else if (ev.type === 'content_block_delta') {
+          const b = blocks[ev.index]; if (!b) continue
+          if (ev.delta?.type === 'text_delta') b.text = (b.text || '') + (ev.delta.text || '')
+          else if (ev.delta?.type === 'input_json_delta') b.json = (b.json || '') + (ev.delta.partial_json || '')
+        } else if (ev.type === 'message_delta') { if (ev.delta?.stop_reason) stop_reason = ev.delta.stop_reason }
+        else if (ev.type === 'error') { error = ev.error?.type || ev.error?.message || 'stream_error' }
+      }
+    }
+  } catch (e) { error = error || e?.message || 'stream_read_failed' }
+  const truncated = []
+  const content = blocks.filter(Boolean).map(b => {
+    if (b.type === 'tool_use') { let input = {}; if (b.json) { try { input = JSON.parse(b.json) } catch { input = {}; truncated.push(b.id) } } return { type: 'tool_use', id: b.id, name: b.name, input } }
+    return { type: 'text', text: b.text || '' }
+  })
+  return { content, stop_reason, error, truncated }
+}
+
+export class BuildRunner extends DurableObject {
+  // ctx (DurableObjectState) + env are set by the DurableObject base. Kicked off
+  // via RPC from the /build/run route. Runs the whole build in this single
+  // invocation (waitUntil keeps it alive after the ack returns) so the Anthropic
+  // key never has to be persisted. Returns immediately; work continues in bg.
+  async start(payload) {
+    // Don't await — let it run in the background; the client polls build_jobs.
+    this.ctx.waitUntil(this.run(payload).catch(e => this.fail(payload, e?.message || 'build_failed')))
+    return { ok: true }
+  }
+
+  async sb(method, path, body, jwt) {
+    return fetch(`${this.env.SUPABASE_URL}${path}`, {
+      method,
+      headers: {
+        apikey: this.env.SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${jwt}`,
+        'Content-Type': 'application/json',
+        ...(method === 'PATCH' ? { Prefer: 'return=minimal' } : {}),
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    })
+  }
+
+  async patchJob(payload, patch) {
+    try { await this.sb('PATCH', `/rest/v1/build_jobs?id=eq.${payload.jobId}`, { ...patch, updated_at: new Date().toISOString() }, payload.jwt) } catch {}
+  }
+
+  async fail(payload, message) {
+    await this.patchJob(payload, { status: 'failed', errors: [{ stepId: '_agent', error: String(message).slice(0, 300) }] })
+  }
+
+  async run(payload) {
+    const { jobId, request, context, brandContext, model, anthropicKey, jwt, userId } = payload
+    const system = `You are the Builder inside Agent Interface — produce a REAL finished file, not a description. ${'' + (context ? `CONVERSATION SO FAR:\n${String(context).slice(0, 3000)}\n\n` : '')}Build exactly what the user asked by calling the matching FINAL tool with the COMPLETE working content. Do not ask questions; do not stop until the file is emitted.${brandContext ? `\n\nBRAND CONTEXT (ground everything in this):\n${String(brandContext).slice(0, 1500)}` : ''}`
+    const messages = [{ role: 'user', content: request || 'Build what the user asked for.' }]
+    const files = []
+    const imageStore = {}   // image_id -> base64 (in-memory for this run only)
+    let nudged = false
+    for (let turn = 0; turn < 10; turn++) {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({ model: model || 'claude-sonnet-4-6', max_tokens: 24000, stream: true, system, messages, tools: SERVER_BUILD_TOOLS }),
+      })
+      if (!res.ok) { if ([429, 503, 529].includes(res.status) && turn < 7) { await new Promise(r => setTimeout(r, 1500 * (turn + 1))); continue } return this.fail(payload, `claude_${res.status}`) }
+      const data = await readAnthropicStream(res)
+      if (data.error) { if (turn < 7 && /overload|rate|api_error|stream/i.test(data.error)) { await new Promise(r => setTimeout(r, 1500 * (turn + 1))); continue } return this.fail(payload, data.error) }
+      messages.push({ role: 'assistant', content: data.content })
+      const toolUses = (data.content || []).filter(c => c.type === 'tool_use')
+      if (!toolUses.length) { if (!files.length && !nudged) { nudged = true; messages.push({ role: 'user', content: 'You produced no file. Call the FINAL tool now with the COMPLETE content — only the tool call.' }); continue } break }
+      const results = []
+      const truncatedIds = new Set(data.truncated || [])
+      for (const tu of toolUses) {
+        if (truncatedIds.has(tu.id)) { results.push({ type: 'tool_result', tool_use_id: tu.id, is_error: true, content: `${tu.name} was cut off — regenerate it MORE CONCISELY so it fits in one response.` }); continue }
+        if (tu.name === 'generate_image') {
+          const b64 = await this.genImage(payload, (tu.input || {}).prompt)
+          const id = (tu.input?.id) || `image_${Object.keys(imageStore).length + 1}`
+          if (b64) { imageStore[id] = b64; results.push({ type: 'tool_result', tool_use_id: tu.id, content: JSON.stringify({ image_id: id }) }) }
+          else results.push({ type: 'tool_result', tool_use_id: tu.id, is_error: true, content: 'image generation failed — continue without it' })
+          continue
+        }
+        const made = await this.emit(payload, tu.name, tu.input || {}, imageStore)
+        if (made) files.push(made)
+        results.push({ type: 'tool_result', tool_use_id: tu.id, content: made ? 'saved' : 'error: tool produced no file' })
+      }
+      messages.push({ role: 'user', content: results })
+    }
+    if (!files.length) return this.fail(payload, 'no_deliverable_produced')
+    await this.patchJob(payload, { status: 'done', files })
+  }
+
+  // Generate the file bytes (string or Uint8Array) and upload to Storage at
+  // <userId>/<jobId>/<file>. Heavy doc libs are dynamic-imported so they only load
+  // when a doc build actually runs. Returns null (→ retry) if the content is empty.
+  // Generate one image via the user's OpenAI key (reuses the /dalle route logic);
+  // returns base64 PNG, or null on failure (the build continues without it).
+  async genImage(payload, prompt) {
+    if (!payload.imageKey || !prompt) return null
+    const body = { prompt: String(prompt).slice(0, 4000), size: '1024x1024', quality: 'high' }
+    let last = null
+    for (const model of imageModelsToTry(body)) {
+      try {
+        const r = await fetch('https://api.openai.com/v1/images/generations', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${payload.imageKey}` },
+          body: JSON.stringify(buildImageRequest(model, body)),
+        })
+        if (r.ok) {
+          const it = (await r.json())?.data?.[0]
+          if (it?.b64_json) return it.b64_json
+          if (it?.url) { const img = await fetch(it.url); if (img.ok) return bufToBase64(await img.arrayBuffer()) }
+          return null
+        }
+        last = r.status
+        if (![400, 403, 404].includes(r.status)) break
+      } catch { break }
+    }
+    console.log('[BuildRunner] genImage failed', last)
+    return null
+  }
+
+  async emit(payload, name, input, imageStore = {}) {
+    if (!SERVER_FINAL.has(name)) return null
+    const nm = (base) => (String(input.title || payload.deliverable || base).replace(/[^a-z0-9-_ ]/gi, '').trim() || base)
+    let body, filename, type = 'document', contentType
+    try {
+      if (name === 'build_webapp') {
+        const html = String(input.html || ''); if (!/<\/?[a-z]/i.test(html)) return null
+        body = html; type = 'webapp'; contentType = 'text/html'; filename = `${nm('app')}.html`
+      } else if (name === 'write_markdown') {
+        const md = String(input.markdown || ''); if (!md.trim()) return null
+        body = md; contentType = 'text/markdown'; filename = `${nm('post')}.md`
+      } else if (name === 'build_deck') {
+        const slides = Array.isArray(input.slides) ? input.slides : []
+        if (!slides.some(s => s && (s.title || (s.bullets || []).length))) return null
+        const M = await import('pptxgenjs'); const Pptx = M.default || M
+        const p = new Pptx()
+        for (const s of slides) {
+          const sl = p.addSlide()
+          if (s.title) sl.addText(String(s.title), { x: 0.5, y: 0.3, w: 9, fontSize: 28, bold: true })
+          const img = s.image_id && imageStore[s.image_id]
+          const bl = (s.bullets || []).filter(Boolean).map(b => ({ text: String(b), options: { bullet: true, fontSize: 16, breakLine: true } }))
+          if (bl.length) sl.addText(bl, { x: 0.5, y: 1.4, w: img ? 5.3 : 9, h: 4 })
+          if (img) { try { sl.addImage({ data: `data:image/png;base64,${img}`, x: 6.0, y: 1.3, w: 3.5, h: 3.5 }) } catch { /* skip bad image */ } }
+          if (s.notes) sl.addNotes(String(s.notes))
+        }
+        body = new Uint8Array(await p.write({ outputType: 'arraybuffer' }))
+        contentType = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'; filename = `${nm('deck')}.pptx`
+      } else if (name === 'write_document') {
+        const sections = Array.isArray(input.sections) ? input.sections : []
+        if (!sections.some(s => s && (s.heading || (s.paragraphs || []).length))) return null
+        const { Document, Packer, Paragraph, HeadingLevel, TextRun } = await import('docx')
+        const children = []
+        if (input.title) children.push(new Paragraph({ heading: HeadingLevel.TITLE, children: [new TextRun(String(input.title))] }))
+        for (const sec of sections) {
+          if (sec.heading) children.push(new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun(String(sec.heading))] }))
+          for (const para of (sec.paragraphs || [])) children.push(new Paragraph({ children: [new TextRun(String(para))] }))
+        }
+        const blob = await Packer.toBlob(new Document({ sections: [{ children }] }))
+        body = new Uint8Array(await blob.arrayBuffer())
+        contentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'; filename = `${nm('document')}.docx`
+      } else if (name === 'build_pdf') {
+        const sections = Array.isArray(input.sections) ? input.sections : []
+        if (!sections.some(s => s && (s.heading || (s.paragraphs || []).length))) return null
+        const { jsPDF } = await import('jspdf')
+        const doc = new jsPDF({ unit: 'pt', format: 'letter' })
+        const margin = 56, pw = doc.internal.pageSize.getWidth(), ph = doc.internal.pageSize.getHeight()
+        let y = margin
+        const write = (text, size, bold, gap) => { doc.setFontSize(size); doc.setFont('helvetica', bold ? 'bold' : 'normal'); for (const ln of doc.splitTextToSize(String(text), pw - margin * 2)) { if (y > ph - margin) { doc.addPage(); y = margin } doc.text(ln, margin, y); y += gap } }
+        if (input.title) { write(input.title, 22, true, 28); y += 8 }
+        for (const sec of sections) { if (sec.heading) write(sec.heading, 14, true, 18); for (const para of (sec.paragraphs || [])) { write(para, 11, false, 14); y += 6 } y += 8 }
+        body = new Uint8Array(doc.output('arraybuffer'))
+        contentType = 'application/pdf'; filename = `${nm('document')}.pdf`
+      } else if (name === 'build_spreadsheet') {
+        const sheets = Array.isArray(input.sheets) ? input.sheets : (Array.isArray(input.rows) ? [{ name: 'Sheet1', rows: input.rows }] : [])
+        if (!sheets.some(s => Array.isArray(s.rows) && s.rows.some(r => Array.isArray(r) && r.some(c => c !== '' && c != null)))) return null
+        const X = await import('xlsx'); const XLSX = X.default || X
+        const wb = XLSX.utils.book_new()
+        sheets.forEach((s, i) => XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(s.rows || []), String(s.name || `Sheet${i + 1}`).slice(0, 31)))
+        body = new Uint8Array(XLSX.write(wb, { type: 'array', bookType: 'xlsx' }))
+        contentType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'; filename = `${nm('spreadsheet')}.xlsx`
+      } else return null
+    } catch (e) { console.log('[BuildRunner] emit failed', name, e?.message); return null }
+    const path = `${payload.userId}/${payload.jobId}/${filename.replace(/[^a-z0-9._-]/gi, '_')}`
+    const up = await fetch(`${this.env.SUPABASE_URL}/storage/v1/object/build-deliverables/${path}`, {
+      method: 'POST',
+      headers: { apikey: this.env.SUPABASE_ANON_KEY, Authorization: `Bearer ${payload.jwt}`, 'Content-Type': contentType, 'x-upsert': 'true' },
+      body,
+    })
+    if (!up.ok) return null
+    return { label: filename, type, filename, storagePath: path, savedLink: null, component: false }
   }
 }
 
@@ -184,7 +426,7 @@ function corsHeaders(origin, env) {
   return {
     'Access-Control-Allow-Origin': ok ? origin : 'null',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, x-api-key, Authorization, x-supabase-auth, x-stability-key',
+    'Access-Control-Allow-Headers': 'Content-Type, x-api-key, Authorization, x-supabase-auth, x-stability-key, x-openai-key',
     'Access-Control-Max-Age': '86400',
     'Vary': 'Origin',
   }
@@ -272,6 +514,28 @@ function isSafeUrl(raw) {
 }
 
 const ROUTES = {
+  // Server-side build kickoff. The JWT is already verified by the fetch gate; we
+  // decode its sub for the storage path, hand the job to a per-jobId Durable
+  // Object, and return immediately (the DO runs the build + writes build_jobs).
+  'build/run': async (req, env) => {
+    if (!env.BUILD_RUNNER) return new Response(JSON.stringify({ error: 'server_builds_unavailable' }), { status: 501 })
+    const jwt = (req.headers.get('x-supabase-auth') || '').replace(/^Bearer /, '')
+    const anthropicKey = req.headers.get('x-api-key') || ''
+    if (!jwt || !anthropicKey) return new Response(JSON.stringify({ error: 'missing_auth_or_key' }), { status: 400 })
+    let userId = null
+    try { userId = JSON.parse(atob(jwt.split('.')[1])).sub } catch {}
+    if (!userId) return new Response(JSON.stringify({ error: 'invalid_auth' }), { status: 401 })
+    const b = await req.json().catch(() => ({}))
+    if (!b.jobId) return new Response(JSON.stringify({ error: 'missing_jobId' }), { status: 400 })
+    const stub = env.BUILD_RUNNER.getByName(b.jobId)
+    const ack = await stub.start({
+      jobId: b.jobId, request: b.request || '', context: b.context || '', brandContext: b.brandContext || '',
+      model: b.model || 'claude-sonnet-4-6', deliverable: b.deliverable || 'Build', anthropicKey,
+      imageKey: req.headers.get('x-openai-key') || '', jwt, userId,
+    })
+    return new Response(JSON.stringify(ack), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  },
+
   claude: async (req) => {
     const apiKey = req.headers.get('x-api-key')
     if (!apiKey) return new Response(JSON.stringify({ error: 'missing_provider_key' }), { status: 400 })

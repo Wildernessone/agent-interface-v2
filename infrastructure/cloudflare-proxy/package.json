@@ -1,0 +1,20 @@
+{
+  "name": "claude-proxy",
+  "private": true,
+  "type": "module",
+  "description": "Agent Interface proxy worker + server-side build runner (Durable Object).",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev",
+    "tail": "wrangler tail"
+  },
+  "dependencies": {
+    "docx": "^9.7.1",
+    "jspdf": "^4.2.1",
+    "pptxgenjs": "^4.0.1",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "wrangler": "^4.98.0"
+  }
+}

@@ -6,6 +6,11 @@
 import { supabase } from './supabase'
 
 const BUCKET = 'build-deliverables'
+const PROXY = import.meta.env.VITE_PROXY_URL || 'https://claude-proxy.jamesreed.workers.dev'
+// Server-side execution (Phase 2) is OFF until the BuildRunner Durable Object is
+// deployed (wrangler deploy) — flip VITE_SERVER_BUILDS=1 in the Pages env then.
+// Until then, and on ANY server-path error, builds run client-side as before.
+export const SERVER_BUILDS_ENABLED = import.meta.env.VITE_SERVER_BUILDS === '1'
 // 7-day signed URLs — long enough to be useful in chat, short enough that a
 // leaked link expires. Regenerated on every conversation load.
 const SIGNED_TTL = 60 * 60 * 24 * 7
@@ -84,6 +89,38 @@ export async function loadConversationBuildJobs(conversationId) {
       .order('created_at', { ascending: false }).limit(20)
     return data || []
   } catch { return [] }
+}
+
+// Run a build on the SERVER (the BuildRunner Durable Object) and poll the job row
+// until it finishes. Returns the same { files, errors } shape the client builder
+// returns, with signed-URL outputs. Throws on kickoff failure/timeout so the caller
+// can fall back to a client-side build. Server-eligible = string-output builds only.
+export async function runServerBuild({ jobId, request, context, brandContext, model, deliverable, anthropicKey, openaiKey, authHeaders }, onPoll = () => {}) {
+  const res = await fetch(`${PROXY}/build/run`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-api-key': anthropicKey, ...(openaiKey ? { 'x-openai-key': openaiKey } : {}), ...(authHeaders || {}) },
+    body: JSON.stringify({ jobId, request, context, brandContext, model, deliverable }),
+  })
+  if (!res.ok) throw new Error(`server_build_kickoff_${res.status}`)
+  for (let i = 0; i < 150; i++) {            // ~5 min ceiling
+    await new Promise(r => setTimeout(r, 2000))
+    const { data } = await supabase.from('build_jobs').select('status,files,errors').eq('id', jobId).single()
+    if (!data) continue
+    onPoll(data)
+    if (data.status === 'done' || data.status === 'failed') {
+      const files = []
+      for (const jf of (data.files || [])) {
+        const url = jf.storagePath ? await signedUrlFor(jf.storagePath) : null
+        if (!url && !jf.savedLink) continue
+        files.push({ stepId: jf.label || 'File', label: jf.label || 'File', component: !!jf.component,
+          savedLink: jf.savedLink || null,
+          output: { type: jf.type || null, filename: jf.filename || null, url: url || undefined, tool: 'build' },
+          unsaved: !jf.savedLink && !!url })
+      }
+      return { files, errors: data.errors || [], status: data.status, serverBuilt: true }
+    }
+  }
+  throw new Error('server_build_timeout')
 }
 
 // Persist a finished build's deliverables. Cloud-saved files (Drive/Dropbox) keep
