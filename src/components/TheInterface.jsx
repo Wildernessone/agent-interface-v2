@@ -660,6 +660,19 @@ export default function TheInterface() {
     const FORCE_WEBAPP = /\b(make|build|create|code|program|develop|design|turn (?:it|this) into|do)\b[^.?!]{0,60}\b(game|web ?app|web ?site|app|playable|tower[ -]?defen[sc]e|arcade|simulator|interactive|html|chart|graph|diagram|flow ?chart|mind ?map|org ?chart|form|survey|quiz|calculator|dashboard|qr ?code)\b/i.test(text)
       || /\b(tower[ -]?defen[sc]e|playable game|html game|mini[- ]?game)\b/i.test(text)
     const FORCE_PODCAST = /\b(make|build|create|record|produce|generate|do|give me)\b[^.?!]{0,40}\b(podcast|audio (?:show|episode|drama)|two[- ]?host)\b/i.test(text)
+    // Same deterministic override for finished DOCUMENTS — a deck, spreadsheet, doc,
+    // pdf, report. The LLM router under-classifies "make me a deck AND a spreadsheet"
+    // as 'discuss': the panel debates, reaches agreement, then asks the user to
+    // confirm AGAIN instead of building. An explicit build verb + a concrete document
+    // noun = build it. GUARD: a brand-creative deliverable (deck/ad/logo/newsletter)
+    // needs brand context, so only force it when the active project carries a brief —
+    // otherwise fall through to the normal flow, whose brand-context gate asks for one
+    // rather than inventing the brand. Exploratory questions ("should I make a deck?")
+    // are excluded so they still get discussed.
+    const FORCE_DOC = /\b(make|build|create|write|draft|put together|generate|design|give me)\b[^.?!]{0,80}\b(deck|slides?|powerpoint|presentation|pitch|keynote|spreadsheet|excel|workbook|xlsx|budget|pricing|doc|document|report|one[- ]?pager|whitepaper|memo|proposal|pdf|newsletter)\b/i.test(text)
+    const docExploratory = /\b(should (?:i|we)|do you think|is it worth|worth it|how (?:do|should|would) i|what (?:do|should|would) you|help me (?:decide|figure out (?:whether|if)))\b/i.test(text)
+    const docBrandCreative = /\b(deck|pitch|slides?|presentation|keynote|ad|advert|landing|newsletter|social|motto|logo|tagline|slogan|brand|campaign)\b/i.test(text)
+    const forceDocOk = FORCE_DOC && !docExploratory && (!docBrandCreative || !!brandBriefFrom(activeProject))
     if (FORCE_WEBAPP || FORCE_PODCAST) {
       const nm = (text.replace(/^(ok,?\s*|please\s*|can you\s*|now\s*|so\s*|let'?s\s*)/i, '').replace(/[^a-z0-9 ]/gi, ' ').trim().split(/\s+/).slice(0, 6).join(' ') || (FORCE_PODCAST ? 'Podcast' : 'App'))
       clawDecision = {
@@ -668,6 +681,16 @@ export default function TheInterface() {
         agents_to_respond: [],
         reasoning: FORCE_PODCAST ? 'Recording the podcast directly.' : 'Building a playable app directly.',
         plan: { deliverable: nm, steps: [{ id: 's1', tool: 'agent_synth', needs: [], output_schema: FORCE_PODCAST ? 'document' : 'page', input: text, label: FORCE_PODCAST ? 'Write the podcast' : 'Build the app' }], brandContext: null },
+        block: null,
+      }
+    } else if (forceDocOk) {
+      const nm = (text.replace(/^(ok,?\s*|please\s*|can you\s*|now\s*|so\s*|let'?s\s*|what i (?:would|'?d) (?:like|want)(?: you)?(?: to do)?(?: is)?\s*)/i, '').replace(/[^a-z0-9 ]/gi, ' ').trim().split(/\s+/).slice(0, 6).join(' ') || 'Build')
+      clawDecision = {
+        ...(clawDecision || {}),
+        mode: 'build',
+        agents_to_respond: [],
+        reasoning: 'Building the requested documents directly.',
+        plan: { deliverable: nm, steps: [{ id: 's1', tool: 'agent_synth', needs: [], output_schema: 'document', input: text, label: 'Build the documents' }], brandContext: brandBriefFrom(activeProject) || null },
         block: null,
       }
     }
