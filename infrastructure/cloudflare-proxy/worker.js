@@ -109,8 +109,10 @@ const SERVER_BUILD_TOOLS = [
     input_schema: { type: 'object', properties: { html: { type: 'string' }, title: { type: 'string' } }, required: ['html'] } },
   { name: 'write_markdown', description: 'FINAL — a markdown post/article. Provide the full markdown text.',
     input_schema: { type: 'object', properties: { markdown: { type: 'string' }, title: { type: 'string' } }, required: ['markdown'] } },
-  { name: 'build_deck', description: 'FINAL — a slide deck (.pptx). Write COMPLETE slide content yourself: each slide { title, bullets[], notes }.',
-    input_schema: { type: 'object', properties: { title: { type: 'string' }, slides: { type: 'array', items: { type: 'object', properties: { title: { type: 'string' }, bullets: { type: 'array', items: { type: 'string' } }, notes: { type: 'string' } } } } }, required: ['slides'] } },
+  { name: 'generate_image', description: 'Generate ONE image (logo / cover / visual) from a prompt. Returns an image_id. Call this BEFORE build_deck for any slide that needs a visual, then pass the returned image_id to that slide.',
+    input_schema: { type: 'object', properties: { prompt: { type: 'string' }, id: { type: 'string', description: 'optional stable id to reuse' } }, required: ['prompt'] } },
+  { name: 'build_deck', description: 'FINAL — a slide deck (.pptx). Write COMPLETE slide content yourself: each slide { title, bullets[], notes, image_id? }. Set image_id to an id returned by generate_image to put that image on the slide.',
+    input_schema: { type: 'object', properties: { title: { type: 'string' }, slides: { type: 'array', items: { type: 'object', properties: { title: { type: 'string' }, bullets: { type: 'array', items: { type: 'string' } }, notes: { type: 'string' }, image_id: { type: 'string' } } } } }, required: ['slides'] } },
   { name: 'write_document', description: 'FINAL — a Word document (.docx). { title, sections:[{ heading, paragraphs[] }] }, real prose.',
     input_schema: { type: 'object', properties: { title: { type: 'string' }, sections: { type: 'array', items: { type: 'object', properties: { heading: { type: 'string' }, paragraphs: { type: 'array', items: { type: 'string' } } } } } }, required: ['sections'] } },
   { name: 'build_pdf', description: 'FINAL — a PDF (.pdf). { title, sections:[{ heading, paragraphs[] }] }, real prose.',
@@ -118,7 +120,8 @@ const SERVER_BUILD_TOOLS = [
   { name: 'build_spreadsheet', description: 'FINAL — a spreadsheet (.xlsx). { sheets:[{ name, rows:[[cell,...]] }] }, row 0 = header, REAL numbers.',
     input_schema: { type: 'object', properties: { sheets: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, rows: { type: 'array', items: { type: 'array' } } } } } }, required: ['sheets'] } },
 ]
-const SERVER_FINAL = new Set(SERVER_BUILD_TOOLS.map(t => t.name))
+// generate_image is a COMPONENT (feeds build_deck), not a final deliverable.
+const SERVER_FINAL = new Set(['build_webapp', 'write_markdown', 'build_deck', 'write_document', 'build_pdf', 'build_spreadsheet'])
 
 // Minimal SSE reader for Anthropic's streaming Messages API (mirrors the client's
 // readClaudeStream): reassembles content blocks + tool_use inputs, flags truncation.
@@ -191,6 +194,7 @@ export class BuildRunner extends DurableObject {
     const system = `You are the Builder inside Agent Interface — produce a REAL finished file, not a description. ${'' + (context ? `CONVERSATION SO FAR:\n${String(context).slice(0, 3000)}\n\n` : '')}Build exactly what the user asked by calling the matching FINAL tool with the COMPLETE working content. Do not ask questions; do not stop until the file is emitted.${brandContext ? `\n\nBRAND CONTEXT (ground everything in this):\n${String(brandContext).slice(0, 1500)}` : ''}`
     const messages = [{ role: 'user', content: request || 'Build what the user asked for.' }]
     const files = []
+    const imageStore = {}   // image_id -> base64 (in-memory for this run only)
     let nudged = false
     for (let turn = 0; turn < 10; turn++) {
       const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -208,7 +212,14 @@ export class BuildRunner extends DurableObject {
       const truncatedIds = new Set(data.truncated || [])
       for (const tu of toolUses) {
         if (truncatedIds.has(tu.id)) { results.push({ type: 'tool_result', tool_use_id: tu.id, is_error: true, content: `${tu.name} was cut off — regenerate it MORE CONCISELY so it fits in one response.` }); continue }
-        const made = await this.emit(payload, tu.name, tu.input || {})
+        if (tu.name === 'generate_image') {
+          const b64 = await this.genImage(payload, (tu.input || {}).prompt)
+          const id = (tu.input?.id) || `image_${Object.keys(imageStore).length + 1}`
+          if (b64) { imageStore[id] = b64; results.push({ type: 'tool_result', tool_use_id: tu.id, content: JSON.stringify({ image_id: id }) }) }
+          else results.push({ type: 'tool_result', tool_use_id: tu.id, is_error: true, content: 'image generation failed — continue without it' })
+          continue
+        }
+        const made = await this.emit(payload, tu.name, tu.input || {}, imageStore)
         if (made) files.push(made)
         results.push({ type: 'tool_result', tool_use_id: tu.id, content: made ? 'saved' : 'error: tool produced no file' })
       }
@@ -221,7 +232,33 @@ export class BuildRunner extends DurableObject {
   // Generate the file bytes (string or Uint8Array) and upload to Storage at
   // <userId>/<jobId>/<file>. Heavy doc libs are dynamic-imported so they only load
   // when a doc build actually runs. Returns null (→ retry) if the content is empty.
-  async emit(payload, name, input) {
+  // Generate one image via the user's OpenAI key (reuses the /dalle route logic);
+  // returns base64 PNG, or null on failure (the build continues without it).
+  async genImage(payload, prompt) {
+    if (!payload.imageKey || !prompt) return null
+    const body = { prompt: String(prompt).slice(0, 4000), size: '1024x1024', quality: 'high' }
+    let last = null
+    for (const model of imageModelsToTry(body)) {
+      try {
+        const r = await fetch('https://api.openai.com/v1/images/generations', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${payload.imageKey}` },
+          body: JSON.stringify(buildImageRequest(model, body)),
+        })
+        if (r.ok) {
+          const it = (await r.json())?.data?.[0]
+          if (it?.b64_json) return it.b64_json
+          if (it?.url) { const img = await fetch(it.url); if (img.ok) return bufToBase64(await img.arrayBuffer()) }
+          return null
+        }
+        last = r.status
+        if (![400, 403, 404].includes(r.status)) break
+      } catch { break }
+    }
+    console.log('[BuildRunner] genImage failed', last)
+    return null
+  }
+
+  async emit(payload, name, input, imageStore = {}) {
     if (!SERVER_FINAL.has(name)) return null
     const nm = (base) => (String(input.title || payload.deliverable || base).replace(/[^a-z0-9-_ ]/gi, '').trim() || base)
     let body, filename, type = 'document', contentType
@@ -240,8 +277,10 @@ export class BuildRunner extends DurableObject {
         for (const s of slides) {
           const sl = p.addSlide()
           if (s.title) sl.addText(String(s.title), { x: 0.5, y: 0.3, w: 9, fontSize: 28, bold: true })
+          const img = s.image_id && imageStore[s.image_id]
           const bl = (s.bullets || []).filter(Boolean).map(b => ({ text: String(b), options: { bullet: true, fontSize: 16, breakLine: true } }))
-          if (bl.length) sl.addText(bl, { x: 0.5, y: 1.4, w: 9, h: 4 })
+          if (bl.length) sl.addText(bl, { x: 0.5, y: 1.4, w: img ? 5.3 : 9, h: 4 })
+          if (img) { try { sl.addImage({ data: `data:image/png;base64,${img}`, x: 6.0, y: 1.3, w: 3.5, h: 3.5 }) } catch { /* skip bad image */ } }
           if (s.notes) sl.addNotes(String(s.notes))
         }
         body = new Uint8Array(await p.write({ outputType: 'arraybuffer' }))
@@ -387,7 +426,7 @@ function corsHeaders(origin, env) {
   return {
     'Access-Control-Allow-Origin': ok ? origin : 'null',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, x-api-key, Authorization, x-supabase-auth, x-stability-key',
+    'Access-Control-Allow-Headers': 'Content-Type, x-api-key, Authorization, x-supabase-auth, x-stability-key, x-openai-key',
     'Access-Control-Max-Age': '86400',
     'Vary': 'Origin',
   }
@@ -491,7 +530,8 @@ const ROUTES = {
     const stub = env.BUILD_RUNNER.getByName(b.jobId)
     const ack = await stub.start({
       jobId: b.jobId, request: b.request || '', context: b.context || '', brandContext: b.brandContext || '',
-      model: b.model || 'claude-sonnet-4-6', deliverable: b.deliverable || 'Build', anthropicKey, jwt, userId,
+      model: b.model || 'claude-sonnet-4-6', deliverable: b.deliverable || 'Build', anthropicKey,
+      imageKey: req.headers.get('x-openai-key') || '', jwt, userId,
     })
     return new Response(JSON.stringify(ack), { status: 200, headers: { 'Content-Type': 'application/json' } })
   },

@@ -1085,13 +1085,13 @@ export default function TheInterface() {
       // (webapp/games) run on the BuildRunner Durable Object so a closed tab can't
       // kill it. ANY failure (incl. an undeployed worker) falls back to the client
       // builder below — so this is safe to ship inert (flag off → skipped).
-      // Server-eligible: webapp/games + text doc/deck/sheet/pdf builds — the tools
-      // the BuildRunner DO supports. Anything needing media (image/voice) stays on
-      // the client (the server can't generate images yet), so an image-rich deck
-      // isn't downgraded to text-only.
+      // Server-eligible: webapp/games + doc/deck/sheet/pdf builds (incl. images —
+      // the DO generates images via generate_image). Voice/video stay on the client
+      // (their final assembly is ffmpeg WASM, browser-only), so those aren't routed.
       const claudeKey = readKey(settings, 'agent.claude')
+      const openaiKey = readKey(settings, 'agent.gpt')
       const _isDocBuild = _hasDoc || /\b(deck|slides?|presentation|pitch|keynote|document|report|one[- ]?pager|whitepaper|memo|proposal|spreadsheet|excel|workbook|budget|pdf|\bdoc\b|markdown|blog post|article)\b/i.test(_text)
-      const _serverEligible = SERVER_BUILDS_ENABLED && claudeKey && !isVideoBuild && !_hasImage && !_hasVoice && (isWebappBuild || _isDocBuild)
+      const _serverEligible = SERVER_BUILDS_ENABLED && claudeKey && !isVideoBuild && !_hasVoice && (isWebappBuild || _isDocBuild)
       if (_serverEligible) {
         try {
           const jobId = await buildJobIdP
@@ -1100,7 +1100,7 @@ export default function TheInterface() {
           const sr = await runServerBuild({
             jobId, request: planToRun.request || planToRun.deliverable, context: buildContext,
             brandContext: planToRun.brandContext || null, model: 'claude-sonnet-4-6',
-            deliverable: planToRun.deliverable, anthropicKey: claudeKey, authHeaders: await authHeader(),
+            deliverable: planToRun.deliverable, anthropicKey: claudeKey, openaiKey, authHeaders: await authHeader(),
           })
           addOrUpdate('_server', 'Built on the server', 'done')
           result = { files: sr.files, errors: sr.errors, folderName: null, folderLink: null, folderProvider: null, serverBuilt: true }

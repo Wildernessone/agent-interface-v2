@@ -95,10 +95,10 @@ export async function loadConversationBuildJobs(conversationId) {
 // until it finishes. Returns the same { files, errors } shape the client builder
 // returns, with signed-URL outputs. Throws on kickoff failure/timeout so the caller
 // can fall back to a client-side build. Server-eligible = string-output builds only.
-export async function runServerBuild({ jobId, request, context, brandContext, model, deliverable, anthropicKey, authHeaders }, onPoll = () => {}) {
+export async function runServerBuild({ jobId, request, context, brandContext, model, deliverable, anthropicKey, openaiKey, authHeaders }, onPoll = () => {}) {
   const res = await fetch(`${PROXY}/build/run`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-api-key': anthropicKey, ...(authHeaders || {}) },
+    headers: { 'Content-Type': 'application/json', 'x-api-key': anthropicKey, ...(openaiKey ? { 'x-openai-key': openaiKey } : {}), ...(authHeaders || {}) },
     body: JSON.stringify({ jobId, request, context, brandContext, model, deliverable }),
   })
   if (!res.ok) throw new Error(`server_build_kickoff_${res.status}`)
