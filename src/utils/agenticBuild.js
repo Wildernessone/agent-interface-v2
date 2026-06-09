@@ -302,7 +302,30 @@ export async function runAgenticBuild({ request, deliverable: deliverableIn, bra
   // forced — they legitimately call a component tool (generate_image, voiceover)
   // before the finisher — so this is scoped to the two single-call classes only.
   const forcedFinalTool = webappIntent ? 'build_webapp' : podcastIntent ? 'build_podcast' : null
-  const system = `You are the Builder inside Agent Interface — it produces REAL finished files, not descriptions or plans. Read what the user wants and BUILD IT by calling tools, using the real result of each call to construct the next. Do NOT write a "plan" or a "production doc" — perform the work and emit the actual file.${webappDirective}${podcastDirective}
+
+  // How many DISTINCT final deliverables did the user ask for? "a deck AND a
+  // spreadsheet" = 2. The build loop used to stop after the FIRST final tool, so
+  // a multi-part request silently lost everything after deliverable #1. Count
+  // only types that map to a FINAL tool (logos/mottos are image/text COMPONENTS
+  // that ride inside a deliverable, not finals of their own — don't count them,
+  // or the loop waits forever for a final that never comes).
+  const DELIVERABLE_GROUPS = [
+    /\b(deck|slides?|powerpoint|presentation|pitch|keynote)\b/i,
+    /\b(spreadsheet|excel|workbook|xlsx|budget|pricing|flight plan)\b/i,
+    /\b(doc|document|report|one[- ]?pager|whitepaper|memo|brief|letter|proposal)\b/i,
+    /\bpdf\b/i,
+    /\b(video|promo|reel|trailer|advert|commercial|mp4)\b/i,
+    /\b(podcast|audio show)\b/i,
+    /\b(web ?app|web ?site|\bgame\b|playable|landing page)\b/i,
+    /\b(blog post|article|newsletter|markdown)\b/i,
+  ]
+  const _reqText = `${request || ''} ${deliverable || ''}`
+  const expectedDeliverables = Math.max(1, DELIVERABLE_GROUPS.filter(re => re.test(_reqText)).length)
+  const multiDirective = expectedDeliverables > 1
+    ? `\n\n⚠ THE USER ASKED FOR ${expectedDeliverables} SEPARATE DELIVERABLES. You MUST produce EVERY one — call each one's final tool (e.g. build_deck AND build_spreadsheet). Do NOT stop after the first file. Prefer calling all the final tools together in one response. The build is only done when all ${expectedDeliverables} exist.`
+    : ''
+
+  const system = `You are the Builder inside Agent Interface — it produces REAL finished files, not descriptions or plans. Read what the user wants and BUILD IT by calling tools, using the real result of each call to construct the next. Do NOT write a "plan" or a "production doc" — perform the work and emit the actual file.${webappDirective}${podcastDirective}${multiDirective}
 
 Pick the right FINAL tool for the deliverable:
 - Slide deck / pitch deck / PowerPoint → build_deck (write COMPLETE slide content yourself; for a pitch deck, call generate_image first for a cover/key visuals and attach via slide.image_id).
@@ -314,7 +337,7 @@ Pick the right FINAL tool for the deliverable:
 - Game / interactive app / playable demo / tool / website → build_webapp: ONE self-contained .html with all html/css/js inlined and the REAL, fully-working logic written by you (no external libraries, no placeholders, no "// add game logic here"). Make it actually playable/usable.
 - Podcast / audio show / two-host conversation / interview → build_podcast: write the FULL dialogue yourself as alternating { speaker, text } turns (natural spoken back-and-forth, no stage directions). The system voices each speaker distinctly and stitches one .mp3 episode.
 
-Write ALL real content YOURSELF — headlines, bullets, prose, numbers — never placeholders, never "insert X here". When the final file is produced, confirm in ONE short sentence and STOP (no further tool calls).${brandContext ? `\n\nBRAND CONTEXT (ground everything in this; do not contradict it):\n${String(brandContext).slice(0, 1500)}` : ''}`
+Write ALL real content YOURSELF — headlines, bullets, prose, numbers — never placeholders, never "insert X here". When EVERY requested deliverable has been produced, confirm in ONE short sentence and STOP (no further tool calls).${brandContext ? `\n\nBRAND CONTEXT (ground everything in this; do not contradict it):\n${String(brandContext).slice(0, 1500)}` : ''}`
 
   // Thread the conversation so far into the build, so references like "make THIS
   // game" / "build the thing we discussed" resolve to what was actually talked
@@ -379,8 +402,10 @@ Write ALL real content YOURSELF — headlines, bullets, prose, numbers — never
       }
     }
     messages.push({ role: 'user', content: results })
-    // Stop once a final deliverable exists and the agent has nothing else queued.
-    if (finals.length && toolUses.every(t => FINAL_TOOLS.has(t.name))) break
+    // Stop once ALL requested deliverables exist and the agent has nothing else
+    // queued. Using expectedDeliverables (not just `finals.length`) keeps a
+    // multi-part build ("a deck AND a spreadsheet") going past the first file.
+    if (finals.length >= expectedDeliverables && toolUses.every(t => FINAL_TOOLS.has(t.name))) break
   }
 
   // DETERMINISTIC VIDEO FINISHER — if a video was clearly intended (image +
