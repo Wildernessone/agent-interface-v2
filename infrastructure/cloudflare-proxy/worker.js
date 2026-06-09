@@ -109,6 +109,14 @@ const SERVER_BUILD_TOOLS = [
     input_schema: { type: 'object', properties: { html: { type: 'string' }, title: { type: 'string' } }, required: ['html'] } },
   { name: 'write_markdown', description: 'FINAL — a markdown post/article. Provide the full markdown text.',
     input_schema: { type: 'object', properties: { markdown: { type: 'string' }, title: { type: 'string' } }, required: ['markdown'] } },
+  { name: 'build_deck', description: 'FINAL — a slide deck (.pptx). Write COMPLETE slide content yourself: each slide { title, bullets[], notes }.',
+    input_schema: { type: 'object', properties: { title: { type: 'string' }, slides: { type: 'array', items: { type: 'object', properties: { title: { type: 'string' }, bullets: { type: 'array', items: { type: 'string' } }, notes: { type: 'string' } } } } }, required: ['slides'] } },
+  { name: 'write_document', description: 'FINAL — a Word document (.docx). { title, sections:[{ heading, paragraphs[] }] }, real prose.',
+    input_schema: { type: 'object', properties: { title: { type: 'string' }, sections: { type: 'array', items: { type: 'object', properties: { heading: { type: 'string' }, paragraphs: { type: 'array', items: { type: 'string' } } } } } }, required: ['sections'] } },
+  { name: 'build_pdf', description: 'FINAL — a PDF (.pdf). { title, sections:[{ heading, paragraphs[] }] }, real prose.',
+    input_schema: { type: 'object', properties: { title: { type: 'string' }, sections: { type: 'array', items: { type: 'object', properties: { heading: { type: 'string' }, paragraphs: { type: 'array', items: { type: 'string' } } } } } }, required: ['sections'] } },
+  { name: 'build_spreadsheet', description: 'FINAL — a spreadsheet (.xlsx). { sheets:[{ name, rows:[[cell,...]] }] }, row 0 = header, REAL numbers.',
+    input_schema: { type: 'object', properties: { sheets: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, rows: { type: 'array', items: { type: 'array' } } } } } }, required: ['sheets'] } },
 ]
 const SERVER_FINAL = new Set(SERVER_BUILD_TOOLS.map(t => t.name))
 
@@ -184,7 +192,7 @@ export class BuildRunner extends DurableObject {
     const messages = [{ role: 'user', content: request || 'Build what the user asked for.' }]
     const files = []
     let nudged = false
-    for (let turn = 0; turn < 8 && !files.length; turn++) {
+    for (let turn = 0; turn < 10; turn++) {
       const res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01' },
@@ -195,7 +203,7 @@ export class BuildRunner extends DurableObject {
       if (data.error) { if (turn < 7 && /overload|rate|api_error|stream/i.test(data.error)) { await new Promise(r => setTimeout(r, 1500 * (turn + 1))); continue } return this.fail(payload, data.error) }
       messages.push({ role: 'assistant', content: data.content })
       const toolUses = (data.content || []).filter(c => c.type === 'tool_use')
-      if (!toolUses.length) { if (!nudged) { nudged = true; messages.push({ role: 'user', content: 'You produced no file. Call the FINAL tool now with the COMPLETE content — only the tool call.' }); continue } break }
+      if (!toolUses.length) { if (!files.length && !nudged) { nudged = true; messages.push({ role: 'user', content: 'You produced no file. Call the FINAL tool now with the COMPLETE content — only the tool call.' }); continue } break }
       const results = []
       const truncatedIds = new Set(data.truncated || [])
       for (const tu of toolUses) {
@@ -210,21 +218,73 @@ export class BuildRunner extends DurableObject {
     await this.patchJob(payload, { status: 'done', files })
   }
 
-  // Generate the file bytes and upload to Storage at <userId>/<jobId>/<file>.
+  // Generate the file bytes (string or Uint8Array) and upload to Storage at
+  // <userId>/<jobId>/<file>. Heavy doc libs are dynamic-imported so they only load
+  // when a doc build actually runs. Returns null (→ retry) if the content is empty.
   async emit(payload, name, input) {
     if (!SERVER_FINAL.has(name)) return null
-    let body, filename, type
-    if (name === 'build_webapp') {
-      const html = String(input.html || ''); if (!/<\/?[a-z]/i.test(html)) return null
-      body = html; type = 'webapp'; filename = `${(input.title || payload.deliverable || 'app').replace(/[^a-z0-9-_ ]/gi, '').trim() || 'app'}.html`
-    } else if (name === 'write_markdown') {
-      const md = String(input.markdown || ''); if (!md.trim()) return null
-      body = md; type = 'document'; filename = `${(input.title || payload.deliverable || 'post').replace(/[^a-z0-9-_ ]/gi, '').trim() || 'post'}.md`
-    } else return null
+    const nm = (base) => (String(input.title || payload.deliverable || base).replace(/[^a-z0-9-_ ]/gi, '').trim() || base)
+    let body, filename, type = 'document', contentType
+    try {
+      if (name === 'build_webapp') {
+        const html = String(input.html || ''); if (!/<\/?[a-z]/i.test(html)) return null
+        body = html; type = 'webapp'; contentType = 'text/html'; filename = `${nm('app')}.html`
+      } else if (name === 'write_markdown') {
+        const md = String(input.markdown || ''); if (!md.trim()) return null
+        body = md; contentType = 'text/markdown'; filename = `${nm('post')}.md`
+      } else if (name === 'build_deck') {
+        const slides = Array.isArray(input.slides) ? input.slides : []
+        if (!slides.some(s => s && (s.title || (s.bullets || []).length))) return null
+        const M = await import('pptxgenjs'); const Pptx = M.default || M
+        const p = new Pptx()
+        for (const s of slides) {
+          const sl = p.addSlide()
+          if (s.title) sl.addText(String(s.title), { x: 0.5, y: 0.3, w: 9, fontSize: 28, bold: true })
+          const bl = (s.bullets || []).filter(Boolean).map(b => ({ text: String(b), options: { bullet: true, fontSize: 16, breakLine: true } }))
+          if (bl.length) sl.addText(bl, { x: 0.5, y: 1.4, w: 9, h: 4 })
+          if (s.notes) sl.addNotes(String(s.notes))
+        }
+        body = new Uint8Array(await p.write({ outputType: 'arraybuffer' }))
+        contentType = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'; filename = `${nm('deck')}.pptx`
+      } else if (name === 'write_document') {
+        const sections = Array.isArray(input.sections) ? input.sections : []
+        if (!sections.some(s => s && (s.heading || (s.paragraphs || []).length))) return null
+        const { Document, Packer, Paragraph, HeadingLevel, TextRun } = await import('docx')
+        const children = []
+        if (input.title) children.push(new Paragraph({ heading: HeadingLevel.TITLE, children: [new TextRun(String(input.title))] }))
+        for (const sec of sections) {
+          if (sec.heading) children.push(new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun(String(sec.heading))] }))
+          for (const para of (sec.paragraphs || [])) children.push(new Paragraph({ children: [new TextRun(String(para))] }))
+        }
+        const blob = await Packer.toBlob(new Document({ sections: [{ children }] }))
+        body = new Uint8Array(await blob.arrayBuffer())
+        contentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'; filename = `${nm('document')}.docx`
+      } else if (name === 'build_pdf') {
+        const sections = Array.isArray(input.sections) ? input.sections : []
+        if (!sections.some(s => s && (s.heading || (s.paragraphs || []).length))) return null
+        const { jsPDF } = await import('jspdf')
+        const doc = new jsPDF({ unit: 'pt', format: 'letter' })
+        const margin = 56, pw = doc.internal.pageSize.getWidth(), ph = doc.internal.pageSize.getHeight()
+        let y = margin
+        const write = (text, size, bold, gap) => { doc.setFontSize(size); doc.setFont('helvetica', bold ? 'bold' : 'normal'); for (const ln of doc.splitTextToSize(String(text), pw - margin * 2)) { if (y > ph - margin) { doc.addPage(); y = margin } doc.text(ln, margin, y); y += gap } }
+        if (input.title) { write(input.title, 22, true, 28); y += 8 }
+        for (const sec of sections) { if (sec.heading) write(sec.heading, 14, true, 18); for (const para of (sec.paragraphs || [])) { write(para, 11, false, 14); y += 6 } y += 8 }
+        body = new Uint8Array(doc.output('arraybuffer'))
+        contentType = 'application/pdf'; filename = `${nm('document')}.pdf`
+      } else if (name === 'build_spreadsheet') {
+        const sheets = Array.isArray(input.sheets) ? input.sheets : (Array.isArray(input.rows) ? [{ name: 'Sheet1', rows: input.rows }] : [])
+        if (!sheets.some(s => Array.isArray(s.rows) && s.rows.some(r => Array.isArray(r) && r.some(c => c !== '' && c != null)))) return null
+        const X = await import('xlsx'); const XLSX = X.default || X
+        const wb = XLSX.utils.book_new()
+        sheets.forEach((s, i) => XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(s.rows || []), String(s.name || `Sheet${i + 1}`).slice(0, 31)))
+        body = new Uint8Array(XLSX.write(wb, { type: 'array', bookType: 'xlsx' }))
+        contentType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'; filename = `${nm('spreadsheet')}.xlsx`
+      } else return null
+    } catch (e) { console.log('[BuildRunner] emit failed', name, e?.message); return null }
     const path = `${payload.userId}/${payload.jobId}/${filename.replace(/[^a-z0-9._-]/gi, '_')}`
     const up = await fetch(`${this.env.SUPABASE_URL}/storage/v1/object/build-deliverables/${path}`, {
       method: 'POST',
-      headers: { apikey: this.env.SUPABASE_ANON_KEY, Authorization: `Bearer ${payload.jwt}`, 'Content-Type': type === 'webapp' ? 'text/html' : 'text/markdown', 'x-upsert': 'true' },
+      headers: { apikey: this.env.SUPABASE_ANON_KEY, Authorization: `Bearer ${payload.jwt}`, 'Content-Type': contentType, 'x-upsert': 'true' },
       body,
     })
     if (!up.ok) return null

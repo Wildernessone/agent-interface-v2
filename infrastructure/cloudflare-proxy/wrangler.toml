@@ -1,6 +1,10 @@
 name = "claude-proxy"
 main = "worker.js"
-compatibility_date = "2024-09-01"
+# 2024-09-23 is the minimum for nodejs_compat (Buffer/stream/etc.), which the
+# server-side doc generators (docx/pptxgenjs/jspdf/xlsx) need. Tiny bump from
+# 2024-09-01 — no behavior change for the existing proxy routes.
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
 account_id = "37466838b711d4510ec744042dd24121"
 
 [[kv_namespaces]]

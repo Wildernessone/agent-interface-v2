@@ -1085,8 +1085,14 @@ export default function TheInterface() {
       // (webapp/games) run on the BuildRunner Durable Object so a closed tab can't
       // kill it. ANY failure (incl. an undeployed worker) falls back to the client
       // builder below — so this is safe to ship inert (flag off → skipped).
+      // Server-eligible: webapp/games + text doc/deck/sheet/pdf builds — the tools
+      // the BuildRunner DO supports. Anything needing media (image/voice) stays on
+      // the client (the server can't generate images yet), so an image-rich deck
+      // isn't downgraded to text-only.
       const claudeKey = readKey(settings, 'agent.claude')
-      if (SERVER_BUILDS_ENABLED && isWebappBuild && !isVideoBuild && claudeKey) {
+      const _isDocBuild = _hasDoc || /\b(deck|slides?|presentation|pitch|keynote|document|report|one[- ]?pager|whitepaper|memo|proposal|spreadsheet|excel|workbook|budget|pdf|\bdoc\b|markdown|blog post|article)\b/i.test(_text)
+      const _serverEligible = SERVER_BUILDS_ENABLED && claudeKey && !isVideoBuild && !_hasImage && !_hasVoice && (isWebappBuild || _isDocBuild)
+      if (_serverEligible) {
         try {
           const jobId = await buildJobIdP
           if (!jobId) throw new Error('no_job')
