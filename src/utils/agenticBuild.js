@@ -68,6 +68,16 @@ const BUILDER_TOOLS = [
 const FINAL_TOOLS = new Set(['render_video', 'build_deck', 'write_document', 'build_spreadsheet', 'build_pdf', 'write_markdown', 'build_webapp', 'build_podcast'])
 const FINAL_EXT = { build_deck: 'Deck', write_document: 'Document', build_spreadsheet: 'Spreadsheet', build_pdf: 'PDF', write_markdown: 'Post', render_video: 'Video', build_webapp: 'App', build_podcast: 'Podcast' }
 
+// Friendly "what's being written" labels for live progress while the model
+// streams a tool call's content (so the build card reads "Writing the slide
+// deck…" instead of sitting on a dead spinner for 60-120s).
+const WRITING_LABEL = {
+  build_deck: 'the slide deck', build_spreadsheet: 'the spreadsheet',
+  write_document: 'the document', build_pdf: 'the PDF', write_markdown: 'the post',
+  build_webapp: 'the app', build_podcast: 'the podcast', render_video: 'the video',
+  generate_image: 'an image', record_voiceover: 'the voiceover', generate_music: 'the music',
+}
+
 function buildFolderName(deliverable) {
   const safe = (deliverable || 'Build').replace(/[<>:"/\\|?*]/g, '').slice(0, 70).trim()
   return `${new Date().toISOString().slice(0, 10)} — ${safe}`
@@ -78,7 +88,7 @@ function buildFolderName(deliverable) {
 // loop is unchanged. We stream so a long build (a full game/app via build_webapp)
 // keeps bytes flowing and doesn't 524 through Cloudflare. Tool-use inputs arrive
 // as input_json_delta fragments we concatenate and JSON.parse at the end.
-async function readClaudeStream(res) {
+async function readClaudeStream(res, onProgress = () => {}) {
   const reader = res.body.getReader()
   const dec = new TextDecoder()
   let buf = ''
@@ -103,11 +113,18 @@ async function readClaudeStream(res) {
           blocks[ev.index] = cb.type === 'tool_use'
             ? { type: 'tool_use', id: cb.id, name: cb.name, json: '' }
             : { type: 'text', text: '' }
+          // Live progress: the model just started emitting a tool call — we know
+          // WHICH deliverable it's writing before the content finishes streaming.
+          if (cb.type === 'tool_use') onProgress({ type: 'tool_start', name: cb.name })
         } else if (ev.type === 'content_block_delta') {
           const b = blocks[ev.index]
           if (!b) continue
           if (ev.delta?.type === 'text_delta') b.text = (b.text || '') + (ev.delta.text || '')
-          else if (ev.delta?.type === 'input_json_delta') b.json = (b.json || '') + (ev.delta.partial_json || '')
+          else if (ev.delta?.type === 'input_json_delta') {
+            b.json = (b.json || '') + (ev.delta.partial_json || '')
+            // Report bytes streamed so the card shows the file growing, not a freeze.
+            onProgress({ type: 'delta', name: b.name, bytes: b.json.length })
+          }
         } else if (ev.type === 'message_delta') {
           if (ev.delta?.stop_reason) stop_reason = ev.delta.stop_reason
         } else if (ev.type === 'error') {
@@ -360,9 +377,33 @@ Write ALL real content YOURSELF — headlines, bullets, prose, numbers — never
     // instead of hedging in prose. Forced while no deliverable exists yet; the
     // loop breaks the instant the tool succeeds, so this never blocks a clean stop.
     const toolChoice = (forcedFinalTool && !finals.length) ? { type: 'tool', name: forcedFinalTool } : null
+    // Live progress so a 60-120s generation doesn't look frozen. Show a step the
+    // instant the turn starts, then update it as the model streams each tool's
+    // content ("Writing the slide deck… (8 KB)"). Per-turn maps keep the byte
+    // counts fresh. FINAL tools reuse their tool name as the step id, so execTool
+    // transitions the SAME step from "Writing…" → "Assemble…" → done with no
+    // flicker; component tools (image/voice/music) get finished here instead.
+    onStep('_working', turn === 0 ? 'Designing your build…' : 'Working…', 'started')
+    const reported = {}, streamed = new Set()
+    const onProg = (ev) => {
+      if (ev.type === 'tool_start' && ev.name) {
+        streamed.add(ev.name)
+        onStep('_working', '', 'done')
+        onStep(ev.name, `Writing ${WRITING_LABEL[ev.name] || ev.name}…`, 'started')
+      } else if (ev.type === 'delta' && ev.name && reported[ev.name] !== Math.floor((ev.bytes || 0) / 1024)) {
+        const kb = Math.floor((ev.bytes || 0) / 1024)
+        reported[ev.name] = kb
+        if (kb >= 1) onStep(ev.name, `Writing ${WRITING_LABEL[ev.name] || ev.name}… (${kb} KB)`, 'started')
+      }
+    }
     const res = await proxy('claude', { model: MODEL, max_tokens: 24000, stream: true, system, messages, tools: BUILDER_TOOLS, ...(toolChoice ? { tool_choice: toolChoice } : {}) }, { 'x-api-key': claudeKey })
-    if (!res.ok) { console.error('[agentic] claude not ok', res.status); errors.push({ stepId: '_agent', tool: 'claude', code: 'agent_http', error: `claude_${res.status}` }); break }
-    const data = await readClaudeStream(res)
+    if (!res.ok) { console.error('[agentic] claude not ok', res.status); onStep('_working', '', 'done'); errors.push({ stepId: '_agent', tool: 'claude', code: 'agent_http', error: `claude_${res.status}` }); break }
+    const data = await readClaudeStream(res, onProg)
+    // Turn done streaming: clear the generic indicator and finish any streamed
+    // component-tool steps (their execTool runs under a different id). FINAL tools
+    // are left for execTool to transition in place.
+    onStep('_working', '', 'done')
+    streamed.forEach(name => { if (!FINAL_TOOLS.has(name)) onStep(name, `Wrote ${WRITING_LABEL[name] || name}`, 'done') })
     // Surface a stream/API error (overloaded, etc.) instead of silently breaking
     // to an empty "no deliverable".
     if (data.error) {
