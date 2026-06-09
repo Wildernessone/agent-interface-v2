@@ -291,6 +291,17 @@ export async function runAgenticBuild({ request, deliverable: deliverableIn, bra
   const podcastDirective = podcastIntent
     ? `\n\n⚠ THIS REQUEST IS A PODCAST / AUDIO SHOW. Your ONLY acceptable final action is build_podcast — write the FULL dialogue yourself as alternating { speaker, text } turns (real spoken back-and-forth, no stage directions, no "[Host]:" labels in the text). Do NOT write a script document or call write_document — the deliverable is a real .mp3 the system voices and stitches. Aim for 8-30 natural turns. Call build_podcast.`
     : ''
+
+  // Single-final-tool builds (a self-contained webapp/game, a podcast) need ZERO
+  // component steps — there is exactly one tool that emits the deliverable. The
+  // builder would sometimes return prose instead of calling it (especially when
+  // the threaded conversation is a panel DEBATING whether to build at all — it
+  // mirrors the hedging and never fires the tool → no_deliverable_produced).
+  // Forcing tool_choice on the first turn removes the talk-instead-of-build
+  // escape hatch entirely. Multi-tool builds (deck+images, ad video) must NOT be
+  // forced — they legitimately call a component tool (generate_image, voiceover)
+  // before the finisher — so this is scoped to the two single-call classes only.
+  const forcedFinalTool = webappIntent ? 'build_webapp' : podcastIntent ? 'build_podcast' : null
   const system = `You are the Builder inside Agent Interface — it produces REAL finished files, not descriptions or plans. Read what the user wants and BUILD IT by calling tools, using the real result of each call to construct the next. Do NOT write a "plan" or a "production doc" — perform the work and emit the actual file.${webappDirective}${podcastDirective}
 
 Pick the right FINAL tool for the deliverable:
@@ -313,6 +324,7 @@ Write ALL real content YOURSELF — headlines, bullets, prose, numbers — never
     ? `CONVERSATION SO FAR (the user is referring to what was discussed below — use it to know EXACTLY what to build; do not ask for clarification):\n${String(context).slice(0, 3000)}\n\n---\nNow BUILD what the user asked for: ${request || deliverable}`
     : (request || deliverable) }]
   console.log('[agentic] start —', deliverable, '·', request?.slice(0, 80))
+  let nudged = false
   for (let turn = 0; turn < 14; turn++) {
     // 24k cap so a full self-contained app/game (build_webapp) isn't truncated
     // mid-code — verified a complete tower-defense game lands in ~8k with the
@@ -321,7 +333,11 @@ Write ALL real content YOURSELF — headlines, bullets, prose, numbers — never
     // STREAM the call. A full game/app (build_webapp, 20k+ chars) takes 60-120s
     // to generate; as a single non-streamed response that 524-times-out through
     // Cloudflare → claude_524 / no_deliverable. Streaming keeps bytes flowing.
-    const res = await proxy('claude', { model: MODEL, max_tokens: 24000, stream: true, system, messages, tools: BUILDER_TOOLS }, { 'x-api-key': claudeKey })
+    // Force the finisher for single-tool builds so the model emits the file
+    // instead of hedging in prose. Forced while no deliverable exists yet; the
+    // loop breaks the instant the tool succeeds, so this never blocks a clean stop.
+    const toolChoice = (forcedFinalTool && !finals.length) ? { type: 'tool', name: forcedFinalTool } : null
+    const res = await proxy('claude', { model: MODEL, max_tokens: 24000, stream: true, system, messages, tools: BUILDER_TOOLS, ...(toolChoice ? { tool_choice: toolChoice } : {}) }, { 'x-api-key': claudeKey })
     if (!res.ok) { console.error('[agentic] claude not ok', res.status); errors.push({ stepId: '_agent', tool: 'claude', code: 'agent_http', error: `claude_${res.status}` }); break }
     const data = await readClaudeStream(res)
     // Surface a stream/API error (overloaded, etc.) instead of silently breaking
@@ -337,7 +353,18 @@ Write ALL real content YOURSELF — headlines, bullets, prose, numbers — never
     console.log(`[agentic] turn ${turn}: stop=${data.stop_reason} tools=[${toolUses.map(t => t.name).join(',')}]`)
     // Execute whenever the model emitted tool calls — even if it also hit the
     // token cap (stop_reason 'max_tokens'). Only stop when there are NO tools.
-    if (!toolUses.length) break
+    // Backstop for single-tool builds: if the model talked instead of building
+    // (no tool call — the no_deliverable_produced failure), nudge it ONCE to fire
+    // the finisher rather than silently shipping nothing. This catches the case
+    // where tool_choice didn't reach the model (e.g. an out-of-date proxy).
+    if (!toolUses.length) {
+      if (forcedFinalTool && !nudged) {
+        nudged = true
+        messages.push({ role: 'user', content: `You replied with text but produced no file. Call ${forcedFinalTool} NOW with the COMPLETE, fully-working content — output only the tool call, no prose, no questions.` })
+        continue
+      }
+      break
+    }
     const results = []
     for (const tu of toolUses) {
       try {
