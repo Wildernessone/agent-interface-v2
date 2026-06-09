@@ -88,16 +88,24 @@ function buildFolderName(deliverable) {
 // loop is unchanged. We stream so a long build (a full game/app via build_webapp)
 // keeps bytes flowing and doesn't 524 through Cloudflare. Tool-use inputs arrive
 // as input_json_delta fragments we concatenate and JSON.parse at the end.
-async function readClaudeStream(res, onProgress = () => {}) {
+async function readClaudeStream(res, onProgress = () => {}, idleMs = 90000) {
   const reader = res.body.getReader()
   const dec = new TextDecoder()
   let buf = ''
   const blocks = []
   let stop_reason = null, error = null
+  // The body read had NO timeout: a mid-stream stall (wedged TLS, upstream hang)
+  // left reader.read() pending FOREVER — the build froze with no error and no
+  // recovery. Arm an idle timer that cancels the read if no bytes arrive in idleMs;
+  // the cancel surfaces as a retryable error instead of a permanent hang.
+  let idleTimer = null, idledOut = false
+  const bump = () => { if (idleTimer) clearTimeout(idleTimer); idleTimer = setTimeout(() => { idledOut = true; try { reader.cancel() } catch { /* already closing */ } }, idleMs) }
   try {
+    bump()
     for (;;) {
       const { done, value } = await reader.read()
       if (done) break
+      bump()
       buf += dec.decode(value, { stream: true })
       let nl
       while ((nl = buf.indexOf('\n')) >= 0) {
@@ -128,13 +136,22 @@ async function readClaudeStream(res, onProgress = () => {}) {
         } else if (ev.type === 'message_delta') {
           if (ev.delta?.stop_reason) stop_reason = ev.delta.stop_reason
         } else if (ev.type === 'error') {
-          error = ev.error?.message || 'stream_error'
+          // Prefer the stable error TYPE (overloaded_error / rate_limit_error /
+          // api_error) so the retry matcher catches it regardless of message text.
+          error = ev.error?.type || ev.error?.message || 'stream_error'
         }
       }
     }
   } catch (e) {
     error = error || e?.message || 'stream_read_failed'
+  } finally {
+    if (idleTimer) clearTimeout(idleTimer)
   }
+  // A stalled stream (idle cancel) or a stream that ended without ANY content and
+  // without a terminal stop_reason was cut mid-flight — surface a retryable error
+  // rather than letting an empty/half result look like a clean finish.
+  if (idledOut && !error) error = 'stream_idle_timeout'
+  if (!error && !stop_reason && !blocks.some(b => b?.type === 'tool_use')) error = 'stream_incomplete'
   // Track tool calls whose JSON didn't parse — almost always because the 24k
   // length cap cut the input off mid-stream. Executing those would emit an
   // empty/garbage file, so the caller regenerates them instead.
@@ -400,33 +417,43 @@ Write ALL real content YOURSELF — headlines, bullets, prose, numbers — never
         if (kb >= 1) onStep(ev.name, `Writing ${WRITING_LABEL[ev.name] || ev.name}… (${kb} KB)`, 'started')
       }
     }
-    // Retry transient API failures (rate limit / overload / proxy timeout) with
-    // backoff. A heavy build makes several Claude calls; on a BYOK key a single
-    // 429 used to kill the whole build with no deliverable. Honor Retry-After when
-    // the provider sends it, else exponential backoff. 4xx other than 429 (bad
-    // request, auth) are NOT retried — they won't get better.
-    let res = null
+    // Retry transient failures with backoff — both HTTP-status ones (rate limit /
+    // overload / proxy timeout) AND mid-stream ones that arrive on a 200 (an idle
+    // stall, an incomplete/cut stream, or an `overloaded_error` SSE event). On a
+    // BYOK key a single transient used to kill the whole build with no deliverable.
+    // Non-retryable HTTP (400/401) and clean responses fall straight through.
+    const backoff = (n) => new Promise(r => setTimeout(r, 1500 * (n + 1) * (n + 1)))
+    const RETRYABLE_STREAM = /idle_timeout|incomplete|overload|rate.?limit|api_error|stream_read_failed|stream_error/i
+    let res = null, data = null
     for (let attempt = 0; attempt < 3; attempt++) {
       res = await proxy('claude', { model: MODEL, max_tokens: 24000, stream: true, system, messages, tools: BUILDER_TOOLS, ...(toolChoice ? { tool_choice: toolChoice } : {}) }, { 'x-api-key': claudeKey })
-      if (res.ok || ![429, 503, 524, 529].includes(res.status) || attempt === 2) break
-      const ra = parseInt(res.headers.get('retry-after') || '', 10)
-      const waitMs = Number.isFinite(ra) ? Math.min(ra * 1000, 15000) : 1500 * (attempt + 1) * (attempt + 1)
-      console.warn(`[agentic] claude ${res.status} — retry ${attempt + 1}/2 in ${waitMs}ms`)
-      onStep('_working', `Provider busy (${res.status}) — retrying in ${Math.round(waitMs / 1000)}s…`, 'started')
-      await new Promise(r => setTimeout(r, waitMs))
+      if (!res.ok) {
+        if (![429, 503, 524, 529].includes(res.status) || attempt === 2) break
+        const ra = parseInt(res.headers.get('retry-after') || '', 10)
+        const waitMs = Number.isFinite(ra) ? Math.min(ra * 1000, 15000) : 1500 * (attempt + 1) * (attempt + 1)
+        console.warn(`[agentic] claude ${res.status} — retry ${attempt + 1}/2 in ${waitMs}ms`)
+        onStep('_working', `Provider busy (${res.status}) — retrying in ${Math.round(waitMs / 1000)}s…`, 'started')
+        await new Promise(r => setTimeout(r, waitMs)); continue
+      }
+      data = await readClaudeStream(res, onProg)
+      if (data.error && RETRYABLE_STREAM.test(data.error) && attempt < 2) {
+        console.warn('[agentic] retryable stream error:', data.error, `— retry ${attempt + 1}/2`)
+        onStep('_working', 'Connection hiccup — retrying…', 'started')
+        data = null; await backoff(attempt); continue
+      }
+      break
     }
     if (!res || !res.ok) { console.error('[agentic] claude not ok', res?.status); onStep('_working', '', 'done'); errors.push({ stepId: '_agent', tool: 'claude', code: 'agent_http', error: `claude_${res?.status}` }); break }
-    const data = await readClaudeStream(res, onProg)
     // Turn done streaming: clear the generic indicator and finish any streamed
     // component-tool steps (their execTool runs under a different id). FINAL tools
     // are left for execTool to transition in place.
     onStep('_working', '', 'done')
     streamed.forEach(name => { if (!FINAL_TOOLS.has(name)) onStep(name, `Wrote ${WRITING_LABEL[name] || name}`, 'done') })
-    // Surface a stream/API error (overloaded, etc.) instead of silently breaking
-    // to an empty "no deliverable".
-    if (data.error) {
-      console.error('[agentic] claude stream error', data.error)
-      errors.push({ stepId: '_agent', tool: 'claude', code: 'agent_error', error: data.error })
+    // A stream error that survived the retries (or a non-retryable one) ends the
+    // build with a real error instead of a silent empty result.
+    if (!data || data.error) {
+      console.error('[agentic] claude stream error', data?.error)
+      errors.push({ stepId: '_agent', tool: 'claude', code: 'agent_error', error: data?.error || 'stream_failed' })
       break
     }
     const content = data.content || []
