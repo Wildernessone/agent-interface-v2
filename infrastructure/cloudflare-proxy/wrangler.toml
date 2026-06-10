@@ -24,4 +24,4 @@ new_sqlite_classes = ["BuildRunner"]
 
 [vars]
 SUPABASE_URL = "https://oqbpuspnmznqxgkmyzyb.supabase.co"
-ALLOWED_ORIGINS = "https://agentinterface.app,https://agent-interface-v2.pages.dev,http://localhost:5173"
+ALLOWED_ORIGINS = "https://agentinterface.app,https://www.agentinterface.app,https://agent-interface-v2.pages.dev,http://localhost:5173"
