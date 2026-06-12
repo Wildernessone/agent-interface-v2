@@ -378,6 +378,12 @@ DECISION TREE (first match wins)
    deliverable request — usually a trailing clause: "…and make me a podcast",
    "…and put it in a deck", "…and email the result". Then skip discuss and build
    the named artifact (and you MAY do both: discuss-then-build is a multi-step turn).
+   EXCEPTION — the discuss word is just naming the artifact's FORMAT. When a build
+   verb LEADS the request and the discuss word merely describes what to build
+   ("make me a DEBATE podcast about X", "build a pros-and-cons deck"), that is a
+   BUILD, not a discussion. The test: is the discuss word the MAIN verb ("debate
+   the merits of X" → discuss) or an ADJECTIVE on the deliverable ("a debate
+   podcast" → build)?
 
    POSITIVE-SIGNAL REQUIREMENT — applies to EVERY build route below. A build fires
    only when BOTH are present:

@@ -679,12 +679,21 @@ export default function TheInterface() {
     // Without that trailing clause the panel discusses; it does not silently build.
     // This gates the FORCE_* overrides only — the LLM router has its own matching
     // rule (rule 0), and a plain "build me X" (no discuss verb) is untouched.
-    const DISCUSS_INTENT = /\b(debate|discuss|talk (?:through|about)|argue|weigh in on|pros and cons (?:of|for)|what do you (?:think|reckon|make) (?:about|of)|explain)\b/i.test(text)
+    const DISCUSS_RE = /\b(debate|discuss|talk (?:through|about)|argue|weigh in on|pros and cons (?:of|for)|what do you (?:think|reckon|make) (?:about|of)|explain)\b/i
+    // A build verb bound to an artifact noun ("make me a debate podcast", "build a
+    // deck") is a genuine deliverable request. When it LEADS the message — before any
+    // discuss verb — the discuss word is just naming the artifact's FORMAT ("a debate
+    // podcast"), so build it. Contrast "argue why we should build a game", where the
+    // discuss verb leads and the build verb is the subordinate topic → still discuss.
+    const BUILD_ASK_RE = /\b(?:make|build|create|record|produce|generate|write|draft|design|put together|give me)\b[^.?!]{0,40}\b(?:podcast|audio (?:show|episode|drama)|episode|video|promo|reel|deck|slides?|presentation|keynote|spreadsheet|sheet|doc|document|report|pdf|one[- ]?pager|whitepaper|newsletter|image|logo|graphic|game|web ?app|web ?site|app|page|chart|graph|diagram|flow ?chart|mind ?map|org ?chart|form|survey|quiz|calculator|dashboard|qr ?code)\b/i
+    const _dm = text.match(DISCUSS_RE)
+    const _bm = text.match(BUILD_ASK_RE)
     const deliverClause =
+      (_bm && (!_dm || _bm.index < _dm.index)) ||
       /\b(?:and|also|then|plus|;|finally|lastly)\s+(?:please\s+|can you\s+)?(?:make|build|create|generate|produce|deliver|ship|send|email|record|draft|write|design|put|turn)\b/i.test(text) ||
       /\b(?:put|turn|drop)\s+(?:it|this|that|the\s+\w+)\s+(?:in|into|to|on)\b/i.test(text) ||
       /\bemail (?:me )?(?:the|it|that|this|results?)\b/i.test(text)
-    const discussOnly = DISCUSS_INTENT && !deliverClause
+    const discussOnly = !!_dm && !deliverClause
     // Same deterministic override for finished DOCUMENTS — a deck, spreadsheet, doc,
     // pdf, report. The LLM router under-classifies "make me a deck AND a spreadsheet"
     // as 'discuss': the panel debates, reaches agreement, then asks the user to
