@@ -676,15 +676,22 @@ const ROUTES = {
     // flat/robotic — it's built for realtime, not voiceovers). eleven_multilingual_v2
     // is ElevenLabs' most natural non-realtime model. Tuned voice_settings give
     // expressive-but-stable narration. Client may override model_id/voice_settings.
-    const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+    const payload = JSON.stringify({
+      text: body.text,
+      model_id: body.model_id || 'eleven_multilingual_v2',
+      voice_settings: body.voice_settings || { stability: 0.5, similarity_boost: 0.8, style: 0.15, use_speaker_boost: true },
+    })
+    const callEleven = (fmt) => fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}${fmt ? `?output_format=${fmt}` : ''}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'xi-api-key': apiKey, Accept: 'audio/mpeg' },
-      body: JSON.stringify({
-        text: body.text,
-        model_id: body.model_id || 'eleven_multilingual_v2',
-        voice_settings: body.voice_settings || { stability: 0.5, similarity_boost: 0.8, style: 0.15, use_speaker_boost: true },
-      }),
+      body: payload,
     })
+    // Default to 192kbps (noticeably cleaner than ElevenLabs' 128kbps default). If
+    // the account's tier rejects the higher bitrate, transparently retry at the
+    // universal 128kbps default so audio still renders.
+    const want = body.output_format || 'mp3_44100_192'
+    let r = await callEleven(want)
+    if (!r.ok && want !== 'mp3_44100_128') r = await callEleven(null)
     if (!r.ok) {
       const text = await r.text()
       return new Response(text, { status: r.status, headers: { 'Content-Type': 'application/json' } })
@@ -704,7 +711,7 @@ const ROUTES = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: auth },
       body: JSON.stringify({
-        model: body.model === 'tts-1-hd' ? 'tts-1-hd' : 'tts-1',
+        model: body.model === 'tts-1' ? 'tts-1' : 'tts-1-hd',
         input: String(body.text || '').slice(0, 4000),
         voice: VOICES.has(body.voice) ? body.voice : 'nova',
         response_format: 'mp3',

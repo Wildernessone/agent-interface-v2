@@ -59,7 +59,7 @@ const BUILDER_TOOLS = [
     input_schema: { type: 'object', properties: {
       title: { type: 'string' },
       segments: { type: 'array', items: { type: 'object', properties: {
-        speaker: { type: 'string', description: "speaker label, e.g. 'Alex' or 'Host A' — reuse the same labels so each gets a consistent voice" },
+        speaker: { type: 'string', description: "speaker label, e.g. 'Alex' or 'Host A' — reuse the same labels so each gets a consistent voice. For a DEBATE/panel podcast use a panel agent's name (Claude, ChatGPT, Gemini, Grok, DeepSeek) so each gets its own distinct AI voice." },
         text: { type: 'string', description: 'the exact words this speaker says (spoken language only)' } }, required: ['speaker', 'text'] } },
     }, required: ['segments'] } },
 ]
@@ -167,7 +167,7 @@ async function readClaudeStream(res, onProgress = () => {}, idleMs = 90000) {
   return { content, stop_reason, error, truncated }
 }
 
-export async function runAgenticBuild({ request, deliverable: deliverableIn, brandContext, settings, project, proxy, hasStorage, context }, onStep = () => {}) {
+export async function runAgenticBuild({ request, deliverable: deliverableIn, brandContext, settings, project, proxy, hasStorage, context, panelAgents }, onStep = () => {}) {
   const claudeKey = readKey(settings, 'agent.claude')
   if (!claudeKey) throw new Error('The agentic builder needs your Claude (Anthropic) key — add it in Settings → Agents.')
 
@@ -285,10 +285,28 @@ export async function runAgenticBuild({ request, deliverable: deliverableIn, bra
       const segs = (Array.isArray(input.segments) ? input.segments : []).filter(s => s && String(s.text || '').trim())
       if (!segs.length) throw new Error('build_podcast got no dialogue.')
       onStep('build_podcast', `Recording ${segs.length} lines…`, 'started')
-      // Distinct voice per speaker label: 1st speaker → voice A, 2nd → B, etc.
+      // Distinct voice per speaker. When a speaker IS a panel agent (a multi-AI
+      // debate), each agent gets a FIXED, recognizable voice so you actually hear
+      // Claude vs. GPT vs. Gemini argue — the killer feature for debate podcasts.
+      // Any non-agent speaker label falls back to a distinct round-robin voice
+      // (1st unseen label → voice A, 2nd → B, …) so generic two-host shows still work.
+      const AGENT_VOICES = {
+        claude:   'pNInz6obpgDQGcFmaJgB', // Adam  — measured baritone
+        chatgpt:  'TX3LPaxmHKxFdv7VOQHJ', // Liam  — structured tenor
+        gpt:      'TX3LPaxmHKxFdv7VOQHJ',
+        openai:   'TX3LPaxmHKxFdv7VOQHJ',
+        gemini:   'EXAVITQu4vr4xnSDxMaL', // Sarah — analytical alto
+        grok:     'onwK4e9ZLuTAKqWW03F9', // Daniel — edgier
+        deepseek: 'nPczCjzI2devNBz1zQrb', // Brian — calm tenor
+      }
+      const normAgent = (s) => String(s || '').toLowerCase().replace(/[^a-z]/g, '')
       const VOICES = [settings?.narratorVoiceId || '21m00Tcm4TlvDq8ikWAM', 'pNInz6obpgDQGcFmaJgB', 'EXAVITQu4vr4xnSDxMaL', 'TxGEqnHWrfWFTfGW9XjX']
       const order = []
-      const voiceFor = (sp) => { const k = String(sp || 'A'); if (!order.includes(k)) order.push(k); return VOICES[order.indexOf(k) % VOICES.length] }
+      const voiceFor = (sp) => {
+        const norm = normAgent(sp)
+        if (norm) for (const key of Object.keys(AGENT_VOICES)) { if (norm === key || norm.includes(key)) return AGENT_VOICES[key] }
+        const k = String(sp || 'A'); if (!order.includes(k)) order.push(k); return VOICES[order.indexOf(k) % VOICES.length]
+      }
       const { getFFmpeg, fetchFile, acquireFFmpegLock } = await import('../utils/ffmpegLoader')
       const { arrayBufferToBase64 } = await import('../utils/base64')
       // TTS each line in order (sequential — preserves order + respects rate limits).
@@ -301,7 +319,10 @@ export async function runAgenticBuild({ request, deliverable: deliverableIn, bra
         let audio = null
         for (let attempt = 0; attempt < 2 && !audio; attempt++) {
           if (attempt) await new Promise(r => setTimeout(r, 1200))
-          const r = await proxy('elevenlabs', { text: String(segs[i].text).slice(0, 1500), voice_id: voiceFor(segs[i].speaker) }, { 'x-api-key': elevenKey })
+          // Conversational profile: a touch more expressive (style) than flat
+          // narration so debate turns have personality, still stable enough to not
+          // warble. 192kbps output (worker default) keeps it crisp.
+          const r = await proxy('elevenlabs', { text: String(segs[i].text).slice(0, 1500), voice_id: voiceFor(segs[i].speaker), voice_settings: { stability: 0.4, similarity_boost: 0.85, style: 0.3, use_speaker_boost: true } }, { 'x-api-key': elevenKey })
           if (!r.ok) continue
           const d = await r.json().catch(() => ({}))
           if (d.audio) audio = d.audio
@@ -318,8 +339,10 @@ export async function runAgenticBuild({ request, deliverable: deliverableIn, bra
         const names = []
         for (let i = 0; i < clips.length; i++) { const nm = `p${i}.mp3`; await ff.writeFile(nm, await fetchFile(`data:audio/mpeg;base64,${clips[i]}`)); names.push(nm) }
         await ff.writeFile('list.txt', new TextEncoder().encode(names.map(n => `file ${n}`).join('\n')))
-        // Re-encode on concat (not -c copy) so the mp3 frames join cleanly.
-        await ff.exec(['-f', 'concat', '-safe', '0', '-i', 'list.txt', '-c:a', 'libmp3lame', '-b:a', '128k', 'episode.mp3'])
+        // Re-encode on concat (not -c copy) so the mp3 frames join cleanly. Encode
+        // once at 192kbps/44.1kHz — matching the (192kbps) source avoids the audible
+        // generation loss of the old 128kbps re-encode over already-lossy clips.
+        await ff.exec(['-f', 'concat', '-safe', '0', '-i', 'list.txt', '-c:a', 'libmp3lame', '-b:a', '192k', '-ar', '44100', 'episode.mp3'])
         const outBuf = await ff.readFile('episode.mp3')
         const b64 = arrayBufferToBase64(outBuf)
         for (const n of [...names, 'list.txt', 'episode.mp3']) { try { await ff.deleteFile(n) } catch {} }
@@ -339,6 +362,20 @@ export async function runAgenticBuild({ request, deliverable: deliverableIn, bra
   const podcastIntent = /\b(podcast|audio (?:show|episode|drama)|two[- ]?host)\b/i.test(`${request || ''} ${deliverable || ''}`)
   const podcastDirective = podcastIntent
     ? `\n\n⚠ THIS REQUEST IS A PODCAST / AUDIO SHOW. Your ONLY acceptable final action is build_podcast — write the FULL dialogue yourself as alternating { speaker, text } turns (real spoken back-and-forth, no stage directions, no "[Host]:" labels in the text). Do NOT write a script document or call write_document — the deliverable is a real .mp3 the system voices and stitches. Aim for 8-30 natural turns. Call build_podcast.`
+    : ''
+  // DEBATE PODCAST — the killer multi-AI format. The speakers ARE the panel agents,
+  // each arguing as themselves; the system then voices each agent with its own fixed
+  // voice so you hear real AI personalities argue (something a single chatbot can't do).
+  const debatePodcast = podcastIntent && /\b(debate|discuss(?:ion)?|argue|argument|pros and cons|panel|round ?table|versus|\bvs\.?\b|for and against|each side|both sides|different (?:perspectives|viewpoints)|disagree|steel ?man)\b/i.test(`${request || ''} ${deliverable || ''}`)
+  const PANEL_DEFAULT = ['Claude', 'ChatGPT', 'Gemini', 'Grok', 'DeepSeek']
+  const cast = (Array.isArray(panelAgents) && panelAgents.length ? panelAgents : PANEL_DEFAULT)
+  const castList = cast.length > 1 ? `${cast.slice(0, -1).join(', ')}, and ${cast[cast.length - 1]}` : cast[0]
+  const debateDirective = debatePodcast
+    ? `\n\n🎙 DEBATE PODCAST — this is a MULTI-AGENT debate, not a generic two-host show. The speakers ARE the panel agents, each arguing as themselves from a DISTINCT stance: ${cast.join(', ')}. RULES:
+- Every turn's "speaker" MUST be one of those exact agent names (e.g. { "speaker": "Claude", "text": "…" }) — the system gives each agent its own real voice, so the labels drive who you hear.
+- The FIRST turn is the intro and MUST announce the panel verbatim: "From the Agent Interface panel — this is ${castList} debating <the topic>." (the first agent can deliver it.)
+- Then the agents genuinely argue: stake out different positions, rebut each other BY NAME, concede real points, and let personality through — Claude measured, ChatGPT structured, Gemini analytical, Grok blunt and edgier, DeepSeek calm. No host narration after the intro; it's the agents themselves.
+- 12-30 turns, natural spoken language, no stage directions. Call build_podcast.`
     : ''
 
   // Single-final-tool builds (a self-contained webapp/game, a podcast) need ZERO
@@ -374,7 +411,7 @@ export async function runAgenticBuild({ request, deliverable: deliverableIn, bra
     ? `\n\n⚠ THE USER ASKED FOR ${expectedDeliverables} SEPARATE DELIVERABLES. You MUST produce EVERY one — call each one's final tool (e.g. build_deck AND build_spreadsheet). Do NOT stop after the first file. Prefer calling all the final tools together in one response. The build is only done when all ${expectedDeliverables} exist.`
     : ''
 
-  const system = `You are the Builder inside Agent Interface — it produces REAL finished files, not descriptions or plans. Read what the user wants and BUILD IT by calling tools, using the real result of each call to construct the next. Do NOT write a "plan" or a "production doc" — perform the work and emit the actual file.${webappDirective}${podcastDirective}${multiDirective}
+  const system = `You are the Builder inside Agent Interface — it produces REAL finished files, not descriptions or plans. Read what the user wants and BUILD IT by calling tools, using the real result of each call to construct the next. Do NOT write a "plan" or a "production doc" — perform the work and emit the actual file.${webappDirective}${podcastDirective}${debateDirective}${multiDirective}
 
 Pick the right FINAL tool for the deliverable:
 - Slide deck / pitch deck / PowerPoint → build_deck (write COMPLETE slide content yourself; for a pitch deck, call generate_image first for a cover/key visuals and attach via slide.image_id).

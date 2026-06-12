@@ -671,6 +671,20 @@ export default function TheInterface() {
     const FORCE_WEBAPP = /\b(make|build|create|code|program|develop|design|turn (?:it|this) into|do)\b[^.?!]{0,60}\b(game|web ?app|web ?site|app|playable|tower[ -]?defen[sc]e|arcade|simulator|interactive|html|chart|graph|diagram|flow ?chart|mind ?map|org ?chart|form|survey|quiz|calculator|dashboard|qr ?code)\b/i.test(text)
       || /\b(tower[ -]?defen[sc]e|playable game|html game|mini[- ]?game)\b/i.test(text)
     const FORCE_PODCAST = /\b(make|build|create|record|produce|generate|do|give me)\b[^.?!]{0,40}\b(podcast|audio (?:show|episode|drama)|two[- ]?host)\b/i.test(text)
+    // CONVERSATIONAL-INTENT GUARD. A purely conversational ask — "debate the pros
+    // and cons of X", "argue why we should do Y", "talk through how to launch Z",
+    // "what do you think about W" — must stay a DISCUSSION even when it mentions
+    // build-ish nouns, UNLESS it ALSO carries a SEPARATE deliverable request
+    // ("…and make me a podcast", "…and put it in a deck", "…and email the result").
+    // Without that trailing clause the panel discusses; it does not silently build.
+    // This gates the FORCE_* overrides only — the LLM router has its own matching
+    // rule (rule 0), and a plain "build me X" (no discuss verb) is untouched.
+    const DISCUSS_INTENT = /\b(debate|discuss|talk (?:through|about)|argue|weigh in on|pros and cons (?:of|for)|what do you (?:think|reckon|make) (?:about|of)|explain)\b/i.test(text)
+    const deliverClause =
+      /\b(?:and|also|then|plus|;|finally|lastly)\s+(?:please\s+|can you\s+)?(?:make|build|create|generate|produce|deliver|ship|send|email|record|draft|write|design|put|turn)\b/i.test(text) ||
+      /\b(?:put|turn|drop)\s+(?:it|this|that|the\s+\w+)\s+(?:in|into|to|on)\b/i.test(text) ||
+      /\bemail (?:me )?(?:the|it|that|this|results?)\b/i.test(text)
+    const discussOnly = DISCUSS_INTENT && !deliverClause
     // Same deterministic override for finished DOCUMENTS — a deck, spreadsheet, doc,
     // pdf, report. The LLM router under-classifies "make me a deck AND a spreadsheet"
     // as 'discuss': the panel debates, reaches agreement, then asks the user to
@@ -696,9 +710,9 @@ export default function TheInterface() {
     // bypass the brand gate entirely (fabricating identity). Exploratory questions
     // ("should I build a game?") fall through to the panel for ALL three paths now.
     const notBlocked = clawDecision?.mode !== 'blocked'
-    const forceWebappOk = notBlocked && FORCE_WEBAPP && !docExploratory && (!webappBrand || hasBrief)
-    const forcePodcastOk = notBlocked && FORCE_PODCAST && !docExploratory && (!brandRef || hasBrief)
-    const forceDocOk = notBlocked && FORCE_DOC && !docExploratory && (!docBrandCreative || hasBrief)
+    const forceWebappOk = notBlocked && FORCE_WEBAPP && !docExploratory && !discussOnly && (!webappBrand || hasBrief)
+    const forcePodcastOk = notBlocked && FORCE_PODCAST && !docExploratory && !discussOnly && (!brandRef || hasBrief)
+    const forceDocOk = notBlocked && FORCE_DOC && !docExploratory && !discussOnly && (!docBrandCreative || hasBrief)
     if (forceWebappOk || forcePodcastOk) {
       const nm = (text.replace(/^(ok,?\s*|please\s*|can you\s*|now\s*|so\s*|let'?s\s*)/i, '').replace(/[^a-z0-9 ]/gi, ' ').trim().split(/\s+/).slice(0, 6).join(' ') || (forcePodcastOk ? 'Podcast' : 'App'))
       clawDecision = {
@@ -1081,6 +1095,15 @@ export default function TheInterface() {
         .map(t => `${t.type === 'user' ? 'USER' : (t.agent || 'AI')}: ${(t.text || '').replace(/\s+/g, ' ').slice(0, 600)}`)
         .join('\n')
         .slice(-3000)
+      // The connected panel agents, used to cast a DEBATE podcast — each agent
+      // speaks as itself and gets its own voice. Fall back to whoever actually
+      // spoke in this conversation if no agents are configured as connected.
+      const connectedPanelAgents = (() => {
+        const connected = AGENTS.filter(a => settings.agents?.[a.id]?.enabled && settings.agents?.[a.id]?.key).map(a => a.name)
+        if (connected.length) return connected
+        const spoke = [...new Set((useStore.getState().turns || []).filter(t => t.type === 'agent' && t.agent).map(t => t.agent))]
+        return spoke
+      })()
       // Server-side execution (Phase 2, flag-gated): for string-output builds
       // (webapp/games) run on the BuildRunner Durable Object so a closed tab can't
       // kill it. ANY failure (incl. an undeployed worker) falls back to the client
@@ -1111,7 +1134,7 @@ export default function TheInterface() {
       }
       if (!result) try {
         result = await runAgenticBuild(
-          { request: planToRun.request || planToRun.deliverable, deliverable: planToRun.deliverable, brandContext: planToRun.brandContext || null, settings, project: activeProject, proxy: proxyFetch, hasStorage, context: buildContext },
+          { request: planToRun.request || planToRun.deliverable, deliverable: planToRun.deliverable, brandContext: planToRun.brandContext || null, settings, project: activeProject, proxy: proxyFetch, hasStorage, context: buildContext, panelAgents: connectedPanelAgents },
           addOrUpdate,
         )
       } catch (e) {
