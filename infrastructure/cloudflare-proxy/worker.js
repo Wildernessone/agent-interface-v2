@@ -392,6 +392,26 @@ export default {
         const allowed = await checkRateLimit(env.RATE_LIMIT_KV, user.sub)
         if (!allowed) return json({ error: 'rate_limited' }, 429, cors)
       }
+
+      // 3. Tier enforcement (server-side, unbypassable). The client self-caps the
+      // panel, but that's editable in the browser; this re-resolves the user's REAL
+      // effective tier from the DB and rejects panel-agent calls beyond the agent
+      // cap. Gated on x-agent-call so only panel turns are checked; every failure
+      // path FAILS OPEN, so it can never block a legit (already-capped) client.
+      if (request.headers.get('x-agent-call') === '1') {
+        const tier = await resolveTier(user.sub, token, env)
+        const cap = TIER_AGENTS[tier]
+        if (cap != null) {
+          const agentId = request.headers.get('x-agent-id') || ''
+          const turnAgents = (request.headers.get('x-turn-agents') || '').split(',').filter(Boolean)
+          const idx = turnAgents.indexOf(agentId)
+          // idx === -1 (unknown/missing) → fail open. Only block an agent the user
+          // genuinely placed BEYOND their tier's cap in the turn's selection.
+          if (idx >= cap) {
+            return json({ error: 'tier_limit', tier, message: `Your ${tier} plan runs ${cap} agent at a time — upgrade to Pro for the full panel.` }, 402, cors)
+          }
+        }
+      }
     } else if (env.RATE_LIMIT_KV) {
       // Auth-exempt routes (refresh_google) still get a per-IP rate limit so the
       // server-held Google client_secret can't be used as an unauthenticated
@@ -401,7 +421,7 @@ export default {
       if (!allowed) return json({ error: 'rate_limited' }, 429, cors)
     }
 
-    // 3. Route
+    // 4. Route
     const route = ROUTES[path]
     if (!route) return json({ error: 'unknown_route' }, 404, cors)
 
@@ -491,6 +511,48 @@ async function checkRateLimit(kv, userId) {
   if (current >= PER_MINUTE_LIMIT) return false
   await kv.put(key, String(current + 1), { expirationTtl: 120 })
   return true
+}
+
+// ── Server-side tier enforcement ─────────────────────────────────────────────
+// Mirrors src/config/tiers.js + src/utils/tier.js so the worker can independently
+// decide a user's effective tier: a paid active subscription wins, else the 20-day
+// trial clock (<15d → Pro, <20d → Standard, else Free). null = unlimited agents.
+const TIER_AGENTS = { free: 1, standard: 1, pro: null }
+
+function computeEffectiveTier(s, nowMs) {
+  if (s && s.subscription_status === 'active' &&
+      (s.subscription_tier === 'pro' || s.subscription_tier === 'standard')) {
+    return s.subscription_tier
+  }
+  const parsed = s && s.trial_starts_at ? Date.parse(s.trial_starts_at) : NaN
+  const start = Number.isNaN(parsed) ? nowMs : parsed   // missing/bad start → fresh trial
+  const days = Math.floor((nowMs - start) / 86400000)
+  if (days < 15) return 'pro'
+  if (days < 20) return 'standard'
+  return 'free'
+}
+
+// Resolve (and briefly cache) the caller's effective tier. FAILS OPEN to 'pro' on
+// any error so a DB/KV hiccup never blocks a paying or otherwise legit user. The
+// 60s cache means an upgrade is honored within a minute (the client polls anyway).
+async function resolveTier(sub, jwt, env) {
+  try {
+    const cacheKey = `tier:${sub}`
+    if (env.RATE_LIMIT_KV) {
+      const cached = await env.RATE_LIMIT_KV.get(cacheKey)
+      if (cached) return cached
+    }
+    const r = await fetch(`${env.SUPABASE_URL}/rest/v1/user_settings?user_id=eq.${sub}&select=subscription_status,subscription_tier,trial_starts_at`, {
+      headers: { apikey: env.SUPABASE_ANON_KEY, Authorization: `Bearer ${jwt}` },
+    })
+    if (!r.ok) return 'pro'
+    const rows = await r.json()
+    const tier = computeEffectiveTier(Array.isArray(rows) ? rows[0] : null, Date.now())
+    if (env.RATE_LIMIT_KV) await env.RATE_LIMIT_KV.put(cacheKey, tier, { expirationTtl: 60 })
+    return tier
+  } catch {
+    return 'pro'
+  }
 }
 
 // SSRF guard for user-supplied URLs the worker fetches server-side. Hostname-

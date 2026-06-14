@@ -144,10 +144,10 @@ async function postWithModelFallback(route, provider, buildBody, headers, timeou
   return { res, text, model }
 }
 
-async function streamClaude(key, messages, onChunk, onDone, onError) {
+async function streamClaude(key, messages, onChunk, onDone, onError, meta = {}) {
   const t = makeIdleTimeout()
   try {
-    const { res, text: errText, model } = await postWithModelFallback('claude', 'claude', (model) => ({ messages, model }), { "x-api-key": key }, t)
+    const { res, text: errText, model } = await postWithModelFallback('claude', 'claude', (model) => ({ messages, model }), { "x-api-key": key, ...meta }, t)
     if (!res.ok) { t.clear(); onError?.(res.status, errText, model); onDone(); return }
     const data = await res.json()
     t.clear()
@@ -170,10 +170,10 @@ async function streamClaude(key, messages, onChunk, onDone, onError) {
   } catch(e) { t.clear(); onError?.(0, isAbort(e) ? 'timed out — no response for 90s' : e.message); onDone() }
 }
 
-async function streamOpenAI(key, messages, onChunk, onDone, onError) {
+async function streamOpenAI(key, messages, onChunk, onDone, onError, meta = {}) {
   const t = makeIdleTimeout()
   try {
-    const { res, text: errText, model } = await postWithModelFallback('gpt', 'gpt', (model) => ({ messages, model }), { "Authorization": `Bearer ${key}` }, t)
+    const { res, text: errText, model } = await postWithModelFallback('gpt', 'gpt', (model) => ({ messages, model }), { "Authorization": `Bearer ${key}`, ...meta }, t)
     if (!res.ok) { t.clear(); onError?.(res.status, errText, model); onDone(); return }
     const reader = res.body.getReader()
     const dec = new TextDecoder()
@@ -195,13 +195,13 @@ async function streamOpenAI(key, messages, onChunk, onDone, onError) {
   } catch(e) { t.clear(); onError?.(0, isAbort(e) ? 'timed out — stream stalled for 90s' : e.message); onDone() }
 }
 
-async function streamGemini(key, messages, onChunk, onDone, onError) {
+async function streamGemini(key, messages, onChunk, onDone, onError, meta = {}) {
   const t = makeIdleTimeout()
   try {
     const contents = messages
       .filter(m => m.role !== "system")
       .map(m => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }))
-    const { res, text: errText, model } = await postWithModelFallback('gemini', 'gemini', (model) => ({ contents, model }), { "x-api-key": key }, t)
+    const { res, text: errText, model } = await postWithModelFallback('gemini', 'gemini', (model) => ({ contents, model }), { "x-api-key": key, ...meta }, t)
     if (!res.ok) { t.clear(); onError?.(res.status, errText, model); onDone(); return }
     const reader = res.body.getReader()
     const dec = new TextDecoder()
@@ -227,10 +227,10 @@ async function streamGemini(key, messages, onChunk, onDone, onError) {
   } catch(e) { t.clear(); onError?.(0, isAbort(e) ? 'timed out — stream stalled for 90s' : e.message); onDone() }
 }
 
-async function streamGrok(key, messages, onChunk, onDone, onError) {
+async function streamGrok(key, messages, onChunk, onDone, onError, meta = {}) {
   const t = makeIdleTimeout()
   try {
-    const { res, text: errText, model } = await postWithModelFallback('grok', 'grok', (model) => ({ messages, model }), { "Authorization": `Bearer ${key}` }, t)
+    const { res, text: errText, model } = await postWithModelFallback('grok', 'grok', (model) => ({ messages, model }), { "Authorization": `Bearer ${key}`, ...meta }, t)
     if (!res.ok) { t.clear(); onError?.(res.status, errText, model); onDone(); return }
     const reader = res.body.getReader()
     const dec = new TextDecoder()
@@ -619,6 +619,10 @@ export default function TheInterface() {
     const { agents: selected, trimmed: agentsTrimmed } = capAgents(baseSelected, ent)
     const { tools: allowedTools, trimmed: toolsTrimmed } = capTools(enabledTools, ent)
     const allowedMemory = ent.memory ? scopedMemory : []
+    // Sent on every panel-agent call so the worker can enforce the agent cap
+    // server-side (it re-resolves the real tier; the client cap is only UX). The
+    // worker rejects any agent whose index in this list is beyond the tier cap.
+    const turnAgentsCsv = selected.map(a => a.id).join(',')
     const nudge = capNudge({ agentsTrimmed, toolsTrimmed }, ent)
     if (nudge && !tierNudgeShownRef.current) {
       tierNudgeShownRef.current = true
@@ -890,10 +894,11 @@ export default function TheInterface() {
             resolve({ text: "", error: errorType })
           }
           const key = settings.agents[agent.id]?.key
-          if (agent.id === "claude") streamClaude(key, messages, onChunk, onDone, onError)
-          else if (agent.id === "gpt") streamOpenAI(key, messages, onChunk, onDone, onError)
-          else if (agent.id === "gemini") streamGemini(key, messages, onChunk, onDone, onError)
-          else if (agent.id === "grok") streamGrok(key, messages, onChunk, onDone, onError)
+          const agentMeta = { 'x-agent-call': '1', 'x-agent-id': agent.id, 'x-turn-agents': turnAgentsCsv }
+          if (agent.id === "claude") streamClaude(key, messages, onChunk, onDone, onError, agentMeta)
+          else if (agent.id === "gpt") streamOpenAI(key, messages, onChunk, onDone, onError, agentMeta)
+          else if (agent.id === "gemini") streamGemini(key, messages, onChunk, onDone, onError, agentMeta)
+          else if (agent.id === "grok") streamGrok(key, messages, onChunk, onDone, onError, agentMeta)
         })
 
         let result = await streamOnce(baseSystemPrompt)
