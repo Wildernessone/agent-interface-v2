@@ -412,6 +412,21 @@ export default {
           }
         }
       }
+
+      // Same gate for TOOLS (the builder tags its tool calls with x-tool-call +
+      // x-turn-tools). Each tool's registry id == its proxy route, so we use the
+      // route as the tool id. Unknown/composite routes (idx === -1) fail open.
+      if (request.headers.get('x-tool-call') === '1') {
+        const tier = await resolveTier(user.sub, token, env)
+        const cap = TIER_TOOLS[tier]
+        if (cap != null) {
+          const turnTools = (request.headers.get('x-turn-tools') || '').split(',').filter(Boolean)
+          const idx = turnTools.indexOf(path)
+          if (idx >= cap) {
+            return json({ error: 'tier_limit', tier, message: `Your ${tier} plan runs ${cap} tool${cap === 1 ? '' : 's'} at a time — upgrade to Pro for every tool at once.` }, 402, cors)
+          }
+        }
+      }
     } else if (env.RATE_LIMIT_KV) {
       // Auth-exempt routes (refresh_google) still get a per-IP rate limit so the
       // server-held Google client_secret can't be used as an unauthenticated
@@ -518,6 +533,7 @@ async function checkRateLimit(kv, userId) {
 // decide a user's effective tier: a paid active subscription wins, else the 20-day
 // trial clock (<15d → Pro, <20d → Standard, else Free). null = unlimited agents.
 const TIER_AGENTS = { free: 1, standard: 1, pro: null }
+const TIER_TOOLS = { free: 1, standard: 2, pro: null }
 
 function computeEffectiveTier(s, nowMs) {
   if (s && s.subscription_status === 'active' &&

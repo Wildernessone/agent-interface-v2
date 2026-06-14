@@ -1088,6 +1088,16 @@ export default function TheInterface() {
     // Cloud storage is a Standard/Pro entitlement — Free builds stay inline.
     const hasStorage = entitlements(billing).storage ? !!(await pickProvider()) : false
 
+    // Tag every worker-bound tool call this build makes with the turn's allowed
+    // tool list, so the worker enforces the tier's tools-at-a-time cap server-side
+    // (each tool's registry id == its proxy route, so the worker reads the route).
+    // The client already self-caps enabledTools, so legit builds stay in range —
+    // only a tampered client is rejected; route mismatches just fail open.
+    const _toolEnt = entitlements(billing)
+    const { tools: _allowedToolsMap } = capTools(enabledTools, _toolEnt)
+    const turnToolsCsv = Object.keys(_allowedToolsMap).filter(id => _allowedToolsMap[id]).join(',')
+    const buildProxy = (path, body, headers = {}) => proxyFetch(path, body, { 'x-tool-call': '1', 'x-turn-tools': turnToolsCsv, ...headers })
+
     let result
     if (isAgentic) {
       // Agentic builder: steps are added/updated as the agent fires each tool.
@@ -1148,7 +1158,7 @@ export default function TheInterface() {
       }
       if (!result) try {
         result = await runAgenticBuild(
-          { request: planToRun.request || planToRun.deliverable, deliverable: planToRun.deliverable, brandContext: planToRun.brandContext || null, settings, project: activeProject, proxy: proxyFetch, hasStorage, context: buildContext, panelAgents: connectedPanelAgents },
+          { request: planToRun.request || planToRun.deliverable, deliverable: planToRun.deliverable, brandContext: planToRun.brandContext || null, settings, project: activeProject, proxy: buildProxy, hasStorage, context: buildContext, panelAgents: connectedPanelAgents },
           addOrUpdate,
         )
       } catch (e) {
@@ -1159,7 +1169,7 @@ export default function TheInterface() {
     } else {
       result = await runBuild(
         { ...planToRun, brandContext: planToRun.brandContext || null },
-        { settings, project: activeProject, proxy: proxyFetch, hasStorage },
+        { settings, project: activeProject, proxy: buildProxy, hasStorage },
         (stepId, status, reason) => {
           updateBuildTurn(buildTurnId, {
             steps: (s) => (s || []).map(x => x.id === stepId ? { ...x, status, reason } : x),
@@ -1247,7 +1257,7 @@ export default function TheInterface() {
         const o = f.output
         if (!force && o?.url) return o
         if (!o?.regenParam) return o
-        const out = await generateImageWithFallback({ prompt: o.regenParam, structuredInput: { prompt: o.regenParam }, settings, proxy: proxyFetch })
+        const out = await generateImageWithFallback({ prompt: o.regenParam, structuredInput: { prompt: o.regenParam }, settings, proxy: buildProxy })
         return { ...out, regenKind: 'image', regenParam: o.regenParam }
       }))
       const ensureVoice = async (force) => {
@@ -1256,7 +1266,7 @@ export default function TheInterface() {
         const tool = elevenKey ? TOOLS_BY_ID.elevenlabs : TOOLS_BY_ID.openai_tts
         const key = elevenKey || readKey(settings, 'agent.gpt')
         if (!key) throw new Error('Add an ElevenLabs or OpenAI key to regenerate the voiceover.')
-        const out = await tool.run({ prompt: voice0.regenParam, structuredInput: { text: voice0.regenParam }, key, proxy: proxyFetch, settings })
+        const out = await tool.run({ prompt: voice0.regenParam, structuredInput: { text: voice0.regenParam }, key, proxy: buildProxy, settings })
         return { ...out, regenKind: 'voiceover', regenParam: voice0.regenParam }
       }
       const ensureMusic = async (force) => {
@@ -1265,7 +1275,7 @@ export default function TheInterface() {
         const key = readKey(settings, 'tool_keys.stability')
         if (!key) return music0?.url ? music0 : null   // can't re-make without a key
         const prompt = music0.regenParam || 'instrumental backing track, no vocals'
-        const out = await TOOLS_BY_ID.stable_audio.run({ prompt, structuredInput: { prompt, duration: music0.regenDuration || 15 }, key, proxy: proxyFetch })
+        const out = await TOOLS_BY_ID.stable_audio.run({ prompt, structuredInput: { prompt, duration: music0.regenDuration || 15 }, key, proxy: buildProxy })
         return { ...out, regenKind: 'music', regenParam: prompt, regenDuration: music0.regenDuration || 15 }
       }
       const newImages = await ensureImages(kind === 'image')
