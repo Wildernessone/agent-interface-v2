@@ -32,9 +32,13 @@ async function applySub(sub: Stripe.Subscription) {
     subscription_period_end: periodEnd,
     updated_at: new Date().toISOString(),
   }
-  let q = admin.from('user_settings').update(patch)
-  q = userId ? q.eq('user_id', userId) : q.eq('stripe_customer_id', customer)
-  const { error } = await q
+  // Upsert (not update) keyed on user_id: a user who upgrades before ever saving a setting has no
+  // user_settings row yet, and a plain update would silently no-op → paid-but-still-free. Only
+  // user_id is NOT NULL; every other column defaults. Without a user_id (legacy/manual subs) fall
+  // back to matching the existing row by customer.
+  const { error } = userId
+    ? await admin.from('user_settings').upsert({ user_id: userId, ...patch }, { onConflict: 'user_id' })
+    : await admin.from('user_settings').update(patch).eq('stripe_customer_id', customer)
   if (error) throw error
 }
 

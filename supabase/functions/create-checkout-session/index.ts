@@ -41,7 +41,9 @@ Deno.serve(async (req) => {
     if (!customer) {
       const c = await stripe.customers.create({ email: user.email ?? undefined, metadata: { user_id: user.id } })
       customer = c.id
-      await admin.from('user_settings').update({ stripe_customer_id: customer }).eq('user_id', user.id)
+      // Upsert: a brand-new user may not have a settings row yet — an update would no-op and we'd
+      // mint a fresh Stripe customer on every checkout attempt. Cache it so retries reuse it.
+      await admin.from('user_settings').upsert({ user_id: user.id, stripe_customer_id: customer }, { onConflict: 'user_id' })
     }
 
     const base = (returnUrl || 'https://agentinterface.app/app').replace(/\?.*$/, '')
