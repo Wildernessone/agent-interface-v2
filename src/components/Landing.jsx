@@ -6,9 +6,9 @@ import '../styles/landing.css'
 // ── Data ────────────────────────────────────────────────────────────────────
 
 const NAV_LINKS = [
+  ['How it works', '#council'],
   ['The Panel', '#panel'],
-  ['Examples', '#examples'],
-  ['Tools', '#tools'],
+  ['vs Others', '#vs'],
   ['Pricing', '#pricing'],
 ]
 
@@ -87,6 +87,22 @@ const COMPARE = [
   ['Converges on the safe answer', 'Disagreement sharpens the answer'],
 ]
 
+// How the council works — the Karpathy llm-council flow, three stages.
+const COUNCIL_STAGES = [
+  ['01', 'Every model answers', 'Your question goes to Claude, GPT, Gemini, Grok and DeepSeek at once. Each answers independently — no groupthink, no copying the first reply.'],
+  ['02', 'They rank each other blind', 'Each model judges all the answers with the names stripped off. It can’t flatter itself or play favorites — only the sharpest reasoning rises.'],
+  ['03', 'The chairman delivers a verdict', 'One model synthesizes it all into a single decision — what to do, why, where the council agreed, and which dissent you should take seriously.'],
+]
+
+// The honest competitive edge — vs the other multi-AI "council" tools.
+const VS_TOOLS = [
+  ['Read a wall of text', 'Read it — or listen to the debate'],
+  ['One vendor picks the models', 'You pick the panel, bring your own keys'],
+  ['Marked-up tokens or seat fees', 'Providers bill you direct — zero markup'],
+  ['Advice, then you go do the work', 'The same panel ships the deck/doc/email'],
+  ['Your prompts live on their servers', 'Your keys, your data, your bills'],
+]
+
 const TOOLS = [
   { cat: 'Reasoning', items: [['Claude'], ['ChatGPT'], ['Gemini'], ['Grok'], ['DeepSeek', 'NEW'], ['Mistral', 'SOON'], ['Llama / Groq', 'SOON'], ['Qwen', 'SOON']] },
   { cat: 'Image', items: [['DALL-E 3'], ['Stable Diffusion'], ['Flux Pro'], ['Ideogram'], ['Recraft']] },
@@ -163,16 +179,17 @@ function Hero() {
     <header className="lp-hero" id="top">
       <div className="lp-hero-copy">
         <RoundtableLogo size={88} className="lp-hero-logo" />
-        <Eyebrow>// The AI workspace, finally honest</Eyebrow>
-        <h1 className="lp-h1">One interface.<br />All your AI.</h1>
+        <Eyebrow>// Don&apos;t trust one AI with a real decision</Eyebrow>
+        <h1 className="lp-h1">Don&apos;t ask one AI.<br />Convene the council.</h1>
         <p className="lp-lead">
-          A panel of the world&apos;s best AI models — debating, disagreeing, and
-          shipping finished work straight to your Drive. Not a single chatbot.
-          A roundtable.
+          Claude, GPT, Gemini, Grok and DeepSeek each answer, rank each other&apos;s
+          answers blind, and a chairman hands you one clear verdict — that you can
+          read, or <strong>listen to them argue out loud.</strong> The only AI
+          council you can hear.
         </p>
         <div className="lp-cta-row">
-          <Link to="/login" className="lp-btn lp-btn-fill lp-btn-lg">Start 20-day free trial</Link>
-          <a href="#panel" className="lp-btn lp-btn-outline lp-btn-lg">See the panel debate ↓</a>
+          <Link to="/login" className="lp-btn lp-btn-fill lp-btn-lg">Convene your council — free</Link>
+          <a href="#council" className="lp-btn lp-btn-outline lp-btn-lg">See how it works ↓</a>
         </div>
         <p className="lp-meta">Bring your own keys · Your data, your bills, zero markup</p>
       </div>
@@ -197,6 +214,61 @@ function Hero() {
         ))}
       </div>
     </header>
+  )
+}
+
+function Council() {
+  return (
+    <section className="lp-section" id="council">
+      <Eyebrow>// How the council works</Eyebrow>
+      <h2 className="lp-h2">Five minds in. One verdict out.</h2>
+      <p className="lp-lead lp-lead-wide">
+        A single chatbot tells you what you want to hear. A council argues, ranks,
+        and convicts. It&apos;s the open llm-council method — answers, blind peer
+        review, then a chairman&apos;s synthesis — wired to the best models at once.
+      </p>
+      <figure className="lp-council-art">
+        <img src="/brand/council-hero.png" alt="Five AI models deliberate around a table and converge on a single verdict" loading="lazy" />
+      </figure>
+      <div className="lp-steps">
+        {COUNCIL_STAGES.map(([n, t, d]) => (
+          <div className="lp-step" key={n}>
+            <div className="lp-step-num">{n}</div>
+            <div className="lp-step-title">{t}</div>
+            <div className="lp-step-desc">{d}</div>
+          </div>
+        ))}
+      </div>
+      <div className="lp-roster-bar">
+        New: hear the verdict. Render any council session as a debate podcast —
+        each model in its own voice — and listen to them argue it out.
+      </div>
+    </section>
+  )
+}
+
+function VsTools() {
+  return (
+    <section className="lp-section" id="vs">
+      <Eyebrow>// Other AIs gang up too — here&apos;s the difference</Eyebrow>
+      <h2 className="lp-h2">Why this beats the other AI councils.</h2>
+      <p className="lp-lead lp-lead-wide">
+        Multi-AI &quot;debate&quot; tools exist. They&apos;re text boxes you read.
+        We do the part none of them do — and we never touch your tokens.
+      </p>
+      <div className="lp-compare">
+        <div className="lp-compare-head">
+          <span className="lp-compare-dim">Other AI-council tools</span>
+          <span className="lp-compare-bright">Agent Interface</span>
+        </div>
+        {VS_TOOLS.map(([a, b], k) => (
+          <div className="lp-compare-row" key={k}>
+            <span className="lp-compare-cell lp-compare-dim"><i className="lp-x-dot">·</i>{a}</span>
+            <span className="lp-compare-cell lp-compare-bright"><i className="lp-check">✓</i>{b}</span>
+          </div>
+        ))}
+      </div>
+    </section>
   )
 }
 
@@ -241,11 +313,12 @@ function Examples() {
   const ex = EXAMPLES[i]
   return (
     <section className="lp-section" id="examples">
-      <Eyebrow>// Real prompts, shipped</Eyebrow>
-      <h2 className="lp-h2">One sentence in.<br />Finished work out.</h2>
+      <Eyebrow>// And it doesn&apos;t stop at advice</Eyebrow>
+      <h2 className="lp-h2">Most councils talk.<br />This one ships the work.</h2>
       <p className="lp-lead lp-lead-wide">
-        Each of these is one prompt — typed once, hands-off after. The panel
-        debates the best approach, the tools fire, finished files land in your Drive.
+        Once the verdict&apos;s in, the same panel builds it. Each of these is one
+        prompt — typed once, hands-off after. The panel debates the approach, the
+        tools fire, finished files land in your Drive.
       </p>
       <div className="lp-carousel">
         <div className="lp-carousel-prompt">
@@ -432,7 +505,9 @@ export default function Landing() {
       <div className="lp-grid-overlay" aria-hidden="true" />
       <Nav />
       <Hero />
+      <Council />
       <Panel />
+      <VsTools />
       <Examples />
       <Problem />
       <Tools />
