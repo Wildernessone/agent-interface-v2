@@ -34,10 +34,13 @@ import { parseJsonObject } from './cheapModel'
 
 const PROXY = import.meta.env.VITE_PROXY_URL || 'https://claude-proxy.jamesreed.workers.dev'
 
-// Canonical roster + display names. Voice names line up with build_podcast's
-// AGENT_VOICES so councilToPodcast() renders each agent in its own voice.
-export const COUNCIL_AGENTS = ['claude', 'gpt', 'gemini', 'grok', 'deepseek']
-const DISPLAY = { claude: 'Claude', gpt: 'ChatGPT', gemini: 'Gemini', grok: 'Grok', deepseek: 'DeepSeek' }
+// Canonical roster + display names. Only providers the proxy actually routes
+// (claude/gpt/gemini/grok) — there is NO /deepseek route, so a DeepSeek key
+// would hit OpenAI and fail; it's deliberately excluded until the worker adds a
+// route. Voice names line up with build_podcast's AGENT_VOICES so
+// councilToPodcast() renders each agent in its own voice.
+export const COUNCIL_AGENTS = ['claude', 'gpt', 'gemini', 'grok']
+const DISPLAY = { claude: 'Claude', gpt: 'ChatGPT', gemini: 'Gemini', grok: 'Grok' }
 const LABELS = ['A', 'B', 'C', 'D', 'E', 'F']
 
 export function displayName(provider) { return DISPLAY[provider] || provider }
@@ -61,7 +64,7 @@ export function councilMembers(settings, enabledAgents) {
   return pool.filter(p => COUNCIL_AGENTS.includes(p) && keyFor(settings, p))
 }
 
-const ROUTE = { claude: 'claude', gpt: 'gpt', grok: 'grok', gemini: 'gemini', deepseek: 'gpt' }
+const ROUTE = { claude: 'claude', gpt: 'gpt', grok: 'grok', gemini: 'gemini' }
 
 // One non-streaming-feeling completion from a SPECIFIC provider with that
 // provider's own key. Returns { text, error }. Never throws.

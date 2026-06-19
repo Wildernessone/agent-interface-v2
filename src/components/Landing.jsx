@@ -182,10 +182,10 @@ function Hero() {
         <Eyebrow>// Don&apos;t trust one AI with a real decision</Eyebrow>
         <h1 className="lp-h1">Don&apos;t ask one AI.<br />Convene the council.</h1>
         <p className="lp-lead">
-          Claude, GPT, Gemini, Grok and DeepSeek each answer, rank each other&apos;s
-          answers blind, and a chairman hands you one clear verdict — that you can
-          read, or <strong>listen to them argue out loud.</strong> The only AI
-          council you can hear.
+          Claude, GPT, Gemini and Grok each answer, rank each other&apos;s answers
+          blind, and a chairman hands you one clear verdict — that you can read, or
+          <strong> listen to them argue out loud.</strong> The only AI council you
+          can hear.
         </p>
         <div className="lp-cta-row">
           <Link to="/login" className="lp-btn lp-btn-fill lp-btn-lg">Convene your council — free</Link>
