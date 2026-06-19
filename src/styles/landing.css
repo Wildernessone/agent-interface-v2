@@ -199,3 +199,15 @@
 @media (prefers-reduced-motion: reduce) {
   .lp-typing i { animation: none; }
 }
+
+/* ── Council artwork (Higgsfield hero) + section polish ───────────────── */
+.lp-council-art {
+  margin: 40px 0 8px;
+  border: 1px solid var(--border-2);
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--bg);
+  box-shadow: 0 30px 80px -40px rgba(0,0,0,0.9);
+}
+.lp-council-art img { display: block; width: 100%; height: auto; }
+.lp-lead strong { color: var(--text); font-weight: 600; }
