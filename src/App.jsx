@@ -10,6 +10,7 @@ import { applyTheme } from './utils/applyTheme'
 import { trackSessionStart, trackLogin, setTrackUser } from './utils/track'
 import AuthScreen from './components/AuthScreen'
 import TheInterface from './components/TheInterface'
+import CouncilPage from './components/CouncilPage'
 import Landing from './components/Landing'
 import './App.css'
 
@@ -100,6 +101,7 @@ export default function App() {
       <Route path="/" element={user ? <Navigate to="/app" replace /> : <Landing />} />
       <Route path="/login" element={user ? <Navigate to="/app" replace /> : <AuthScreen />} />
       <Route path="/app" element={user ? <TheInterface /> : <Navigate to="/login" replace />} />
+      <Route path="/council" element={user ? <CouncilPage /> : <Navigate to="/login" replace />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )
