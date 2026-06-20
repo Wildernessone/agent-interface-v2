@@ -55,7 +55,8 @@ const TOPICS_FILE = env.COUNCIL_TOPICS_FILE || resolve(ROOT, 'docs/content-engin
 const CALL_TIMEOUT_MS = Number(env.COUNCIL_CALL_TIMEOUT_MS || 120000)
 
 // ── Roster (mirrors COUNCIL_AGENTS in src/utils/council.js) ──────────────────────
-const DISPLAY = { claude: 'Claude', gpt: 'ChatGPT', gemini: 'Gemini', grok: 'Grok' }
+const DISPLAY = { claude: 'Claude', gpt: 'ChatGPT', gemini: 'Gemini', grok: 'Grok', deepseek: 'DeepSeek' }
+const ROSTER = ['claude', 'gpt', 'gemini', 'grok', 'deepseek']
 const LABELS = ['A', 'B', 'C', 'D', 'E', 'F']
 export const displayName = p => DISPLAY[p] || p
 
@@ -65,6 +66,7 @@ function keysFromEnv(e = env) {
     gpt: e.OPENAI_API_KEY || null,
     gemini: e.GEMINI_API_KEY || e.GOOGLE_API_KEY || null,
     grok: e.XAI_API_KEY || e.GROK_API_KEY || null,
+    deepseek: e.DEEPSEEK_API_KEY || null,
   }
 }
 
@@ -126,8 +128,10 @@ async function callProvider({ provider, key, system = '', prompt, maxTokens = 14
       if (!res.ok || !data || data.error) return { text: '', error: `gemini_${res.status}` }
       text = data.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('') || ''
     } else {
-      // gpt / grok — OpenAI-compatible chat completions, Bearer auth
-      const base = provider === 'grok' ? 'https://api.x.ai/v1' : 'https://api.openai.com/v1'
+      // gpt / grok / deepseek — OpenAI-compatible chat completions, Bearer auth
+      const base = provider === 'grok' ? 'https://api.x.ai/v1'
+        : provider === 'deepseek' ? 'https://api.deepseek.com/v1'
+        : 'https://api.openai.com/v1'
       res = await fetch(`${base}/chat/completions`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
@@ -308,7 +312,7 @@ function parseArgs(argv) {
 async function main() {
   const args = parseArgs(process.argv.slice(2))
   const keys = keysFromEnv()
-  const members = ['claude', 'gpt', 'gemini', 'grok'].filter(p => keys[p])
+  const members = ROSTER.filter(p => keys[p])
 
   console.log(`[council-author] members with keys: ${members.map(displayName).join(', ') || '(none)'}`)
   if (members.length < 2) {

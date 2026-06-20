@@ -19,6 +19,7 @@ export const MODELS = {
   gpt:    { primary: 'gpt-4o',            fallbacks: ['gpt-4o-mini', 'gpt-4-turbo'] },
   gemini: { primary: 'gemini-2.5-flash',  fallbacks: ['gemini-2.0-flash', 'gemini-1.5-flash'] },
   grok:   { primary: 'grok-4.3',          fallbacks: ['grok-4', 'grok-3'] },  // x.ai retired grok-3/grok-2 on 2026-05-15; grok-4.3 is current
+  deepseek: { primary: 'deepseek-chat',   fallbacks: ['deepseek-reasoner'] }, // V3 chat; reasoner = R1
 }
 
 // The provider's preferred model.

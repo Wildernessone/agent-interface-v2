@@ -86,6 +86,17 @@ ok('runCouncil produced a verdict', /VERDICT/.test(result.verdict.text))
 ok('runCouncil chairs with Claude when present', result.verdict.chairman === 'claude')
 ok('runCouncil ranking covers every member', result.ranking.length === 3 && result.ranking.every(r => r.avgRank != null))
 
+// ── DeepSeek is a first-class 5th member ──
+ok('displayName maps deepseek', displayName('deepseek') === 'DeepSeek')
+const five = await runCouncil({
+  question: 'Should I rent or buy?',
+  members: ['claude', 'gpt', 'gemini', 'grok', 'deepseek'],
+  keys: { claude: 'k', gpt: 'k', gemini: 'k', grok: 'k', deepseek: 'k' },
+  call: fakeCall, rnd: () => 0,
+})
+ok('runCouncil runs a 5-member council incl. deepseek', five.answers.length === 5 && five.answers.some(a => a.agent === 'deepseek'))
+ok('5-member ranking labels stay within A–F', five.ranking.length === 5)
+
 // ── runCouncil guards ──
 const tooFew = await runCouncil({ question: 'q', members: ['claude'], keys: { claude: 'k' }, call: fakeCall })
 ok('runCouncil needs ≥2 members', tooFew.error === 'need_two_agents')
