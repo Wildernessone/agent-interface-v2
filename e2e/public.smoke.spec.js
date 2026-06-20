@@ -6,8 +6,8 @@ import { test, expect } from '@playwright/test'
 test.describe('public / unauthenticated', () => {
   test('landing renders at /', async ({ page }) => {
     await page.goto('/')
-    await expect(page.getByRole('heading', { name: /one interface/i })).toBeVisible()
-    await expect(page.getByRole('link', { name: /start 20-day free trial|start free trial/i }).first()).toBeVisible()
+    await expect(page.getByRole('heading', { name: /convene the council/i })).toBeVisible()
+    await expect(page.getByRole('link', { name: /convene your council/i }).first()).toBeVisible()
   })
 
   test('landing shows the panel + pricing sections', async ({ page }) => {
@@ -29,7 +29,7 @@ test.describe('public / unauthenticated', () => {
     const errors = []
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()) })
     await page.goto('/')
-    await expect(page.getByRole('heading', { name: /one interface/i })).toBeVisible()
+    await expect(page.getByRole('heading', { name: /convene the council/i })).toBeVisible()
     const appErrors = errors.filter(e => !/favicon|analytics|beacon|net::ERR|fonts\.googleapis/i.test(e))
     expect(appErrors, appErrors.join('\n')).toHaveLength(0)
   })
