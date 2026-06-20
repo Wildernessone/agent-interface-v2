@@ -302,6 +302,31 @@ export function councilToPodcast(result, { question } = {}) {
   return { title: `Council: ${q.slice(0, 60)}`, segments }
 }
 
+/**
+ * Turn a council result into ordered turns for LIVE in-browser playback via
+ * VoiceEngine.speak(text, agentId) — each turn carries the agentId (so the engine
+ * picks that model's voice) plus a display label and condensed text. The intro and
+ * verdict are voiced by the chairman. Distinct from councilToPodcast (which targets
+ * the build_podcast .mp3 pipeline and labels speakers by display name).
+ * Returns { title, turns:[{ agentId, label, text }] }.
+ */
+export function councilToSpeech(result) {
+  if (!result || !Array.isArray(result.answers) || !result.answers.length) return null
+  const q = result.question || 'the question'
+  const chair = result.verdict?.chairman || result.answers[0].agent
+  const turns = []
+  turns.push({ agentId: chair, label: 'The Council', text: `The council convenes on one question. ${q}` })
+  const order = (result.ranking?.length ? result.ranking.map(r => r.agent) : result.answers.map(a => a.agent))
+  for (const agent of order) {
+    const ans = result.answers.find(a => a.agent === agent)
+    if (ans) turns.push({ agentId: agent, label: displayName(agent), text: condense(ans.text) })
+  }
+  if (result.verdict?.text) {
+    turns.push({ agentId: chair, label: `${displayName(chair)} · verdict`, text: `The verdict. ${condense(result.verdict.text)}` })
+  }
+  return { title: `Council: ${q.slice(0, 60)}`, turns }
+}
+
 // Keep each spoken turn listenable — first ~90 spoken words, sentence-aware.
 function condense(text, maxWords = 90) {
   const clean = String(text || '').replace(/\s+/g, ' ').trim()

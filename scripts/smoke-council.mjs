@@ -41,7 +41,7 @@ globalThis.fetch = async (url, opts = {}) => {
 
 const server = await createServer({ root: process.cwd(), logLevel: 'error', optimizeDeps: { noDiscovery: true }, server: { middlewareMode: true } })
 try {
-  const { runCouncil, councilMembers, councilToPodcast, displayName } = await server.ssrLoadModule('/src/utils/council.js')
+  const { runCouncil, councilMembers, councilToPodcast, councilToSpeech, displayName } = await server.ssrLoadModule('/src/utils/council.js')
 
   // ── member gating ──
   check('councilMembers filters un-keyed', JSON.stringify(councilMembers({ agents: { claude: { key: 'c' }, gpt: {} } })) === '["claude"]')
@@ -73,6 +73,15 @@ try {
   const pod = councilToPodcast(res)
   check('podcast has Host + 3 agents + verdict (5 segments)', pod?.segments?.length === 5, `got ${pod?.segments?.length}`)
   check('podcast speakers use display names', pod?.segments?.some(s => s.speaker === 'Claude') && pod?.segments?.some(s => s.speaker === 'Host'))
+
+  // ── live-speech adapter (PR #4: one-tap "Hear them argue") ──
+  const speech = councilToSpeech(res)
+  check('speech has intro + 3 members + verdict (5 turns)', speech?.turns?.length === 5, `got ${speech?.turns?.length}`)
+  check('speech turns carry agentId for voice mapping', speech?.turns?.every(t => ['claude', 'gpt', 'gemini', 'grok'].includes(t.agentId)))
+  check('speech intro + verdict voiced by chairman (claude)', speech.turns[0].agentId === 'claude' && speech.turns[speech.turns.length - 1].agentId === 'claude')
+  check('speech members ordered by council ranking', JSON.stringify(speech.turns.slice(1, 4).map(t => t.agentId)) === JSON.stringify(res.ranking.map(r => r.agent)))
+  check('speech turns have labels + non-empty text', speech.turns.every(t => t.label && t.text))
+  check('councilToSpeech null-safe on empty result', councilToSpeech({ answers: [] }) === null)
 
   // ── lean 2-stage (no peer review) ──
   const lean = await runCouncil({ question: 'X?', settings, peerReview: false })

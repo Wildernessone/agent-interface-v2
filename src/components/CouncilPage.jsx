@@ -5,11 +5,12 @@
  * Text verdict ships here; one-tap multi-voice audio lands in the follow-up PR
  * (the debate-script groundwork is exposed via councilToPodcast).
  */
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { useStore } from '../store/useStore'
 import { supabase } from '../utils/supabase'
-import { runCouncil, councilMembers, councilToPodcast, displayName, COUNCIL_AGENTS } from '../utils/council'
+import { runCouncil, councilMembers, councilToSpeech, displayName, COUNCIL_AGENTS } from '../utils/council'
+import { VoiceEngine } from '../utils/voiceEngine'
 
 const ADMIN_EMAIL = 'jamesreed@tutamail.com'
 const slugify = q => String(q || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60).replace(/-+$/, '')
@@ -34,10 +35,47 @@ export default function CouncilPage() {
   const [publishing, setPublishing] = useState(false)
   const [pubSlug, setPubSlug] = useState(null)
   const [pubErr, setPubErr] = useState(null)
+  const [playing, setPlaying] = useState(false)
+  const [nowIdx, setNowIdx] = useState(-1)
+  const [voiceMode, setVoiceMode] = useState(null)
+  const veRef = useRef(null)
+  const stopRef = useRef(false)
 
   const members = useMemo(() => councilMembers(settings), [settings])
   const canRun = members.length >= 2 && question.trim().length > 3 && !running
   const isAdmin = (user?.email || '').toLowerCase() === ADMIN_EMAIL
+
+  // Stop any playback when the component unmounts.
+  useEffect(() => () => { stopRef.current = true; veRef.current?.stopSpeaking() }, [])
+
+  // Speak the debate aloud, turn by turn, in each model's own voice (ElevenLabs if
+  // a key is set, browser TTS otherwise). Sequential — await each turn's onDone.
+  async function playDebate() {
+    const s = councilToSpeech(result)
+    if (!s) return
+    setScript(s)
+    if (!veRef.current) veRef.current = new VoiceEngine(settings)
+    else veRef.current.updateSettings(settings)
+    const ve = veRef.current
+    stopRef.current = false
+    setPlaying(true)
+    setVoiceMode(ve.voiceStatus())
+    for (let i = 0; i < s.turns.length; i++) {
+      if (stopRef.current) break
+      setNowIdx(i)
+      await new Promise(res => ve.speak(s.turns[i].text, s.turns[i].agentId, res))
+      setVoiceMode(ve.voiceStatus()) // may flip elevenlabs→fallback after a failed call
+    }
+    setPlaying(false)
+    setNowIdx(-1)
+  }
+
+  function stopDebate() {
+    stopRef.current = true
+    veRef.current?.stopSpeaking()
+    setPlaying(false)
+    setNowIdx(-1)
+  }
 
   async function publishToLibrary() {
     if (!result || publishing) return
@@ -66,6 +104,7 @@ export default function CouncilPage() {
 
   async function convene() {
     if (!canRun) return
+    stopDebate()
     setRunning(true); setError(null); setResult(null); setScript(null); setStage('answers')
     try {
       const res = await runCouncil({
@@ -139,8 +178,8 @@ export default function CouncilPage() {
               <div className="cp-verdict-tag">VERDICT · chaired by {displayName(result.verdict.chairman)}</div>
               <div className="cp-verdict-body">{renderText(result.verdict.text)}</div>
               <div className="cp-actions">
-                <button className="cp-listen" onClick={() => setScript(councilToPodcast(result))}>
-                  Hear them argue it out
+                <button className={`cp-listen${playing ? ' cp-listen--stop' : ''}`} onClick={playing ? stopDebate : playDebate}>
+                  {playing ? 'Stop' : 'Hear them argue it out'}
                 </button>
                 {isAdmin && !pubSlug && (
                   <button className="cp-again" onClick={publishToLibrary} disabled={publishing}>
@@ -150,7 +189,7 @@ export default function CouncilPage() {
                 {pubSlug && (
                   <a className="cp-listen" href={`/council/${pubSlug}`} target="_blank" rel="noreferrer">View live page ↗</a>
                 )}
-                <button className="cp-again" onClick={() => { setResult(null); setScript(null); setPubSlug(null); setPubErr(null) }}>New question</button>
+                <button className="cp-again" onClick={() => { stopDebate(); setResult(null); setScript(null); setPubSlug(null); setPubErr(null) }}>New question</button>
               </div>
               {pubErr && <div className="cp-error" style={{ marginTop: 8 }}>{pubErr}</div>}
             </div>
@@ -180,12 +219,16 @@ export default function CouncilPage() {
 
             {script && (
               <div className="cp-script">
-                <div className="cp-section-label">Debate script · {script.segments.length} turns
-                  <span className="cp-soon">one-tap audio shipping next</span></div>
-                {script.segments.map((s, i) => (
-                  <div className="cp-line" key={i}>
-                    <span className="cp-line-speaker">{s.speaker}</span>
-                    <span className="cp-line-text">{s.text}</span>
+                <div className="cp-section-label">Debate · {script.turns.length} turns
+                  {playing && <span className="cp-soon">{voiceMode === 'elevenlabs' ? 'studio voices' : 'playing'}</span>}
+                  {!playing && voiceMode && voiceMode !== 'elevenlabs' && (
+                    <span className="cp-soon">browser voices — add an ElevenLabs key in Settings for studio voices</span>
+                  )}
+                </div>
+                {script.turns.map((t, i) => (
+                  <div className={`cp-line${i === nowIdx ? ' cp-line--active' : ''}`} key={i}>
+                    <span className="cp-line-speaker">{t.label}{i === nowIdx ? ' ▶' : ''}</span>
+                    <span className="cp-line-text">{t.text}</span>
                   </div>
                 ))}
               </div>
