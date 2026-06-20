@@ -39,8 +39,8 @@ const PROXY = import.meta.env.VITE_PROXY_URL || 'https://claude-proxy.jamesreed.
 // would hit OpenAI and fail; it's deliberately excluded until the worker adds a
 // route. Voice names line up with build_podcast's AGENT_VOICES so
 // councilToPodcast() renders each agent in its own voice.
-export const COUNCIL_AGENTS = ['claude', 'gpt', 'gemini', 'grok']
-const DISPLAY = { claude: 'Claude', gpt: 'ChatGPT', gemini: 'Gemini', grok: 'Grok' }
+export const COUNCIL_AGENTS = ['claude', 'gpt', 'gemini', 'grok', 'deepseek']
+const DISPLAY = { claude: 'Claude', gpt: 'ChatGPT', gemini: 'Gemini', grok: 'Grok', deepseek: 'DeepSeek' }
 const LABELS = ['A', 'B', 'C', 'D', 'E', 'F']
 
 export function displayName(provider) { return DISPLAY[provider] || provider }
@@ -54,17 +54,16 @@ function keyFor(settings, provider) { return settings?.agents?.[provider]?.key |
 
 /**
  * Which agents can actually sit on the council: enabled (or the full roster)
- * AND holding a usable key. DeepSeek rides the OpenAI wire format via /gpt-style
- * routing only if the proxy supports it; here we only call the four first-class
- * routes (claude/gpt/gemini/grok). DeepSeek is included only if a dedicated key
- * exists and the caller routes it — otherwise it's filtered out.
+ * AND holding a usable key. Each first-class provider (claude/gpt/gemini/grok/
+ * deepseek) has its own proxy route; DeepSeek rides the OpenAI wire format via
+ * the /deepseek route. A provider is included only if a key for it exists.
  */
 export function councilMembers(settings, enabledAgents) {
   const pool = (Array.isArray(enabledAgents) && enabledAgents.length ? enabledAgents : COUNCIL_AGENTS)
   return pool.filter(p => COUNCIL_AGENTS.includes(p) && keyFor(settings, p))
 }
 
-const ROUTE = { claude: 'claude', gpt: 'gpt', grok: 'grok', gemini: 'gemini' }
+const ROUTE = { claude: 'claude', gpt: 'gpt', grok: 'grok', gemini: 'gemini', deepseek: 'deepseek' }
 
 // One non-streaming-feeling completion from a SPECIFIC provider with that
 // provider's own key. Returns { text, error }. Never throws.

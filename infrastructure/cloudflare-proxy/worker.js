@@ -607,6 +607,23 @@ const ROUTES = {
     })
   },
 
+  // DeepSeek — OpenAI-compatible chat completions, Bearer auth (the user's
+  // DeepSeek key). Mirrors grok; default model from src/config/models.js.
+  deepseek: async (req) => {
+    const auth = req.headers.get('Authorization')
+    if (!auth) return new Response(JSON.stringify({ error: 'missing_provider_key' }), { status: 400 })
+    const body = await req.json()
+    return fetch('https://api.deepseek.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: auth },
+      body: JSON.stringify({
+        model: body.model || 'deepseek-chat',
+        messages: body.messages,
+        stream: true,
+      }),
+    })
+  },
+
   dalle: async (req) => {
     const auth = req.headers.get('Authorization')
     if (!auth) return new Response(JSON.stringify({ error: 'missing_provider_key' }), { status: 400 })

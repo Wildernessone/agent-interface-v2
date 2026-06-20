@@ -90,9 +90,11 @@ export class VoiceEngine {
 
   async _speakElevenLabs(text, agentId) {
     const VOICES = {
-      claude: "ErXwobaYiN019PkySvjV",
-      gpt:    "VR6AewLTigWG4xSOukaG",
-      gemini: "EXAVITQu4vr4xnSDxMaL",
+      claude:   "ErXwobaYiN019PkySvjV",
+      gpt:      "VR6AewLTigWG4xSOukaG",
+      gemini:   "EXAVITQu4vr4xnSDxMaL",
+      grok:     "onwK4e9ZLuTAKqWW03F9", // Daniel — matches Settings' recommended voice
+      deepseek: "pNInz6obpgDQGcFmaJgB", // Adam
     }
     const voiceId = this.settings?.agentVoices?.[agentId]?.elevenLabsId || VOICES[agentId]
     if (!voiceId || !this.elevenLabsKey) return false
@@ -128,6 +130,7 @@ export class VoiceEngine {
       gpt:     { names:["Google US English","Samantha"],   pitch:1.02, rate:1.08, volume:1.0 },
       gemini:  { names:["Samantha","Karen","Victoria"],    pitch:1.12, rate:1.0,  volume:1.0 },
       grok:    { names:["Alex","Google UK English Male"],  pitch:0.88, rate:1.05, volume:1.0 },
+      deepseek:{ names:["Rishi","Google UK English Male","Daniel"], pitch:1.0, rate:0.98, volume:1.0 },
     }
     const cfg = BROWSER_VOICES[agentId] || BROWSER_VOICES.claude
     // Voices load asynchronously — getVoices() can be empty on the first call.

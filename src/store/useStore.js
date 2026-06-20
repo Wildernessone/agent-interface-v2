@@ -65,6 +65,7 @@ const DEFAULT_SETTINGS = {
     gpt:     { enabled: true,  key: '', useSkills: true },
     gemini:  { enabled: false, key: '', useSkills: true },
     grok:    { enabled: false, key: '', useSkills: true },
+    deepseek:{ enabled: false, key: '', useSkills: true },
   },
   tools: {},
   toolKeys: {},
@@ -73,7 +74,7 @@ const DEFAULT_SETTINGS = {
 }
 
 const EMPTY_SKILLS = {
-  shared: [], claude: [], gpt: [], gemini: [], grok: [],
+  shared: [], claude: [], gpt: [], gemini: [], grok: [], deepseek: [],
   loadedAt: null,
   loading: false,
   error: null,
@@ -144,6 +145,11 @@ export const useStore = create((set, get) => ({
                 useSkills: s?.enabled_agents?.grok?.useSkills ?? true,
                 key:       k?.grok_key || '',
               },
+              deepseek: {
+                enabled:   s?.enabled_agents?.deepseek?.enabled   ?? false,
+                useSkills: s?.enabled_agents?.deepseek?.useSkills ?? true,
+                key:       k?.deepseek_key || '',
+              },
             },
             tools: Object.fromEntries(
               Object.entries(s?.enabled_tools || {}).map(([id, v]) => [id, { enabled: !!v?.enabled }])
@@ -188,6 +194,7 @@ export const useStore = create((set, get) => ({
             gpt:     { enabled: settings.agents.gpt?.enabled    ?? true,  useSkills: settings.agents.gpt?.useSkills    ?? true },
             gemini:  { enabled: settings.agents.gemini?.enabled ?? false, useSkills: settings.agents.gemini?.useSkills ?? true },
             grok:    { enabled: settings.agents.grok?.enabled   ?? false, useSkills: settings.agents.grok?.useSkills   ?? true },
+            deepseek:{ enabled: settings.agents.deepseek?.enabled ?? false, useSkills: settings.agents.deepseek?.useSkills ?? true },
           },
           enabled_tools: Object.fromEntries(
             Object.entries(settings.tools || {}).map(([id, v]) => [id, { enabled: v.enabled || false }])
@@ -203,6 +210,7 @@ export const useStore = create((set, get) => ({
           p_gpt:       settings.agents.gpt?.key    || '',
           p_gemini:    settings.agents.gemini?.key || '',
           p_grok:      settings.agents.grok?.key   || '',
+          p_deepseek:  settings.agents.deepseek?.key || '',
           p_tool_keys: settings.toolKeys || {},
         }),
       ])
@@ -232,6 +240,7 @@ export const useStore = create((set, get) => ({
           gpt:    result.gpt    || [],
           gemini: result.gemini || [],
           grok:   result.grok   || [],
+          deepseek: result.deepseek || [],
           loadedAt: new Date().toISOString(),
           loading: false,
           error: null,

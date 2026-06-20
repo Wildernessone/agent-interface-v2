@@ -22,6 +22,7 @@ const AGENTS = [
   { id:"gpt",     name:"ChatGPT", provider:"OpenAI",    color:"var(--color-agent-gpt)",    avatar:"G",  placeholder:"sk-proj-..." },
   { id:"gemini",  name:"Gemini",  provider:"Google",    color:"var(--color-agent-gemini)", avatar:"X",  placeholder:"AIza..." },
   { id:"grok",    name:"Grok",    provider:"xAI",       color:"var(--color-agent-grok)",   avatar:"GR", placeholder:"xai-..." },
+  { id:"deepseek",name:"DeepSeek",provider:"DeepSeek",  color:"var(--color-agent-deepseek, #4d6bfe)", avatar:"DS", placeholder:"sk-..." },
 ]
 
 const ELEVENLABS_VOICES = [
@@ -29,7 +30,7 @@ const ELEVENLABS_VOICES = [
   { id:"VR6AewLTigWG4xSOukaG", name:"Arnold",  desc:"Clear, direct",        recommended:"gpt" },
   { id:"EXAVITQu4vr4xnSDxMaL", name:"Bella",   desc:"Bright, expressive",   recommended:"gemini" },
   { id:"onwK4e9ZLuTAKqWW03F9", name:"Daniel",  desc:"Authoritative, deep",  recommended:"grok" },
-  { id:"pNInz6obpgDQGcFmaJgB", name:"Adam",    desc:"Calm, measured",       recommended:null },
+  { id:"pNInz6obpgDQGcFmaJgB", name:"Adam",    desc:"Calm, measured",       recommended:"deepseek" },
   { id:"yoZ06aMxZJJ28mfd3POQ", name:"Sam",     desc:"Energetic, upbeat",    recommended:null },
   { id:"jBpfuIE2acCO8z3wKNLl", name:"Gigi",    desc:"Friendly, warm",       recommended:null },
   { id:"ThT5KcBeYPX3keUQqHPh", name:"Dorothy", desc:"Gentle, reassuring",   recommended:null },
