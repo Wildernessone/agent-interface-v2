@@ -126,7 +126,7 @@ export default function CouncilPage() {
       <header className="cp-top">
         <Link to="/app" className="cp-back">← Interface</Link>
         <div className="cp-brand"><RoundtableLogo size={24} pulse={false} /><span>The Council</span></div>
-        <Link to="/app" className="cp-skip" aria-hidden="true" />
+        {isAdmin ? <Link to="/studio" className="cp-back cp-studio-link">Studio →</Link> : <Link to="/app" className="cp-skip" aria-hidden="true" />}
       </header>
 
       <main className="cp-main">
