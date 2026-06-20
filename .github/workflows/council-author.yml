@@ -1,0 +1,60 @@
+name: Council author (daily)
+
+# Fills the AI Council SEO flywheel: runs the 3-stage council on a fresh
+# high-search-intent topic and inserts a DRAFT into council_pages. James approves
+# drafts in-app ("Publish to library") → live at /council/<slug>. NEVER publishes.
+# See docs/content-engine/council-content-engine.md.
+#
+# NOTE: scheduled runs only fire from the DEFAULT branch — this is a no-op until
+# feat/council-seo-flywheel is merged to main. Use "Run workflow" (workflow_dispatch)
+# to trigger it manually once merged.
+
+on:
+  schedule:
+    - cron: '0 18 * * *' # 18:00 UTC = 11:00 AM PT — daily while the library is small
+  workflow_dispatch:
+    inputs:
+      count:
+        description: 'How many fresh topics to draft this run'
+        required: false
+        default: '1'
+      topic:
+        description: 'Ad-hoc question (overrides the topics file; optional)'
+        required: false
+        default: ''
+      dry_run:
+        description: 'Run the council but do NOT insert (true/false)'
+        required: false
+        default: 'false'
+
+# One run at a time — never let two authors race the same topic.
+concurrency:
+  group: council-author
+  cancel-in-progress: false
+
+jobs:
+  author:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Convene the council → draft
+        run: |
+          ARGS="--count=${{ github.event.inputs.count || '1' }}"
+          if [ -n "${{ github.event.inputs.topic }}" ]; then ARGS="--topic=${{ github.event.inputs.topic }}"; fi
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then ARGS="$ARGS --dry-run"; fi
+          echo "Running: node scripts/council-author.mjs $ARGS"
+          node scripts/council-author.mjs $ARGS
+        env:
+          COUNCIL_SUPABASE_SERVICE_KEY: ${{ secrets.COUNCIL_SUPABASE_SERVICE_KEY }}
+          # Reuses the repo's existing provider-key secret names (see smoke-live.yml).
+          # A member is skipped if its key is absent; needs ≥2 to convene.
+          CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
