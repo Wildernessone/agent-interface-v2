@@ -8,7 +8,12 @@
 import { useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { useStore } from '../store/useStore'
+import { supabase } from '../utils/supabase'
 import { runCouncil, councilMembers, councilToPodcast, displayName, COUNCIL_AGENTS } from '../utils/council'
+
+const ADMIN_EMAIL = 'jamesreed@tutamail.com'
+const slugify = q => String(q || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60).replace(/-+$/, '')
+const shortId = () => Math.random().toString(36).slice(2, 7)
 import RoundtableLogo from './RoundtableLogo'
 import '../styles/council.css'
 
@@ -19,16 +24,45 @@ const STAGE_LABEL = {
 }
 
 export default function CouncilPage() {
-  const { settings } = useStore()
+  const { settings, user } = useStore()
   const [question, setQuestion] = useState('')
   const [running, setRunning] = useState(false)
   const [stage, setStage] = useState(null)
   const [result, setResult] = useState(null)
   const [error, setError] = useState(null)
   const [script, setScript] = useState(null)
+  const [publishing, setPublishing] = useState(false)
+  const [pubSlug, setPubSlug] = useState(null)
+  const [pubErr, setPubErr] = useState(null)
 
   const members = useMemo(() => councilMembers(settings), [settings])
   const canRun = members.length >= 2 && question.trim().length > 3 && !running
+  const isAdmin = (user?.email || '').toLowerCase() === ADMIN_EMAIL
+
+  async function publishToLibrary() {
+    if (!result || publishing) return
+    setPublishing(true); setPubErr(null)
+    try {
+      const slug = `${slugify(result.question) || 'verdict'}-${shortId()}`
+      const { error: e } = await supabase.from('council_pages').insert({
+        slug,
+        question: result.question,
+        verdict: result.verdict?.text || '',
+        chairman: result.verdict?.chairman || null,
+        members: result.answers.map(a => a.agent),
+        answers: result.answers.map(a => ({ agent: a.agent, text: a.text })),
+        ranking: (result.ranking || []).map(r => ({ agent: r.agent, meanRank: r.avgRank })),
+        status: 'published',
+        created_by: user?.id ?? null,
+      })
+      if (e) throw e
+      setPubSlug(slug)
+    } catch (e) {
+      setPubErr(e.message || 'Could not publish.')
+    } finally {
+      setPublishing(false)
+    }
+  }
 
   async function convene() {
     if (!canRun) return
@@ -108,8 +142,17 @@ export default function CouncilPage() {
                 <button className="cp-listen" onClick={() => setScript(councilToPodcast(result))}>
                   Hear them argue it out
                 </button>
-                <button className="cp-again" onClick={() => { setResult(null); setScript(null) }}>New question</button>
+                {isAdmin && !pubSlug && (
+                  <button className="cp-again" onClick={publishToLibrary} disabled={publishing}>
+                    {publishing ? 'Publishing…' : 'Publish to library'}
+                  </button>
+                )}
+                {pubSlug && (
+                  <a className="cp-listen" href={`/council/${pubSlug}`} target="_blank" rel="noreferrer">View live page ↗</a>
+                )}
+                <button className="cp-again" onClick={() => { setResult(null); setScript(null); setPubSlug(null); setPubErr(null) }}>New question</button>
               </div>
+              {pubErr && <div className="cp-error" style={{ marginTop: 8 }}>{pubErr}</div>}
             </div>
 
             {result.ranking?.some(r => r.avgRank != null) && (
