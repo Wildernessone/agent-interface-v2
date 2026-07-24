@@ -356,12 +356,9 @@ ${body}
     try { sessionStorage.setItem('wagent', '1'); } catch(_e){}
     (Math.random() < 0.3 ? crawl : walk)();
   }
-  setTimeout(spawn, 150000 + Math.random() * 180000);
-  var half = false;
-  addEventListener('scroll', function(){
-    if (half) return;
-    if (scrollY > (document.body.scrollHeight - innerHeight) * 0.6) { half = true; spawn(); }
-  }, { passive: true });
+  // One timer, uniformly random inside the first ~5 minutes, never in the
+  // opening minute. No scroll trigger — scrolling fast shouldn't summon it.
+  setTimeout(spawn, 60000 + Math.random() * 240000);
 })();
 </script>
 </body></html>`
