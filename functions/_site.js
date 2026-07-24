@@ -270,6 +270,28 @@ ${body}
   <p class="about">agentinterface.app is the reference site for agent interfaces — the protocols that connect AI agents to software, and the interface patterns that keep humans in command of them. Maintained continuously, every claim sourced; corrections welcome. The Library is an archive of published multi-model verdicts from The AI Council, an earlier experiment on this domain.</p>
   <a href="/">Hub</a><a href="/tracker">Tracker</a><a href="/guides">Guides</a><a href="/library">Library</a><a href="/llms.txt">llms.txt</a><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a>
 </div></footer>
+<script>
+(function(){
+  try {
+    var pid = function(st, k){ try { var v = st.getItem(k); if (!v) { v = (crypto.randomUUID ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(16).slice(2)); st.setItem(k, v); } return v; } catch(_e){ return null; } };
+    var body = {
+      product: 'agent-interface',
+      event_type: 'page_view',
+      anon_id: pid(localStorage, 'cc_anon_id'),
+      session_id: pid(sessionStorage, 'cc_session_id'),
+      path: location.pathname,
+      props: { ref: (document.referrer || '').slice(0, 200) },
+      ua: navigator.userAgent
+    };
+    fetch('https://jcmkoooivghwrgezxode.supabase.co/rest/v1/analytics_events', {
+      method: 'POST',
+      headers: { apikey: 'sb_publishable_2n0PtcQvGYyndgwlmG0sZQ_ZZSJla_S', authorization: 'Bearer sb_publishable_2n0PtcQvGYyndgwlmG0sZQ_ZZSJla_S', 'content-type': 'application/json', prefer: 'return=minimal' },
+      body: JSON.stringify(body),
+      keepalive: true
+    }).catch(function(){});
+  } catch(_e){}
+})();
+</script>
 <script>(function(){try{if(matchMedia('(prefers-reduced-motion: reduce)').matches)return;var o=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add('in');o.unobserve(e.target)}})},{rootMargin:'0px 0px -8% 0px'});document.querySelectorAll('.rv').forEach(function(el){o.observe(el)})}catch(_e){document.querySelectorAll('.rv').forEach(function(el){el.classList.add('in')})}})();</script>
 <script>
 (function(){
