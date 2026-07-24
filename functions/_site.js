@@ -345,19 +345,22 @@ ${body}
   // appearance after a minute-plus; then ~every 6-8 minutes, hard-floored
   // by a 4-minute minimum gap. The scroll milestone only fires if the bot
   // hasn't been seen yet at all.
-  var lastSpawn = 0;
+  // Once per visit, max. A sessionStorage flag spans page navigations, so
+  // the whole tab session gets a single cameo — many visits see none
+  // (closing the tab re-arms it; that's the intent).
+  var seen = false;
+  try { seen = sessionStorage.getItem('wagent') === '1'; } catch(_e){}
   function spawn(){
-    var now = Date.now();
-    if (now - lastSpawn < 720000) return;
-    lastSpawn = now;
+    if (seen) return;
+    seen = true;
+    try { sessionStorage.setItem('wagent', '1'); } catch(_e){}
     (Math.random() < 0.3 ? crawl : walk)();
   }
-  setTimeout(spawn, 180000 + Math.random() * 150000);
-  setInterval(function(){ if (Math.random() < 0.12) spawn(); }, 180000);
+  setTimeout(spawn, 150000 + Math.random() * 180000);
   var half = false;
   addEventListener('scroll', function(){
     if (half) return;
-    if (scrollY > (document.body.scrollHeight - innerHeight) * 0.5) { half = true; if (!lastSpawn) spawn(); }
+    if (scrollY > (document.body.scrollHeight - innerHeight) * 0.6) { half = true; spawn(); }
   }, { passive: true });
 })();
 </script>
