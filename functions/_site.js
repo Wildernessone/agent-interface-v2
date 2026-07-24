@@ -88,9 +88,11 @@ nav.main a.on{color:var(--accent)}
 main{padding:56px 0 40px}
 .kicker{font-family:var(--mono);font-size:12px;font-weight:500;letter-spacing:.15em;text-transform:uppercase;color:rgba(255,255,255,.55);margin-bottom:14px}
 .kicker b{color:var(--accent);font-weight:500}
-h1{font-family:var(--mono);font-size:clamp(28px,5vw,44px);line-height:1.16;font-weight:700;letter-spacing:-.015em;margin-bottom:16px}
+h1{font-family:'Instrument Serif',Georgia,serif;font-size:clamp(42px,7vw,76px);line-height:1.02;font-weight:400;letter-spacing:-.01em;margin-bottom:20px}
+h1 em{font-style:italic;color:var(--accent)}
 .lede{color:var(--dim);font-size:17px;max-width:640px;margin-bottom:8px}
-h2{font-family:var(--mono);font-size:21px;font-weight:700;letter-spacing:-.01em;margin:52px 0 14px}
+h2{font-family:'Instrument Serif',Georgia,serif;font-size:clamp(26px,3.4vw,34px);font-weight:400;letter-spacing:0;margin:64px 0 16px}
+h2 .no{font-family:var(--mono);font-size:12px;font-weight:500;color:var(--faint);letter-spacing:.15em;vertical-align:super;margin-right:10px}
 h3{font-size:16.5px;font-weight:650;margin:28px 0 8px}
 p{margin-bottom:14px}
 section p,section li{color:#c6cad2}
@@ -104,10 +106,10 @@ hr{border:0;border-top:1px solid var(--border);margin:34px 0}
 .answer .lbl{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin-bottom:8px}
 .answer p{margin-bottom:0;color:var(--text);font-size:16.5px}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;margin:18px 0}
-.card{position:relative;display:block;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:16px 18px;overflow:hidden;color:var(--text);transition:border-color .15s}
-.card:hover{border-color:var(--border-2);text-decoration:none}
-.card::before{content:'';position:absolute;top:0;left:14px;right:14px;height:2px;border-radius:0 0 2px 2px;background:linear-gradient(120deg,var(--gemini),var(--grok));opacity:0;transition:opacity .15s}
-.card:hover::before{opacity:.6}
+.card{position:relative;display:block;background:linear-gradient(180deg,rgba(255,255,255,.028),rgba(255,255,255,0) 55%),var(--panel);border:1px solid var(--border);border-radius:14px;padding:17px 19px;overflow:hidden;color:var(--text);transition:border-color .18s,transform .18s,box-shadow .18s}
+.card:hover{border-color:var(--border-2);text-decoration:none;transform:translateY(-2px);box-shadow:0 14px 40px rgba(0,0,0,.35)}
+.card::before{content:'';position:absolute;top:0;left:14px;right:14px;height:2px;border-radius:0 0 2px 2px;background:linear-gradient(120deg,var(--claude),var(--gemini) 55%,var(--grok));opacity:.22;transition:opacity .18s}
+.card:hover::before{opacity:.75}
 .card .t{font-family:var(--mono);font-size:14px;font-weight:700;margin-bottom:5px}
 .card .d{color:var(--dim);font-size:13.5px;line-height:1.5}
 .card .m{font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:9px;letter-spacing:.05em;text-transform:uppercase}
@@ -146,6 +148,74 @@ footer.site a{font-family:var(--mono);font-size:12px;color:var(--dim);letter-spa
 article h2{margin-top:40px}
 article img{max-width:100%;border-radius:12px;border:1px solid var(--border)}
 @media(max-width:640px){nav.main{gap:11px}nav.main a{font-size:11px}}
+/* ── the layer diagram: signals travelling human ↔ agent ↔ software ── */
+.diagram{margin:34px 0 8px;border:1px solid var(--border);border-radius:16px;background:
+  radial-gradient(80% 120% at 50% -20%,rgba(111,161,255,.07),transparent 60%),var(--panel);
+  padding:10px 8px 2px;overflow:hidden;position:relative}
+.diagram svg{display:block;width:100%;height:auto}
+.diagram .cap{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);text-align:center;padding:6px 0 10px}
+/* ── the tracker ticker: dual-direction marquee, SideWRK-style ── */
+.tickers{margin:44px 0 6px;border-block:1px solid var(--border);padding:13px 0;display:grid;gap:11px;overflow:hidden;
+  -webkit-mask-image:linear-gradient(90deg,transparent,#000 7%,#000 93%,transparent);mask-image:linear-gradient(90deg,transparent,#000 7%,#000 93%,transparent)}
+.tick{display:flex;gap:0;white-space:nowrap;width:max-content}
+.tick a{display:inline-flex;align-items:center;gap:9px;font-family:var(--mono);font-size:12.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--dim);padding:0 26px;text-decoration:none}
+.tick a:hover{color:var(--text)}
+.tick .sd{width:6px;height:6px;border-radius:999px;flex:none}
+.sd-live{background:#7ddba3}.sd-rising{background:#8ab4ff}.sd-early{background:#d9b877}.sd-watch{background:#62676f}.sd-dead{background:#e08b8b}
+.tick-l{animation:tickL 52s linear infinite}
+.tick-r{animation:tickR 62s linear infinite}
+@keyframes tickL{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+@keyframes tickR{from{transform:translateX(-50%)}to{transform:translateX(0)}}
+/* ── big sourced stats ── */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin:30px 0 8px}
+.stat{position:relative;background:linear-gradient(180deg,rgba(255,255,255,.028),rgba(255,255,255,0) 55%),var(--panel);border:1px solid var(--border);border-radius:14px;padding:20px 18px 16px;overflow:hidden}
+.stat::before{content:'';position:absolute;top:0;left:14px;right:14px;height:2px;border-radius:0 0 2px 2px;background:linear-gradient(120deg,var(--claude),var(--gemini) 55%,var(--grok));opacity:.28}
+.stat .n{font-family:'Instrument Serif',Georgia,serif;font-size:clamp(34px,4.6vw,46px);line-height:1;color:var(--text)}
+.stat .n i{font-style:italic;color:var(--accent)}
+.stat .l{font-family:var(--mono);font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);margin-top:9px;line-height:1.6}
+.stat .s{display:block;font-family:var(--mono);font-size:10.5px;color:var(--faint);margin-top:7px;letter-spacing:.03em}
+.stat .s a{color:var(--faint)}
+/* ── the graveyard band ── */
+.grave{position:relative;margin:26px 0 8px;border:1px solid rgba(224,139,139,.22);border-radius:16px;overflow:hidden;padding:26px 24px 20px;background:
+  radial-gradient(90% 130% at 50% -30%,rgba(224,139,139,.10),transparent 60%),
+  linear-gradient(180deg,#141018,#100d13)}
+.grave .gk{font-family:var(--mono);font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:#e08b8b;margin-bottom:10px}
+.grave h3{font-family:'Instrument Serif',Georgia,serif;font-size:clamp(24px,3.4vw,32px);font-weight:400;margin:0 0 14px;color:#f3dede}
+.grave ul{list-style:none;margin:0;display:grid;gap:8px}
+.grave li{display:flex;flex-wrap:wrap;align-items:baseline;gap:10px;border-bottom:1px dashed rgba(224,139,139,.16);padding-bottom:8px;color:#cdbfc2;font-size:14.5px}
+.grave li:last-child{border-bottom:0}
+.grave .who{font-family:var(--mono);font-size:13px;color:#f3dede;font-weight:500}
+.grave .span{font-family:var(--mono);font-size:11.5px;letter-spacing:.06em;color:#e08b8b;text-transform:uppercase;white-space:nowrap}
+.grave .gcta{font-family:var(--mono);font-size:12px;letter-spacing:.06em;text-transform:uppercase}
+/* ── the live gate demo: terminal + mode chips ── */
+.demo{margin:30px 0 8px;border:1px solid var(--border);border-radius:16px;overflow:hidden;background:linear-gradient(180deg,rgba(255,255,255,.02),rgba(255,255,255,0) 40%),#0d1017}
+.demo .bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:12px 16px;border-bottom:1px solid var(--border)}
+.demo .bar .ttl{font-family:var(--mono);font-size:11px;letter-spacing:.15em;text-transform:uppercase;color:var(--faint);margin-right:auto}
+.chip{font-family:var(--mono);font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--dim);background:transparent;border:1px solid var(--border-2);border-radius:999px;padding:6px 12px;cursor:pointer;transition:all .15s}
+.chip:hover{color:var(--text)}
+.chip.on{color:#0b0d12;background:var(--accent);border-color:var(--accent);font-weight:700}
+.term{font-family:var(--mono);font-size:13px;line-height:1.9;padding:18px 20px 20px;min-height:236px}
+.term .ln{display:block;opacity:0;transform:translateY(4px);transition:opacity .3s,transform .3s;white-space:pre-wrap}
+.term .ln.on{opacity:1;transform:none}
+.term .c-dim{color:var(--faint)}
+.term .c-agent{color:#8ab4ff}
+.term .c-gate{color:#d9b877}
+.term .c-ok{color:#7ddba3}
+.term .c-warn{color:#e08b8b}
+.term .c-hum{color:#e8eaed}
+.term .caret{display:inline-block;width:7px;height:14px;background:var(--accent);vertical-align:-2px;animation:blink 1s steps(1) infinite;margin-left:2px}
+@keyframes blink{50%{opacity:0}}
+@media (prefers-reduced-motion:reduce){.term .ln{opacity:1;transform:none}.term .caret{animation:none}}
+/* ── scroll reveal ── */
+.rv{opacity:0;transform:translateY(18px);transition:opacity .7s cubic-bezier(.2,.6,.2,1),transform .7s cubic-bezier(.2,.6,.2,1)}
+.rv.in{opacity:1;transform:none}
+.rv2{transition-delay:.08s}.rv3{transition-delay:.16s}
+@media (prefers-reduced-motion:reduce){
+  .tick-l,.tick-r{animation:none}
+  .diagram svg *{animation:none!important}
+  .pulse{animation:none}
+  .rv{opacity:1;transform:none;transition:none}
+}
 `
 
 export function page({ title, desc, path, jsonld = [], crumbs = null, active = '', body, ogImage = `${SITE}/og-image.png`, noindex = false }) {
@@ -172,7 +242,7 @@ ${noindex ? '<meta name="robots" content="noindex, follow">' : ''}
 <meta name="twitter:description" content="${esc(desc)}"><meta name="twitter:image" content="${esc(ogImage)}">
 <link rel="alternate" type="application/rss+xml" title="Agent Interface guides" href="${SITE}/guides-feed.xml">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
 ${ld.map(o => `<script type="application/ld+json">${JSON.stringify(o)}</script>`).join('\n')}
 <style>${CSS}</style>
 </head><body>
@@ -188,6 +258,7 @@ ${body}
   <p class="about">agentinterface.app is the reference site for agent interfaces — the protocols that connect AI agents to software, and the interface patterns that keep humans in command of them. Maintained continuously, every claim sourced; corrections welcome. The Library is an archive of published multi-model verdicts from The AI Council, an earlier experiment on this domain.</p>
   <a href="/">Hub</a><a href="/tracker">Tracker</a><a href="/guides">Guides</a><a href="/library">Library</a><a href="/llms.txt">llms.txt</a><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a>
 </div></footer>
+<script>(function(){try{if(matchMedia('(prefers-reduced-motion: reduce)').matches)return;var o=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add('in');o.unobserve(e.target)}})},{rootMargin:'0px 0px -8% 0px'});document.querySelectorAll('.rv').forEach(function(el){o.observe(el)})}catch(_e){document.querySelectorAll('.rv').forEach(function(el){el.classList.add('in')})}})();</script>
 </body></html>`
   return new Response(html, { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'public, max-age=300, s-maxage=1800' } })
 }
