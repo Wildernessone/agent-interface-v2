@@ -341,13 +341,23 @@ ${body}
       setTimeout(rm, 1400);
     }, 5200);
   }
-  function spawn(){ (Math.random() < 0.3 ? crawl : walk)(); }
-  setTimeout(spawn, 4500);
-  setInterval(function(){ if (Math.random() < 0.65) spawn(); }, 26000);
+  // Rare cameos, not a screensaver (James: '90% too frequent'). First
+  // appearance after a minute-plus; then ~every 6-8 minutes, hard-floored
+  // by a 4-minute minimum gap. The scroll milestone only fires if the bot
+  // hasn't been seen yet at all.
+  var lastSpawn = 0;
+  function spawn(){
+    var now = Date.now();
+    if (now - lastSpawn < 240000) return;
+    lastSpawn = now;
+    (Math.random() < 0.3 ? crawl : walk)();
+  }
+  setTimeout(spawn, 70000 + Math.random() * 50000);
+  setInterval(function(){ if (Math.random() < 0.22) spawn(); }, 95000);
   var half = false;
   addEventListener('scroll', function(){
     if (half) return;
-    if (scrollY > (document.body.scrollHeight - innerHeight) * 0.5) { half = true; spawn(); }
+    if (scrollY > (document.body.scrollHeight - innerHeight) * 0.5) { half = true; if (!lastSpawn) spawn(); }
   }, { passive: true });
 })();
 </script>
