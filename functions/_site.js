@@ -348,12 +348,12 @@ ${body}
   var lastSpawn = 0;
   function spawn(){
     var now = Date.now();
-    if (now - lastSpawn < 240000) return;
+    if (now - lastSpawn < 720000) return;
     lastSpawn = now;
     (Math.random() < 0.3 ? crawl : walk)();
   }
-  setTimeout(spawn, 70000 + Math.random() * 50000);
-  setInterval(function(){ if (Math.random() < 0.22) spawn(); }, 95000);
+  setTimeout(spawn, 180000 + Math.random() * 150000);
+  setInterval(function(){ if (Math.random() < 0.12) spawn(); }, 180000);
   var half = false;
   addEventListener('scroll', function(){
     if (half) return;
