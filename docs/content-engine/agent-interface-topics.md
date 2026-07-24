@@ -20,6 +20,7 @@ The site's job: be the definitional, continuously current reference for
   be sourced, don't claim it.
 - No fabricated benchmarks, quotes, or "many teams report" filler.
 - No emojis. Tables and code blocks encouraged. Title <=60 chars, dek <=155.
+- Titles in sentence case ("Stopping an agent mid-task"), never Title Case — matches the site's other guides.
 - Humanizer score >=85 before insert (vary rhythm; kill uniform em-dash lines).
 - One honest internal link to /tracker or / where it genuinely helps; never
   force it. External links to specs/docs are encouraged (descriptive anchors).
