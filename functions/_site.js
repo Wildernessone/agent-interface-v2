@@ -206,6 +206,18 @@ article img{max-width:100%;border-radius:12px;border:1px solid var(--border)}
 .term .caret{display:inline-block;width:7px;height:14px;background:var(--accent);vertical-align:-2px;animation:blink 1s steps(1) infinite;margin-left:2px}
 @keyframes blink{50%{opacity:0}}
 @media (prefers-reduced-motion:reduce){.term .ln{opacity:1;transform:none}.term .caret{animation:none}}
+/* ── the wandering agent ── */
+#wagent{position:fixed;z-index:60;pointer-events:auto;cursor:pointer;will-change:transform;filter:drop-shadow(0 0 10px rgba(111,161,255,.45))}
+#wagent .lbl{position:absolute;bottom:120%;left:50%;transform:translateX(-50%);font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;color:var(--dim);white-space:nowrap;background:rgba(11,13,18,.85);border:1px solid var(--border);border-radius:6px;padding:3px 8px}
+#wagent svg{display:block;animation:wbob 1.1s ease-in-out infinite}
+@keyframes wbob{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+#wagent.crossing{transition:transform linear}
+#wagent .thread{position:absolute;bottom:100%;left:50%;width:1px;background:linear-gradient(180deg,transparent,rgba(255,255,255,.35));height:0}
+#wagent.descend .thread{height:calc(100vh)}
+::selection{background:rgba(111,161,255,.30)}
+.card{--mx:50%;--my:50%}
+.card::after{content:'';position:absolute;inset:0;border-radius:14px;opacity:0;transition:opacity .25s;pointer-events:none;background:radial-gradient(220px circle at var(--mx) var(--my),rgba(111,161,255,.10),transparent 65%)}
+.card:hover::after{opacity:1}
 /* ── scroll reveal ── */
 .rv{opacity:0;transform:translateY(18px);transition:opacity .7s cubic-bezier(.2,.6,.2,1),transform .7s cubic-bezier(.2,.6,.2,1)}
 .rv.in{opacity:1;transform:none}
@@ -259,6 +271,86 @@ ${body}
   <a href="/">Hub</a><a href="/tracker">Tracker</a><a href="/guides">Guides</a><a href="/library">Library</a><a href="/llms.txt">llms.txt</a><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a>
 </div></footer>
 <script>(function(){try{if(matchMedia('(prefers-reduced-motion: reduce)').matches)return;var o=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add('in');o.unobserve(e.target)}})},{rootMargin:'0px 0px -8% 0px'});document.querySelectorAll('.rv').forEach(function(el){o.observe(el)})}catch(_e){document.querySelectorAll('.rv').forEach(function(el){el.classList.add('in')})}})();</script>
+<script>
+(function(){
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  try { console.log('%cagent\u00b7interface', 'font-family:monospace;font-size:14px;color:#6fa1ff', 'You opened the developer tools. The agent noticed. Nothing was written to the trail \u2014 this time. Machine-readable everything: /tracker.json'); } catch(_e){}
+  // cursor glow on cards
+  document.addEventListener('pointermove', function(e){
+    var c = e.target && e.target.closest ? e.target.closest('.card') : null;
+    if (!c) return;
+    var r = c.getBoundingClientRect();
+    c.style.setProperty('--mx', (e.clientX - r.left) + 'px');
+    c.style.setProperty('--my', (e.clientY - r.top) + 'px');
+  }, { passive: true });
+
+  var BOT = '<svg width="34" height="26" viewBox="0 0 34 26"><g><line x1="17" y1="6" x2="17" y2="2" stroke="#6fa1ff" stroke-width="1.5"/><circle cx="17" cy="2" r="1.8" fill="#6fa1ff"/><rect x="5" y="6" width="24" height="15" rx="6" fill="#121620" stroke="rgba(255,255,255,.35)"/><circle cx="13" cy="13.5" r="2" fill="#7ddba3"/><circle cx="21" cy="13.5" r="2" fill="#7ddba3"/><rect x="9" y="21" width="4" height="3" rx="1.5" fill="rgba(255,255,255,.3)"/><rect x="21" y="21" width="4" height="3" rx="1.5" fill="rgba(255,255,255,.3)"/></g></svg>';
+  var WALKS = ['agent \u00b7 patrolling the perimeter','signal \u00b7 human \u2192 agent \u00b7 approved','MCP handshake \u00b7 9ms','A2A \u00b7 task accepted from a stranger agent','x402 \u00b7 paid $0.0002 to read this page','agent \u00b7 filing the audit trail','scope check \u00b7 still inside the sandbox','permission mode \u00b7 suggest \u00b7 behaving'];
+  var CRAWLS = ['ClaudeBot \u00b7 reading the tracker','GPTBot \u00b7 crawling \u00b7 be cool','PerplexityBot \u00b7 citing us, hopefully','Meta-ExternalAgent \u00b7 requesting /null again'];
+  var el = null, busy = false;
+  function mk(label){
+    el = document.createElement('div');
+    el.id = 'wagent';
+    el.innerHTML = '<div class="thread"></div><span class="lbl">' + label + '</span>' + BOT;
+    document.body.appendChild(el);
+    el.addEventListener('click', function(){
+      var l = el.querySelector('.lbl');
+      if (l) l.textContent = 'interrupted \u00b7 parking serializable state\u2026';
+      var tr = el.style.transform;
+      el.style.transition = 'transform .9s cubic-bezier(.5,0,1,1), opacity .9s';
+      el.style.opacity = '0';
+      el.style.transform = tr + ' translateY(-70px)';
+      setTimeout(rm, 900);
+    }, { once: true });
+    return el;
+  }
+  function rm(){ if (el && el.parentNode) el.parentNode.removeChild(el); el = null; busy = false; }
+  function walk(){
+    if (busy || document.hidden) return; busy = true;
+    var ltr = Math.random() < 0.5;
+    var y = Math.round(innerHeight * (0.55 + Math.random() * 0.35));
+    var dur = 11000 + Math.random() * 6000;
+    var w = mk(WALKS[Math.floor(Math.random() * WALKS.length)]);
+    w.style.top = y + 'px';
+    var from = ltr ? -140 : innerWidth + 140;
+    var to = ltr ? innerWidth + 140 : -140;
+    w.style.transform = 'translateX(' + from + 'px)' + (ltr ? '' : ' scaleX(-1)');
+    var lbl = w.querySelector('.lbl'); if (lbl && !ltr) lbl.style.transform = 'translateX(-50%) scaleX(-1)';
+    requestAnimationFrame(function(){ requestAnimationFrame(function(){
+      w.classList.add('crossing');
+      w.style.transitionDuration = dur + 'ms';
+      w.style.transform = 'translateX(' + to + 'px)' + (ltr ? '' : ' scaleX(-1)');
+    });});
+    setTimeout(rm, dur + 400);
+  }
+  function crawl(){
+    if (busy || document.hidden) return; busy = true;
+    var x = Math.round(innerWidth * (0.15 + Math.random() * 0.7));
+    var c = mk(CRAWLS[Math.floor(Math.random() * CRAWLS.length)]);
+    c.style.top = '-60px';
+    c.style.left = x + 'px';
+    c.classList.add('descend');
+    c.style.transition = 'transform 2.6s cubic-bezier(.3,1.4,.4,1)';
+    requestAnimationFrame(function(){ requestAnimationFrame(function(){
+      c.style.transform = 'translateY(' + Math.round(innerHeight * 0.34) + 'px)';
+    });});
+    setTimeout(function(){
+      if (!el) return;
+      el.style.transition = 'transform 1.4s cubic-bezier(.6,-.4,.7,1)';
+      el.style.transform = 'translateY(-80px)';
+      setTimeout(rm, 1400);
+    }, 5200);
+  }
+  function spawn(){ (Math.random() < 0.3 ? crawl : walk)(); }
+  setTimeout(spawn, 4500);
+  setInterval(function(){ if (Math.random() < 0.65) spawn(); }, 26000);
+  var half = false;
+  addEventListener('scroll', function(){
+    if (half) return;
+    if (scrollY > (document.body.scrollHeight - innerHeight) * 0.5) { half = true; spawn(); }
+  }, { passive: true });
+})();
+</script>
 </body></html>`
   return new Response(html, { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'public, max-age=300, s-maxage=1800' } })
 }
