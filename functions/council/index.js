@@ -1,4 +1,6 @@
-// Bare /council is a client-side SPA route (the logged-in council page) —
-// serve the shell here. /council/<slug> stays with [slug].js (SSR debates).
-import { serveShell } from "../_shell.js";
-export const onRequestGet = serveShell;
+// Bare /council — the old SPA app route. The app is retired; published council
+// verdicts live on as the Library archive. Permanent redirect preserves any
+// old links' equity.
+export function onRequestGet() {
+  return new Response(null, { status: 301, headers: { Location: '/library' } })
+}

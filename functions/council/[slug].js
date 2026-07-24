@@ -139,7 +139,7 @@ code{background:#1b2030;padding:1px 5px;border-radius:4px}
 <div class="verdict"><h2>The verdict</h2>${a.chairman ? `<p class="chair">Chaired by ${esc(label(a.chairman))}</p>` : ''}${mdToHtml(a.verdict)}</div>
 ${rankHtml}
 ${answersHtml ? `<div class="ans-wrap"><h2>Each AI's take</h2>${answersHtml}</div>` : ''}
-<div class="cta"><div>Got a decision of your own? Convene your own council — five AIs argue it out and hand you one verdict, read it or hear it.</div><a href="${SITE}/council">Convene your council →</a></div>
+<div class="cta"><div>This verdict is part of the Library — an archive of multi-model deliberations on this domain.</div><a href="${SITE}/">Explore the agent-interface reference →</a></div>
 </div></body></html>`
 
   return new Response(html, {
