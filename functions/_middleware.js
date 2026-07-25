@@ -45,6 +45,11 @@ const AI_REFERRERS = [
 
 const SKIP = /\.(js|mjs|css|png|jpe?g|webp|gif|svg|ico|woff2?|ttf|map|mp4|webm|pdf)$/i
 
+// Vulnerability-scanner probes wearing spoofed crawler UAs (.git, env/config
+// files, wp-admin…). Real AI crawlers never request these; logging them as
+// "GPTBot read us" poisons the stats. Don't log — they 404 anyway.
+const PROBE = /(^|\/)\.(git|env|aws|ssh|svn|DS_Store)|\.(ya?ml|properties|ini|bak|sql|pem|key)$|wp-(admin|login|content)|phpinfo|\.php$|\/etc\/passwd/i
+
 const SB = 'https://oqbpuspnmznqxgkmyzyb.supabase.co'
 const ANON = 'sb_publishable_hbloUBTnVl7-2kSMtCbu8A_lfzoId9Z'
 
@@ -67,7 +72,7 @@ const log = (context, table, row) => context.waitUntil(
 export async function onRequest (context) {
   const { request } = context
   const url = new URL(request.url)
-  const page = !SKIP.test(url.pathname)
+  const page = !SKIP.test(url.pathname) && !PROBE.test(url.pathname)
   if (page) {
     const ua = request.headers.get('user-agent') || ''
     const bot = detectBot(ua)
