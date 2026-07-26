@@ -10,7 +10,7 @@
 //     year of launch.
 // Statuses: live | rising | early | watch | dead
 
-export const TRACKER_UPDATED = '2026-07-24'
+export const TRACKER_UPDATED = '2026-07-26'
 
 export const TRACKER = [
   // ── Protocols: the agent ↔ software layer ──────────────────────────────
@@ -34,9 +34,9 @@ export const TRACKER = [
     id: 'ag-ui', group: 'protocol', name: 'AG-UI — Agent–User Interaction Protocol',
     steward: 'CopilotKit — the notable foundation holdout',
     short: 'Standardizes the agent-to-frontend seam: ~31 typed event kinds over SSE for streaming, state sync, interrupts, and generative UI.',
-    call: 'The most serious attempt at the frontend layer, with real integrations (Microsoft Agent Framework, AWS Bedrock AgentCore, Google ADK) — and it is winning the phrase "agentic UI" in search. Still vendor-stewarded while every peer moved to a foundation; watch governance before betting the stack on it.',
+    call: 'The most serious attempt at the frontend layer, with real integrations (Microsoft Agent Framework, AWS Bedrock AgentCore, Google ADK) — and it is winning the phrase "agentic UI" in search. CopilotKit raised a $27M Series A in May 2026, which deepens the vendor-stewardship question rather than resolving it: still no foundation home while every peer moved to one. Watch governance before betting the stack on it.',
     status: 'rising', statusLabel: 'Rising',
-    links: [['Docs', 'https://docs.ag-ui.com/introduction'], ['Project', 'https://github.com/ag-ui-protocol/ag-ui'], ['AWS integration', 'https://aws.amazon.com/blogs/machine-learning/build-generative-ui-for-ai-agents-on-amazon-bedrock-agentcore-with-the-ag-ui-protocol/']],
+    links: [['Docs', 'https://docs.ag-ui.com/introduction'], ['Project', 'https://github.com/ag-ui-protocol/ag-ui'], ['AWS integration', 'https://aws.amazon.com/blogs/machine-learning/build-generative-ui-for-ai-agents-on-amazon-bedrock-agentcore-with-the-ag-ui-protocol/'], ['CopilotKit Series A', 'https://techcrunch.com/2026/05/05/copilotkit-raises-27m-to-help-devs-deploy-app-native-ai-agents/']],
   },
   {
     id: 'zed-acp', group: 'protocol', name: 'ACP — Agent Client Protocol (Zed)',
