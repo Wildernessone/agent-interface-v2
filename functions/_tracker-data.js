@@ -10,17 +10,17 @@
 //     year of launch.
 // Statuses: live | rising | early | watch | dead
 
-export const TRACKER_UPDATED = '2026-07-26'
+export const TRACKER_UPDATED = '2026-07-28'
 
 export const TRACKER = [
   // ── Protocols: the agent ↔ software layer ──────────────────────────────
   {
     id: 'mcp', group: 'protocol', name: 'MCP — Model Context Protocol',
     steward: 'Agentic AI Foundation (Linux Foundation); created at Anthropic',
-    short: 'The standard connector between an agent and its tools and data, JSON-RPC based. Current spec revision 2025-11-25; the next revision has a release candidate out.',
-    call: 'The settled winner of the agent-to-tool layer. OpenAI, Google and Microsoft all adopted it in 2025; it was donated to the Linux Foundation’s Agentic AI Foundation in Dec 2025, and the official registry passed ~9,600 servers. Build on it without hesitation.',
+    short: 'The standard connector between an agent and its tools and data, JSON-RPC based. Spec revision 2026-07-28 shipped stable, dropping protocol-level sessions for a stateless core.',
+    call: 'The settled winner of the agent-to-tool layer. OpenAI, Google and Microsoft all adopted it in 2025; it was donated to the Linux Foundation’s Agentic AI Foundation in Dec 2025, and the official registry passed ~9,600 servers. The 2026-07-28 revision is its biggest change yet — sessions removed, Extensions/MCP Apps/Tasks formalized, a 12-month deprecation policy added — but existing servers keep working unchanged; Tier 1 SDKs (Python, TS, Go, C#) ship v2 as opt-in betas. Build on it without hesitation.',
     status: 'live', statusLabel: 'Established',
-    links: [['Spec & docs', 'https://modelcontextprotocol.io'], ['Versioning', 'https://modelcontextprotocol.io/specification/versioning'], ['Official registry', 'https://registry.modelcontextprotocol.io'], ['AAIF donation', 'https://www.anthropic.com/news/donating-the-model-context-protocol-and-establishing-of-the-agentic-ai-foundation']],
+    links: [['Spec & docs', 'https://modelcontextprotocol.io'], ['Versioning', 'https://modelcontextprotocol.io/specification/versioning'], ['Official registry', 'https://registry.modelcontextprotocol.io'], ['AAIF donation', 'https://www.anthropic.com/news/donating-the-model-context-protocol-and-establishing-of-the-agentic-ai-foundation'], ['2026-07-28 revision', 'https://blog.modelcontextprotocol.io/posts/2026-07-28-release-candidate/']],
   },
   {
     id: 'a2a', group: 'protocol', name: 'A2A — Agent2Agent',
