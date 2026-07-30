@@ -10,7 +10,7 @@
 //     year of launch.
 // Statuses: live | rising | early | watch | dead
 
-export const TRACKER_UPDATED = '2026-07-26'
+export const TRACKER_UPDATED = '2026-07-30'
 
 export const TRACKER = [
   // ── Protocols: the agent ↔ software layer ──────────────────────────────
@@ -58,9 +58,9 @@ export const TRACKER = [
     id: 'x402', group: 'protocol', name: 'x402',
     steward: 'x402 Foundation (Linux Foundation); created at Coinbase',
     short: 'HTTP-native machine payments reviving status code 402: a server quotes terms, the agent pays and retries with proof.',
-    call: 'Real volume, not a whitepaper — the Foundation went operational July 14, 2026 with 40 members including Visa, Mastercard, Ripple, Stellar and Solana, and Chainalysis clocked roughly 75M transactions moving ~$24M over the prior 30 days. Cloudflare and AWS both shipped edge-level 402 support within two weeks of launch. The plumbing for agents that spend.',
+    call: 'Real volume, not a whitepaper — the Foundation went operational July 14, 2026 with 40 members including Visa, Mastercard, Ripple, Stellar and Solana, and Chainalysis clocked roughly 75M transactions moving ~$24M over the prior 30 days, with cumulative Base volume since topping 169M transactions. Caveat: a chunk of the 2025 surge traced to a single meme-coin pay-to-mint scheme rather than organic agent commerce, but the durable signal is real — transactions of $1+ rose from 49% to 95% of volume over the same stretch. Cloudflare and AWS both shipped edge-level 402 support within two weeks of launch. The plumbing for agents that spend.',
     status: 'rising', statusLabel: 'Rising',
-    links: [['Site', 'https://www.x402.org'], ['Foundation launch', 'https://www.linuxfoundation.org/press/linux-foundation-is-launching-the-x402-foundation-and-welcoming-the-contribution-of-the-x402-protocol'], ['Operational launch', 'https://www.prnewswire.com/news-releases/linux-foundation-announces-operational-launch-of-x402-foundation-to-standardize-internet-native-payments-for-ai-agents-and-applications-302824778.html'], ['Adoption data', 'https://www.coindesk.com/tech/2026/07/15/visa-mastercard-and-ripple-join-the-standard-letting-ai-agents-pay-in-stablecoins']],
+    links: [['Site', 'https://www.x402.org'], ['Foundation launch', 'https://www.linuxfoundation.org/press/linux-foundation-is-launching-the-x402-foundation-and-welcoming-the-contribution-of-the-x402-protocol'], ['Operational launch', 'https://www.prnewswire.com/news-releases/linux-foundation-announces-operational-launch-of-x402-foundation-to-standardize-internet-native-payments-for-ai-agents-and-applications-302824778.html'], ['Adoption data', 'https://www.coindesk.com/tech/2026/07/15/visa-mastercard-and-ripple-join-the-standard-letting-ai-agents-pay-in-stablecoins'], ['Cumulative volume & meme-coin caveat', 'https://cryptobriefing.com/base-agentic-payments-20-million-transfers/']],
   },
   {
     id: 'mcp-apps', group: 'protocol', name: 'MCP Apps',
