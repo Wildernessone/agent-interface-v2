@@ -10,7 +10,7 @@
 //     year of launch.
 // Statuses: live | rising | early | watch | dead
 
-export const TRACKER_UPDATED = '2026-08-01'
+export const TRACKER_UPDATED = '2026-08-03'
 
 export const TRACKER = [
   // ── Protocols: the agent ↔ software layer ──────────────────────────────
@@ -124,9 +124,9 @@ export const TRACKER = [
     id: 'atlas', group: 'graveyard', name: 'ChatGPT Atlas',
     steward: 'was OpenAI',
     short: 'OpenAI’s standalone agentic browser, launched October 2025, macOS only.',
-    call: 'Discontinued July 2026, dead in under ten months — folded into the ChatGPT desktop app and a Chrome extension. Strong evidence for the thesis that agentic browsing is a feature, not a browser.',
+    call: 'Announced discontinued July 9, 2026; the app stops working August 9, 2026, ten months after launch — folded into the ChatGPT desktop app, a Chrome extension, and Codex. Strong evidence for the thesis that agentic browsing is a feature, not a browser.',
     status: 'dead', statusLabel: 'Discontinued',
-    links: [['Launch', 'https://openai.com/index/introducing-chatgpt-atlas/'], ['Shutdown coverage', 'https://9to5mac.com/2026/07/09/openai-is-discontinuing-chatgpt-atlas-its-standalone-desktop-browser/']],
+    links: [['Launch', 'https://openai.com/index/introducing-chatgpt-atlas/'], ['Shutdown coverage', 'https://9to5mac.com/2026/07/09/openai-is-discontinuing-chatgpt-atlas-its-standalone-desktop-browser/'], ['Shutdown date & rationale', 'https://techcrunch.com/2026/07/09/openai-is-shutting-down-atlas-but-its-ai-browser-ambitions-are-still-growing/']],
   },
   {
     id: 'agent-builder', group: 'graveyard', name: 'OpenAI AgentKit (Agent Builder & Evals)',
