@@ -80,11 +80,11 @@ export const TRACKER = [
   },
   {
     id: 'computer-use', group: 'protocol', name: 'Computer use (screen-level control)',
-    steward: 'Anthropic, OpenAI, others (an approach, not a spec)',
-    short: 'The protocol-less path: the agent operates the same screen, cursor, and keyboard a human would. Anthropic’s API has run in beta since Oct 2024.',
-    call: 'The universal fallback when no protocol exists, and the hardest to supervise — screen actions have no schema to gate on. It coexists with protocols rather than losing to them; the supervision patterns it forced (watch mode, takeover mode) are spreading.',
+    steward: 'Anthropic, OpenAI, Google, others (an approach, not a spec)',
+    short: 'The protocol-less path: the agent operates the same screen, cursor, and keyboard a human would. Anthropic’s API has run in beta since Oct 2024; OpenAI added background computer use to Codex (macOS, April 2026); Google ships a browser-scoped Gemini 2.5 Computer Use model (preview, Oct 2025).',
+    call: 'The universal fallback when no protocol exists, and the hardest to supervise — screen actions have no schema to gate on. Three different scope bets now: Anthropic\'s tool targets any sandboxed desktop, OpenAI scoped Codex\'s version to specific Mac apps with foreground-only on Windows, Google scoped its model to browser/mobile UI only. It coexists with protocols rather than losing to them; the supervision patterns it forced (watch mode, takeover mode) are spreading.',
     status: 'rising', statusLabel: 'Rising',
-    links: [['Anthropic computer use', 'https://platform.claude.com/docs/en/agents-and-tools/tool-use/computer-use-tool'], ['ChatGPT agent', 'https://openai.com/index/introducing-chatgpt-agent/']],
+    links: [['Anthropic computer use', 'https://platform.claude.com/docs/en/agents-and-tools/tool-use/computer-use-tool'], ['ChatGPT agent', 'https://openai.com/index/introducing-chatgpt-agent/'], ['Codex background computer use', 'https://openai.com/index/codex-for-almost-everything/'], ['Gemini 2.5 Computer Use', 'https://blog.google/innovation-and-ai/models-and-research/google-deepmind/gemini-computer-use-model/']],
   },
   {
     id: 'agents-md', group: 'protocol', name: 'AGENTS.md',
