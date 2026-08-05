@@ -10,7 +10,7 @@
 //     year of launch.
 // Statuses: live | rising | early | watch | dead
 
-export const TRACKER_UPDATED = '2026-08-03'
+export const TRACKER_UPDATED = '2026-08-05'
 
 export const TRACKER = [
   // ── Protocols: the agent ↔ software layer ──────────────────────────────
@@ -98,9 +98,9 @@ export const TRACKER = [
     id: 'llms-txt', group: 'protocol', name: 'llms.txt',
     steward: 'Community convention (proposed by Answer.AI)',
     short: 'A proposed root file giving AI systems a curated map of a site’s content.',
-    call: 'Publisher adoption grew ~9x in a year; consumption stayed near zero — a 137k-domain log study found 97% of deployed files never get fetched by an AI bot, and Google compares it to the keywords meta tag. Costs 30 minutes, so ship one. Expect nothing yet.',
+    call: 'Publisher adoption keeps climbing — 10.13% of a 300k-domain sample by May 2026, up from ~0.4% a year earlier — but consumption hasn’t followed: a separate 137k-domain log study found 97% of deployed files never get fetched by an AI bot, and the 300k-domain study found no measurable citation lift once site authority is controlled for. Google’s own Search guidance now states outright that the file does nothing for ranking or generative features, comparing it to the keywords meta tag. Yet Chrome’s Lighthouse tool shipped an llms.txt audit under a new default “Agentic Browsing” category (v13.2.0–v13.4.1, Apr–Jul 2026), alongside WebMCP checks — a bet on agent navigation, not search citation. Costs 30 minutes, so ship one for the agents that ask for it; expect nothing from AI search.',
     status: 'watch', statusLabel: 'Watch',
-    links: [['Proposal', 'https://llmstxt.org'], ['Log-study coverage', 'https://ppc.land/llms-txt-adoption-rises-8-8x-but-97-of-files-get-zero-ai-requests/'], ['Google’s comparison', 'https://www.searchenginejournal.com/google-says-llms-txt-comparable-to-keywords-meta-tag/544804/']],
+    links: [['Proposal', 'https://llmstxt.org'], ['Log-study coverage', 'https://ppc.land/llms-txt-adoption-rises-8-8x-but-97-of-files-get-zero-ai-requests/'], ['300k-domain citation study', 'https://www.searchenginejournal.com/llms-txt-shows-no-clear-effect-on-ai-citations-based-on-300k-domains/561542/'], ['Google’s comparison', 'https://searchengineland.com/no-llms-txt-is-not-the-new-meta-keywords-458199'], ['Lighthouse changelog', 'https://github.com/GoogleChrome/lighthouse/blob/main/changelog.md']],
   },
 
   // ── The graveyard ──────────────────────────────────────────────────────
