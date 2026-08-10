@@ -10,7 +10,7 @@
 //     year of launch.
 // Statuses: live | rising | early | watch | dead
 
-export const TRACKER_UPDATED = '2026-08-07'
+export const TRACKER_UPDATED = '2026-08-09'
 
 export const TRACKER = [
   // ── Protocols: the agent ↔ software layer ──────────────────────────────
@@ -69,6 +69,14 @@ export const TRACKER = [
     call: 'If it lands broadly, the tool layer and the frontend layer start merging — which would squeeze the standalone frontend protocols. Shipping in some clients; early.',
     status: 'early', statusLabel: 'Early',
     links: [['MCP docs', 'https://modelcontextprotocol.io']],
+  },
+  {
+    id: 'agent-plugins', group: 'protocol', name: 'Agent Plugins',
+    steward: 'Technical Steering Committee (no foundation): Amazon, Cursor/Anysphere, Google, Microsoft, OpenAI, Vercel; proposed by Vercel',
+    short: 'A shared package format for bundling Agent Skills and MCP servers into one directory — plugin.json, skills/, mcp.json — readable by ChatGPT, Codex, Cursor, GitHub Copilot, Kiro and VS Code. v1.0.0 shipped Aug 6, 2026; Google joined as a sixth core maintainer the same day.',
+    call: 'Real convergence on a real annoyance — one plugin directory instead of six. But it packages two specs Anthropic wrote (MCP and Agent Skills) without Anthropic on the steering committee or Claude Code among the launch clients, and it explicitly punts on install, trust, and permission semantics. Governance runs on a company-staffed TSC with no neutral foundation behind it, unlike MCP or A2A. Promising plumbing; watch who else joins and whether it stays this narrow.',
+    status: 'early', statusLabel: 'Early',
+    links: [['Spec', 'https://github.com/agentplugins/agent-plugins-spec/blob/main/spec/1.0.0.md'], ['Vercel announcement', 'https://vercel.com/blog/introducing-agent-plugins'], ['Google joins as core maintainer', 'https://developers.googleblog.com/agent-plugins-package-your-skills-tools-and-more/'], ['Claude Code plugin format (for comparison)', 'https://code.claude.com/docs/en/plugins']],
   },
   {
     id: 'openai-apps', group: 'protocol', name: 'OpenAI Apps SDK',
