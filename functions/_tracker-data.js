@@ -10,7 +10,7 @@
 //     year of launch.
 // Statuses: live | rising | early | watch | dead
 
-export const TRACKER_UPDATED = '2026-08-05'
+export const TRACKER_UPDATED = '2026-08-07'
 
 export const TRACKER = [
   // ── Protocols: the agent ↔ software layer ──────────────────────────────
@@ -41,10 +41,10 @@ export const TRACKER = [
   {
     id: 'zed-acp', group: 'protocol', name: 'ACP — Agent Client Protocol (Zed)',
     steward: 'Zed Industries',
-    short: 'The "LSP for coding agents": a JSON-RPC protocol connecting any editor to any coding agent. Adopted across JetBrains IDEs in late 2025.',
-    call: 'Quietly becoming the standard seam between IDEs and coding agents. Terminology trap: unqualified "ACP" now usually means this, not IBM’s dead protocol of the same acronym.',
+    short: 'The "LSP for coding agents": a JSON-RPC protocol connecting any editor to any coding agent. Adopted across JetBrains IDEs; a joint agent registry shipped January 2026.',
+    call: 'The standard seam between IDEs and coding agents now, not just a Zed feature — Zed 1.0 (April 2026) made ACP its headline capability with native parallel-agent support, Devin Desktop (the Windsurf rebrand) added ACP support in June 2026, and the Zed/JetBrains ACP Registry gives one-click agent install across both IDE families. A v2 draft published July 20, 2026 reworks session handling; v1 stays wire-stable in the meantime. Terminology trap: unqualified "ACP" now usually means this, not IBM’s dead protocol of the same acronym.',
     status: 'rising', statusLabel: 'Rising',
-    links: [['Spec', 'https://agentclientprotocol.com'], ['JetBrains adoption', 'https://blog.jetbrains.com/ai/2025/10/jetbrains-zed-open-interoperability-for-ai-coding-agents-in-your-ide/']],
+    links: [['Spec', 'https://agentclientprotocol.com'], ['JetBrains adoption', 'https://blog.jetbrains.com/ai/2025/10/jetbrains-zed-open-interoperability-for-ai-coding-agents-in-your-ide/'], ['ACP Registry launch', 'https://blog.jetbrains.com/ai/2026/01/acp-agent-registry/'], ['v2 draft', 'https://agentclientprotocol.com/announcements/acp-v2-draft']],
   },
   {
     id: 'ap2', group: 'protocol', name: 'AP2 — Agent Payments Protocol',
