@@ -10,7 +10,7 @@
 //     year of launch.
 // Statuses: live | rising | early | watch | dead
 
-export const TRACKER_UPDATED = '2026-08-09'
+export const TRACKER_UPDATED = '2026-08-10'
 
 export const TRACKER = [
   // ── Protocols: the agent ↔ software layer ──────────────────────────────
@@ -197,10 +197,10 @@ export const TRACKER = [
   {
     id: 'os-agent-workspaces', group: 'pattern', name: 'OS-level agent workspaces',
     steward: 'Microsoft, Apple (vendor-specific, emerging)',
-    short: 'The operating system as the permission boundary: Windows 11’s Agent Workspace runs agents under low-privilege accounts with folder-scoped access; Apple is steering agents through typed App Intents.',
-    call: 'The endgame for the bottom of the permission ladder — if the OS holds the sandbox, per-app approval UIs get simpler. Both are early and off by default. Watch.',
+    short: 'The operating system as the permission boundary: Windows 11’s Agent Workspace runs agents under their own Entra-backed account in an isolated session; Apple routes agent actions solely through typed App Intents.',
+    call: 'Two opposite mechanisms for the same idea, both further along than “early” suggests. Microsoft’s Copilot Actions is now rolling out to Windows Insiders on top of Agent Workspace — still opt-in, off by default — while Apple used WWDC26 to formally deprecate SiriKit, making App Intents the only path for Siri (and any on-device agent) into a third-party app. If the OS holds the sandbox, per-app approval UIs get simpler. Watch which shape wins — or whether they combine.',
     status: 'early', statusLabel: 'Early',
-    links: [['Windows agentic features', 'https://support.microsoft.com/en-US/Windows/Ai/Ai-Features/experimental-agentic-features'], ['Apple Intelligence / WWDC26', 'https://developer.apple.com/wwdc26/guides/apple-intelligence/']],
+    links: [['Windows agentic features', 'https://support.microsoft.com/en-US/Windows/Ai/Ai-Features/experimental-agentic-features'], ['Windows platform security for AI agents', 'https://blogs.windows.com/windowsdeveloper/2026/06/02/windows-platform-security-for-ai-agents/'], ['Copilot Actions rollout', 'https://www.thurrott.com/windows/windows-11/329784/windows-insider-program-releases-copilot-actions-new-release-preview-builds'], ['Apple Intelligence / WWDC26', 'https://developer.apple.com/wwdc26/guides/apple-intelligence/'], ['SiriKit deprecated for App Intents', 'https://www.macrumors.com/2026/06/09/apple-outlines-major-ai-and-developer-tool-updates/']],
   },
   {
     id: 'handoff', group: 'pattern', name: 'Handoff & escalation',
