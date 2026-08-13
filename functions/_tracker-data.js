@@ -36,10 +36,12 @@
 // and it is the only place two same-day runs can still collide.
 
 import * as baseline_2026_08_10 from './_tracker/2026-08-10-baseline.js'
+import * as openai_apps_to_plugins_2026_08_13 from './_tracker/2026-08-13-openai-apps-to-plugins.js'
 
 // Oldest first. Append new changesets at the end.
 const CHANGESETS = [
   baseline_2026_08_10,
+  openai_apps_to_plugins_2026_08_13,
 ]
 
 function fold(changesets) {
