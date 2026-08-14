@@ -242,6 +242,7 @@ export function page({ title, desc, path, jsonld = [], crumbs = null, active = '
   const html = `<!doctype html><html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#0b0d12">
+<meta name="google-site-verification" content="2RveS4EgNJ5wgfFbdexumZ5s7-VKSiFFvjFmfEcvfMQ">
 <title>${esc(title)}</title>
 <meta name="description" content="${esc(desc)}">
 <link rel="canonical" href="${canonical}">
