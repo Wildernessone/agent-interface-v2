@@ -6,44 +6,35 @@ Pages Functions SSR + Supabase `oqbpuspnmznqxgkmyzyb`.
 
 **Production deploys from `main` via Cloudflare Pages.** A merge to `main` ships. Work on a branch.
 
-## ⭐ Updating the tracker — READ THIS BEFORE TOUCHING `functions/_tracker-data.js`
+## ⭐ Updating the tracker — DB rows, not PRs (changed 2026-08-13)
 
-**Do not edit `functions/_tracker-data.js`, and do not edit any existing file in
-`functions/_tracker/`.** That file is now a fold, not a list.
+**Do not edit `functions/_tracker-data.js`, do not add files to `functions/_tracker/`, and do
+not open tracker PRs.** The PR flow is retired: even with dated changeset files, two runs still
+collided on the one shared `CHANGESETS` line, and every merge waited on a human. Tracker
+updates now follow the same path as `/guides` articles: **INSERT a draft row, 48h veto,
+auto-publish.**
 
-**Add one dated changeset**, `functions/_tracker/YYYY-MM-DD-<short-slug>.js`:
+**Add one changeset row** to `tracker_changesets` in the v2 Supabase (`oqbpuspnmznqxgkmyzyb`):
 
-```js
-export const checked = '2026-08-11'        // the day YOU verified these claims
-export const entries = [
-  { id: 'existing-id', /* ...the whole entry, rewritten... */ },   // refines in place
-  { id: 'brand-new',   /* ...the whole entry... */ },              // appends
-]
+```sql
+insert into public.tracker_changesets (checked, slug, entries, note)
+values (current_date, 'short-kebab-slug',
+        $j$[ { "id": "existing-or-new-id", ...the whole entry... } ]$j$::jsonb,
+        'one line on what changed + source URLs');
 ```
 
-Then add its import and one array element to `CHANGESETS` in `_tracker-data.js`. That single line
-is the only shared edit you make.
+It lands as `status='draft'` and auto-publishes when `auto_publish_at` (now()+48h) passes —
+an hourly pg_cron (`ai-tracker-auto-publish`) flips it; a veto in Command Center sets it
+`archived`. The SSR fold (`loadTracker()` in `functions/_tracker-data.js`) merges published
+rows on top of the repo's static baseline at request time, with the same semantics the file
+flow had: an existing `id` is **replaced in place**, a new id is **appended**, and
+`status: 'removed'` drops one. A protocol that DIED is not removed — it stays `dead`; the
+graveyard is the whole point of this page.
 
-Folding is by `id`, in filename order: an existing id is **replaced while keeping its position**
-(so a refinement never shuffles the page), a new id is **appended**, and `status: 'removed'` drops
-one. A protocol that DIED is not removed — it stays with `status: 'dead'`. The graveyard is the
-whole point of this page; nobody else tracks what died, and that is the moat.
+**Never type `TRACKER_UPDATED`.** It is derived from the newest published `checked`.
 
-**Never type `TRACKER_UPDATED`.** It is derived as the newest `checked` of any changeset, so it
-cannot go stale and cannot be a merge conflict.
-
-### Why it works this way
-
-Every run used to edit the one file and bump the same `TRACKER_UPDATED` line. Each PR looked
-mergeable on its own — GitHub tests a PR against `main`, never against its siblings — so on
-2026-08-10 three of them had sat green for five days and then **all conflicted the moment the first
-one landed**, every time on that same one-line date collision. Each had to be rebased by hand.
-
-Adding a file instead of editing one means two runs on different days touch nothing in common.
-
-⚠ **Two runs on the SAME day still collide** on the `CHANGESETS` list — static ESM cannot glob, so
-that one line is the floor for this design. If that ever starts hurting, the real fix is moving the
-tracker into Supabase the way `/guides` already works, and dropping the PR flow entirely.
+The files in `functions/_tracker/` are the frozen historical baseline (last repo changeset:
+2026-08-13). They still fold first; do not delete them, and do not add to them.
 
 ## Entry rules — these are why anyone trusts this page
 

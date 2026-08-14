@@ -66,5 +66,29 @@ function fold(changesets) {
 
 const folded = fold(CHANGESETS)
 
+// The static fold — the repo baseline alone. Kept as the fail-open floor: if the
+// DB is unreachable the site serves the last-merged state, never an error.
 export const TRACKER = folded.entries
 export const TRACKER_UPDATED = folded.newest
+
+// ── The LIVE fold (2026-08-13): repo baseline + published DB changesets. ──
+// Daily updates stopped being PRs — the engine INSERTs a draft row into
+// tracker_changesets (v2 Supabase) and the same 48h-veto auto-publish that runs
+// /guides flips it live; James vetoes from Command Center. The repo keeps the
+// historical baseline; rows fold ON TOP in (checked, created_at) order, so the
+// same id-replace/append/'removed' semantics apply unchanged.
+import { sbRows } from './_site.js'
+
+export async function loadTracker() {
+  try {
+    const rows = await sbRows(
+      'tracker_changesets?select=checked,entries,created_at&status=eq.published&order=checked.asc,created_at.asc',
+    )
+    if (!rows.length) return { TRACKER, TRACKER_UPDATED }
+    const db = rows.map((r) => ({ checked: r.checked, entries: r.entries }))
+    const live = fold(CHANGESETS.concat(db))
+    return { TRACKER: live.entries, TRACKER_UPDATED: live.newest }
+  } catch (_e) {
+    return { TRACKER, TRACKER_UPDATED }
+  }
+}
