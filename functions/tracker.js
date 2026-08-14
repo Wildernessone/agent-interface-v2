@@ -3,7 +3,7 @@
 // bumps TRACKER_UPDATED). caniuse-style promise: statuses are dated editorial
 // calls with sources, not a directory dump.
 import { page, esc, SITE } from './_site.js'
-import { TRACKER, TRACKER_UPDATED } from './_tracker-data.js'
+import { loadTracker } from './_tracker-data.js'
 
 const GROUPS = [
   ['protocol', 'Protocols — the agent ↔ software layer', 'Open specs wiring agents to tools, each other, frontends, and money.'],
@@ -21,6 +21,7 @@ const STATUS_KEY = {
 }
 
 export async function onRequestGet() {
+  const { TRACKER, TRACKER_UPDATED } = await loadTracker()
   const desc = 'A living, dated index of agent-interface protocols, patterns, and surfaces — status calls with sources, reviewed continuously.'
 
   const sections = GROUPS.map(([g, heading, sub]) => {

@@ -1,8 +1,9 @@
 // Machine-readable twin of /tracker — tools and agents can consume the index
 // directly (the endoflife.date lesson: consumers who script against you stay).
-import { TRACKER, TRACKER_UPDATED } from './_tracker-data.js'
+import { loadTracker } from './_tracker-data.js'
 
-export function onRequestGet() {
+export async function onRequestGet() {
+  const { TRACKER, TRACKER_UPDATED } = await loadTracker()
   const body = JSON.stringify({
     site: 'https://agentinterface.app',
     updated: TRACKER_UPDATED,

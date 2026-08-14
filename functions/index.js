@@ -13,11 +13,12 @@
 // citation factor; a stale date is worse than none.
 
 import { page, SITE } from './_site.js'
-import { TRACKER, TRACKER_UPDATED } from './_tracker-data.js'
+import { loadTracker } from './_tracker-data.js'
 
 const LAST_REVIEWED = '2026-07-24'
 
 export async function onRequestGet() {
+  const { TRACKER, TRACKER_UPDATED } = await loadTracker()
   const desc = 'An agent interface is the layer where an AI agent meets everything outside the model: the controls humans use to direct it, and the protocols it uses to operate software.'
 
   const protoCards = TRACKER.filter(t => t.group === 'protocol').slice(0, 6).map(t => `
