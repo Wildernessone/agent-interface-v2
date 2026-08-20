@@ -35,3 +35,6 @@ __pycache__/
 /e2e/.auth/
 /playwright-report/
 /test-results/
+
+# wrangler build/dev cache
+.wrangler/
