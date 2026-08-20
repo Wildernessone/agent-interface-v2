@@ -12,8 +12,11 @@ export async function onRequestGet() {
     ['/tracker', '0.9', 'daily', today],
     ['/guides', '0.8', 'daily', today],
     ['/library', '0.7', 'daily', null],
-    ['/terms.html', '0.2', 'monthly', null],
-    ['/privacy.html', '0.2', 'monthly', null],
+    // Canonical paths, not the .html forms — those 308 to these, and a sitemap should never
+    // list a URL that redirects. It spends crawl budget to be told to go somewhere else, and on
+    // a domain with no authority to spare that is the whole cost for none of the benefit.
+    ['/terms', '0.2', 'monthly', null],
+    ['/privacy', '0.2', 'monthly', null],
   ]
   const urls = [
     ...core.map(([p, pr, cf, lm]) =>

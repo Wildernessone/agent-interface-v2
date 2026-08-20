@@ -1,4 +1,47 @@
+# agentinterface.app is a reference site. Its whole purpose is to be read, quoted and cited —
+# by people and by models. Everything here is open on purpose.
 User-agent: *
+Allow: /
+
+# The AI crawlers, named explicitly so there is no ambiguity and no default to fall back on.
+# ⚠ 2026-08-20: Cloudflare's MANAGED robots.txt was silently injecting a block for GPTBot,
+# ClaudeBot, CCBot, Google-Extended, Applebot-Extended, Amazonbot, Bytespider and
+# meta-externalagent — prepended above this file at the edge, invisible in the repo, on the one
+# property whose entire thesis is being cited by AI systems. It also asserted
+# Content-Signal: ai-train=no. Turned off via the zone's bot_management settings
+# (is_robots_txt_managed=false, ai_bots_protection=disabled). If blocks ever reappear in the
+# live file but not in this one, that setting has been re-enabled — check the zone, not the repo.
+User-agent: GPTBot
+Allow: /
+
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Claude-User
+Allow: /
+
+User-agent: Claude-Web
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Perplexity-User
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: Applebot-Extended
+Allow: /
+
+User-agent: CCBot
 Allow: /
 
 Sitemap: https://agentinterface.app/sitemap.xml
