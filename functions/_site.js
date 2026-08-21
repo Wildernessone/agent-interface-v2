@@ -258,7 +258,7 @@ ${noindex ? '<meta name="robots" content="noindex, follow">' : ''}
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
 ${ld.map(o => `<script type="application/ld+json">${JSON.stringify(o)}</script>`).join('\n')}
 <style>${CSS}</style>
-</head><body>
+<script src="/clarity.js" defer></script></head><body>
 <header class="site"><div class="wrap">
   <a class="wordmark" href="/">agent<span class="dot">·</span>interface</a>
   <nav class="main">${NAV.map(([href, label]) => `<a href="${href}"${active === href ? ' class="on"' : ''}>${label}</a>`).join('')}</nav>

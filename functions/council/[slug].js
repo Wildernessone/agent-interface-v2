@@ -132,7 +132,7 @@ h1{font-size:30px;line-height:1.2;letter-spacing:-.02em;margin:0 0 6px}
 .cta{background:linear-gradient(135deg,#1b2236,#141824);border:1px solid var(--bd);border-radius:14px;padding:24px;text-align:center;margin-top:36px}
 .cta a{display:inline-block;background:var(--go);color:#1a1205;font-weight:700;text-decoration:none;padding:11px 22px;border-radius:8px;margin-top:10px}
 code{background:#1b2030;padding:1px 5px;border-radius:4px}
-</style></head><body><div class="wrap">
+</style><script src="/clarity.js" defer></script></head><body><div class="wrap">
 <nav class="crumb"><a href="${SITE}/">The AI Council</a> › <a href="${SITE}/library">Library</a></nav>
 <h1>${esc(title)}</h1>
 <p class="meta">${esc(String(n))} frontier AIs answered independently, ranked each other blind, and a chairman gave one verdict.</p>
