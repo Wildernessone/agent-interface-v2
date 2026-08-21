@@ -49,7 +49,7 @@ h1{font-size:30px;letter-spacing:-.02em;margin:0 0 6px}.lede{color:var(--sub);ma
 .row .v{display:block;color:var(--sub);font-size:14px}
 .empty{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:28px;text-align:center;color:var(--sub)}
 .cta{text-align:center;margin-top:34px}.cta a{display:inline-block;background:var(--go);color:#1a1205;font-weight:700;padding:11px 22px;border-radius:8px}
-</style></head><body><div class="wrap">
+</style><script src="/clarity.js" defer></script></head><body><div class="wrap">
 <nav style="font-size:13px;color:var(--sub);margin-bottom:18px"><a href="${SITE}/">The AI Council</a> › Library</nav>
 <h1>Council Library</h1>
 <p class="lede">${esc(desc)}</p>
