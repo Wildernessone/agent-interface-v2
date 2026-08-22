@@ -1,7 +1,13 @@
 // Dynamic sitemap: core reference pages + every published guide.
 // Replaces the old static public/sitemap.xml (which is deleted) so a newly
 // auto-published article is in the sitemap the moment it flips live —
-// no deploy required. Council pages keep their own sitemap-council.xml.
+// no deploy required.
+//
+// The 26 /council/<slug> verdict pages are NOT here and must not be added: as of
+// 2026-08-22 they serve noindex,follow (see functions/council/[slug].js) because they
+// are unattributed model-generated YMYL advice and read as scaled content abuse.
+// /library stays listed — it is the crawl path that lets Google reach each verdict
+// and see the noindex. sitemap-council.xml no longer lists them either.
 import { sbRows, SITE } from './_site.js'
 
 export async function onRequestGet() {

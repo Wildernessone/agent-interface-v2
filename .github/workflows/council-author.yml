@@ -1,17 +1,33 @@
 name: Council author (daily)
 
-# Fills the AI Council SEO flywheel: runs the 3-stage council on a fresh
-# high-search-intent topic and inserts a DRAFT into council_pages. James approves
-# drafts in-app ("Publish to library") → live at /council/<slug>. NEVER publishes.
-# See docs/content-engine/council-content-engine.md.
+# ⛔ THE DAILY SCHEDULE IS OFF. Commented out 2026-08-22 — do not uncomment.
 #
-# NOTE: scheduled runs only fire from the DEFAULT branch — this is a no-op until
-# feat/council-seo-flywheel is merged to main. Use "Run workflow" (workflow_dispatch)
-# to trigger it manually once merged.
+# This ran the 3-stage AI Council on a fresh topic and inserted a generated DRAFT into
+# council_pages, every day at 18:00 UTC, on main. It fired successfully on a daily
+# cadence through 2026-07-13, then someone switched the workflow off in the GitHub UI
+# (API reports state=disabled_manually). That left the repo and the running system
+# disagreeing: GitHub said OFF, this file still said "daily", and a repo file is what
+# the next session reads. Re-enabling the workflow in the UI — or a fork, or a restored
+# repo — would have resumed daily generation with nothing in the code to say not to.
+#
+# It is off for two reasons, both standing:
+#   1. Every content engine in this portfolio is deliberately paused. This one is a
+#      GitHub Actions cron rather than a cloud routine, so the "all engines are off"
+#      check (RemoteTrigger list) never saw it.
+#   2. Its 26 outputs were withdrawn from Google on 2026-08-22 — they now serve
+#      noindex,follow, and were pulled from sitemap-council.xml, robots.txt and
+#      /feed.xml. Generating a 27th daily, on James's paid provider keys, would be
+#      spending real money to grow the exact liability that change was cleaning up.
+#      (See functions/council/[slug].js for the full reasoning.)
+#
+# workflow_dispatch is intentionally KEPT, so the flow stays runnable by hand if the
+# Council is ever revived deliberately. Reviving it means re-enabling the workflow in
+# the GitHub UI as well — this file alone does not turn it back on.
+# See docs/content-engine/council-content-engine.md.
 
 on:
-  schedule:
-    - cron: '0 18 * * *' # 18:00 UTC = 11:00 AM PT — daily while the library is small
+  # schedule:
+  #   - cron: '0 18 * * *' # 18:00 UTC = 11:00 AM PT — daily while the library is small
   workflow_dispatch:
     inputs:
       count:

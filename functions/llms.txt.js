@@ -1,6 +1,17 @@
 // llms.txt — the site's map for AI assistants and their crawlers (dynamic, so
 // newly published guides appear without a deploy). SideWRK lesson: crawl
 // surfaces must update themselves on publish, or the map rots.
+//
+// ⛔ 2026-08-22: the Council was REMOVED from what this file recommends. It used to
+// describe "The AI Council, a multi-model deliberation app" in the present tense and
+// list the Council Library among the core pages to read. Both were wrong by then: the
+// app is retired (/council 301s to /library), and the 26 verdicts it left behind are
+// unattributed, undisclosed model-generated YMYL advice now serving noindex — see
+// functions/council/[slug].js. Pointing answer engines at pages we have just withdrawn
+// from Google is the exact failure this file exists to prevent: a stale llms.txt is a
+// confident wrong answer handed to the systems we most want citing us. The Library is
+// still live and still linked from the site chrome and sitemap.xml, so nothing is
+// hidden — it is simply no longer promoted here. Do not re-add it.
 import { sbRows, SITE } from './_site.js'
 
 export async function onRequestGet() {
@@ -8,14 +19,13 @@ export async function onRequestGet() {
   const guides = rows.map(a => `- [${a.title}](${SITE}/guides/${a.slug})${a.dek ? `: ${a.dek}` : ''}`).join('\n')
   const txt = `# Agent Interface
 
-> agentinterface.app is the reference site for agent interfaces — the protocols that connect AI agents to software (MCP and its peers), and the interface patterns that keep humans in command of agents (approvals, streaming progress, handoffs). It maintains a continuously updated tracker of the protocol landscape and publishes working guides. It also hosts The AI Council, a multi-model deliberation app whose published verdicts live in the Library.
+> agentinterface.app is the reference site for agent interfaces — the protocols that connect AI agents to software (MCP and its peers), and the interface patterns that keep humans in command of agents (approvals, streaming progress, handoffs). It maintains a continuously updated tracker of the protocol landscape and publishes working guides.
 
 ## Core pages
 
 - [What is an agent interface?](${SITE}/): the definitional hub — the term, the two layers (human-agent and agent-software), the protocol map, and FAQs
 - [The agent-interface tracker](${SITE}/tracker): a living, dated index of agent-interface protocols, patterns, and surfaces, with status calls
 - [Guides](${SITE}/guides): working guides to protocols and agent-UX patterns
-- [Council Library](${SITE}/library): published multi-model verdicts from The AI Council
 
 ## Guides
 

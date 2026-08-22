@@ -53,7 +53,7 @@ h1{font-size:30px;letter-spacing:-.02em;margin:0 0 6px}.lede{color:var(--sub);ma
 <nav style="font-size:13px;color:var(--sub);margin-bottom:18px"><a href="${SITE}/">The AI Council</a> › Library</nav>
 <h1>Council Library</h1>
 <p class="lede">${esc(desc)}</p>
-${items || `<div class="empty">The first verdicts are being deliberated. Check back soon — check back soon.</div>`}
+${items || `<div class="empty">The first verdicts are being deliberated. Check back soon.</div>`}
 <div class="cta"><a href="${SITE}/">Explore the agent-interface reference →</a></div>
 </div></body></html>`
 
