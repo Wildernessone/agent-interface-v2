@@ -56,3 +56,37 @@ node --input-type=module -e "import {TRACKER,TRACKER_UPDATED} from './functions/
 ```
 
 Every entry needs at least one link, and no two entries may share an `id`.
+
+## The weekly refresh (from 2026-08-22)
+
+The daily content engine was **deleted on purpose** — it burned API credits for a tracker that
+does not change daily. There is no cron. The refresh is now a **manual in-session run**, which
+costs James's Claude plan rather than API credit, and it happens **weekly**, not daily.
+
+⛔ **The tracker went stale between 2026-08-13 and 2026-08-22** because the engine was removed and
+nothing replaced it. If the newest file in `functions/_tracker/` is more than ~10 days old, that is
+the first thing to fix.
+
+**Why weekly and not daily:** a living document earns re-crawls, but only if the changes are real.
+Bumping a date without a substantive change is the cosmetic-freshness pattern search engines
+discount, and scaled daily publishing on a low-authority domain is what cost SideWRK its
+impressions in the June core update. Change what actually changed; leave the rest alone.
+
+**Run it by fetching primary sources directly, not by searching.** WebSearch has a per-session cap
+(200) that is easy to exhaust; WebFetch does not share it, and a spec's own changelog beats a search
+result anyway. The standing source list — check each for anything dated since the newest changeset:
+
+- MCP spec + changelog — `modelcontextprotocol.io`, and the spec repo's releases
+- OpenAI Apps SDK / Agent Plugins — `developers.openai.com/apps-sdk`
+- A2A (Agent2Agent) — its spec repo releases
+- LangGraph / CrewAI / AutoGen — release notes, for the framework-side entries
+- Anything already in `_tracker/*.js` `links[]` — those are the pages that go stale
+
+**A run ADDS `functions/_tracker/YYYY-MM-DD-<slug>.js` and never edits an existing changeset.**
+`_tracker-data.js` is the aggregator that folds them; `TRACKER_UPDATED` is derived, never typed.
+An entry that is unchanged does not need a changeset — silence is a valid weekly result, and
+saying "nothing moved this week" is more credible than inventing movement.
+
+⭐ **The graveyard is the moat.** A protocol that died, got folded into something else, or quietly
+stopped shipping is the entry nobody else maintains. Status changes (`rising` → `stalled` → dead)
+are worth more than new rows.

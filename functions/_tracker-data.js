@@ -38,12 +38,14 @@
 import * as baseline_2026_08_10 from './_tracker/2026-08-10-baseline.js'
 import * as mcp_apps_2026_08_11 from './_tracker/2026-08-11-mcp-apps.js'
 import * as openai_apps_to_plugins_2026_08_13 from './_tracker/2026-08-13-openai-apps-to-plugins.js'
+import * as agent_plugins_2026_08_22 from './_tracker/2026-08-22-agent-plugins-1-1-draft.js'
 
 // Oldest first. Append new changesets at the end.
 const CHANGESETS = [
   baseline_2026_08_10,
   mcp_apps_2026_08_11,
   openai_apps_to_plugins_2026_08_13,
+  agent_plugins_2026_08_22,
 ]
 
 function fold(changesets) {
