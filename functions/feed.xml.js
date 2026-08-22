@@ -1,67 +1,54 @@
-// Editorial RSS feed of published AI Council verdicts at /feed.xml. Connect this in
-// MSN Partner Hub so the council content engine flows into Microsoft Start / the
-// Windows widgets feed. Full content + ~30 freshest items. Public values only
-// (publishable key, RLS-gated to status='published').
+// ⛔ THIS FEED NO LONGER SYNDICATES THE COUNCIL VERDICTS. Changed 2026-08-22.
+//
+// It used to emit every published /council/<slug> — all 26 of them — as RSS items
+// carrying the FULL verdict body in <content:encoded>. That made it the widest of the
+// three submission surfaces for those pages, and it was missed when the other two were
+// cleaned up the same day:
+//   1. sitemap-council.xml   — verdict URLs dropped
+//   2. robots.txt            — the Sitemap: line for it removed
+//   3. THIS FILE             — was still shipping all 26 URLs and all 26 bodies
+//
+// Why a feed counts as a submission surface, not just a convenience: Google accepts an
+// RSS/Atom feed as a sitemap format and discovers URLs from feeds, so leaving the items
+// here re-submitted exactly the URLs that had just been withdrawn everywhere else. And
+// unlike a sitemap, a feed carries the whole text — the header of this file used to say
+// "connect this in MSN Partner Hub so the council content engine flows into Microsoft
+// Start", which is a plan to republish that text on third-party surfaces. A noindex on
+// our own URL does nothing about a syndicated copy living somewhere else.
+//
+// What the pages are: leftovers from the retired Council feature, written end-to-end by
+// language models, no named author, no disclosure that they were generated, advising on
+// YMYL subjects (Roth IRAs, whole life insurance, mortgages, heat pumps). That is the
+// shape Google's spam policy names as scaled content abuse. ~114 impressions and ZERO
+// clicks in 28 days, on the one domain in this portfolio whose asset IS its authority.
+//
+// The pages themselves are still LIVE and still reachable — from /library, and directly.
+// This is deliberately NOT a deletion: Google names "removing a lot of older content
+// primarily because you believe it will help your search rankings" as a warning sign.
+// They serve <meta name="robots" content="noindex, follow"> instead — see
+// functions/council/[slug].js, which carries the full reasoning.
+//
+// The route is kept alive, rather than deleted, for the same reason sitemap-council.xml
+// was: any consumer already subscribed keeps fetching a valid 200 instead of erroring.
+// It emits a well-formed, item-less channel pointing at /library.
+//
+// ⛔ Do not re-add the items. If you ever do, you must also strip the noindex meta and
+// re-add the sitemap — and you should not do any of the three.
+//
+// The guides feed at /guides-feed.xml is a separate, unaffected route and is the one
+// linked from every page's <head>. Real editorial content belongs there, not here.
 
-const SUPABASE_URL = 'https://oqbpuspnmznqxgkmyzyb.supabase.co'
-const PUB_KEY = 'sb_publishable_hbloUBTnVl7-2kSMtCbu8A_lfzoId9Z'
 const SITE = 'https://agentinterface.app'
 
-const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }[c]))
-const cdata = (s) => `<![CDATA[${String(s || '').replace(/]]>/g, ']]&gt;')}]]>`
-
-// Compact, safe Markdown -> HTML for the feed body (headings, lists, bold/italic, links).
-function mdToHtml(md) {
-  const inline = (s) => esc(s)
-    .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, t, h) => /^https?:\/\//.test(h) ? `<a href="${h}">${t}</a>` : t)
-    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-    .replace(/(^|[^*])\*([^*]+)\*/g, '$1<em>$2</em>')
-  const lines = String(md || '').replace(/\r\n/g, '\n').split('\n')
-  const out = []; let inList = false
-  const closeList = () => { if (inList) { out.push('</ul>'); inList = false } }
-  for (const raw of lines) {
-    const ln = raw.trim()
-    if (!ln) { closeList(); continue }
-    let m
-    if ((m = ln.match(/^(#{1,6})\s+(.*)$/))) { closeList(); const lvl = Math.min(m[1].length + 1, 6); out.push(`<h${lvl}>${inline(m[2])}</h${lvl}>`); continue }
-    if ((m = ln.match(/^[-*]\s+(.*)$/))) { if (!inList) { out.push('<ul>'); inList = true } out.push(`<li>${inline(m[1])}</li>`); continue }
-    closeList(); out.push(`<p>${inline(ln)}</p>`)
-  }
-  closeList()
-  return out.join('\n')
-}
-
 export async function onRequest() {
-  let rows = []
-  try {
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/council_pages?status=eq.published&select=slug,question,verdict,topic,published_at,updated_at&order=published_at.desc&limit=30`,
-      { headers: { apikey: PUB_KEY, Authorization: 'Bearer ' + PUB_KEY } })
-    if (r.ok) { const d = await r.json(); if (Array.isArray(d)) rows = d }
-  } catch (_e) { /* emit an empty-but-valid feed */ }
-
-  const items = rows.map((a) => {
-    const link = `${SITE}/council/${a.slug}`
-    const pub = a.published_at ? new Date(a.published_at).toUTCString() : ''
-    return `  <item>
-    <title>${esc(a.question)}</title>
-    <link>${esc(link)}</link>
-    <guid isPermaLink="true">${esc(link)}</guid>
-    ${pub ? `<pubDate>${pub}</pubDate>` : ''}
-    <dc:creator>The AI Council</dc:creator>
-    ${a.topic ? `<category>${esc(a.topic)}</category>` : ''}
-    <content:encoded>${cdata(mdToHtml(a.verdict))}</content:encoded>
-  </item>`
-  }).join('\n')
-
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/" xmlns:dc="http://purl.org/dc/elements/1.1/">
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
 <channel>
   <title>Agent Interface — The AI Council</title>
   <link>${SITE}/library</link>
-  <description>Multiple AIs debate a question; the chairman delivers a cited verdict.</description>
+  <description>The AI Council is retired. Its published verdicts remain readable in the Library; they are no longer syndicated.</description>
   <language>en-us</language>
   <atom:link href="${SITE}/feed.xml" rel="self" type="application/rss+xml"/>
-${items}
 </channel>
 </rss>`
 

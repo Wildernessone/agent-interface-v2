@@ -1,11 +1,44 @@
 // SSR a single published council verdict at /council/<slug>, from council_pages
 // (status='published' only, RLS-gated). Full standalone HTML (NOT the SPA shell)
-// in the AI Council dark theme, with SEO meta + QAPage/Article JSON-LD — this IS
-// the SEO flywheel: every published verdict becomes a page that targets the exact
-// question people search. Values below are PUBLIC (publishable key, read-only).
+// in the AI Council dark theme. It was built as an SEO flywheel — every verdict a page
+// targeting the exact question people search. ⛔ That is NO LONGER what this route is
+// for: as of 2026-08-22 it serves noindex (see the block below). Values below are
+// PUBLIC (publishable key, read-only).
 //
 // NOTE: /council (exact) is still the authed SPA app route; this Function only
 // matches /council/<slug>, so they don't collide.
+
+// ⛔ NOINDEX — DO NOT REVERSE THIS WITHOUT READING WHY. Set 2026-08-22.
+// These 26 verdict pages are leftovers from the retired Council feature. They were
+// written end-to-end by language models, carry no named author, carry no disclosure
+// that they were generated, and hand out advice on YMYL subjects — Roth IRAs, whole
+// life insurance, mortgages, heat pumps — with no claimed expertise behind it. That
+// is the shape Google's spam policy names as scaled content abuse: "using generative
+// AI tools or other similar tools to generate many pages without adding value for
+// users." In 28 days they earned ~114 impressions and ZERO clicks, while this domain's
+// hub ranks at position ~20 and is the only property in the portfolio with real
+// authority — authority IS the asset here, so 26 unattributed generated pages are a
+// liability priced far above the traffic they return.
+//
+// The pages stay LIVE and reachable on purpose. Deleting them is the WORSE move:
+// Google explicitly names "removing a lot of older content primarily because you
+// believe it will help your search rankings" as a warning sign, and a sibling property
+// already churned 103 URLs days before an update. So: noindex, keep serving.
+//
+// "follow", not "nofollow" — their outbound links should still pass equity.
+//
+// THREE submission surfaces were withdrawn on the same date — all three have to stay
+// withdrawn together, or the noindex is arguing with something else we publish:
+//   1. functions/sitemap-council.xml.js — the verdict URLs were dropped
+//   2. public/robots.txt              — the Sitemap: line for that sitemap was removed
+//   3. functions/feed.xml.js          — the RSS feed was still emitting all 26 URLs AND
+//                                       all 26 full verdict bodies; it now emits none.
+//      (Google accepts an RSS/Atom feed as a sitemap format, so a feed is a submission
+//      surface, not just a convenience — and a feed carries the whole text, which a
+//      noindex on our URL cannot follow into a syndicated copy elsewhere.)
+// Also on the same date: /library was dropped from llms.txt's recommended pages, and
+// the daily council-author GitHub Actions cron was commented out so no 27th page gets
+// generated. If you re-index these, you must undo all of that — and you should not.
 
 const SUPABASE_URL = 'https://oqbpuspnmznqxgkmyzyb.supabase.co'
 const PUB_KEY = 'sb_publishable_hbloUBTnVl7-2kSMtCbu8A_lfzoId9Z'
@@ -109,6 +142,7 @@ export async function onRequest(context) {
 <title>${esc(title)} — The AI Council</title>
 <meta name="description" content="${esc(desc)}">
 <link rel="canonical" href="${url}">
+<meta name="robots" content="noindex, follow">
 <meta property="og:type" content="article"><meta property="og:title" content="${esc(title)}">
 <meta property="og:description" content="${esc(desc)}"><meta property="og:url" content="${url}">
 <meta property="og:image" content="${esc(ogimg)}"><meta property="og:site_name" content="The AI Council">

@@ -1,31 +1,35 @@
-// Dynamic sitemap of the Council Library: /library + every published verdict.
-// Served at /sitemap-council.xml (referenced from robots.txt). Lets Google
-// discover new SEO pages the moment they're approved — no redeploy.
+// ⛔ THIS SITEMAP NO LONGER LISTS THE COUNCIL VERDICTS. Changed 2026-08-22.
+//
+// It used to enumerate every published /council/<slug> — 26 pages written end-to-end
+// by language models, unattributed, undisclosed, advising on YMYL subjects (Roth IRAs,
+// whole life insurance, mortgages, heat pumps). Submitting those to Google is the
+// "scaled content abuse" shape: "using generative AI tools or other similar tools to
+// generate many pages without adding value for users." They returned ~114 impressions
+// and ZERO clicks in 28 days, on the one domain in the portfolio whose asset IS its
+// authority. So the pages now serve <meta name="robots" content="noindex, follow">
+// (see functions/council/[slug].js) and they are no longer submitted here.
+//
+// The pages are still LIVE and still reachable — from /library and directly. (/feed.xml
+// used to list them too; it was cleaned up on 2026-08-22 as well and no longer does.)
+// This is deliberately NOT a deletion: Google names "removing a lot of older
+// content primarily because you believe it will help your search rankings" as a warning
+// sign. /library is linked from the site chrome and sits in the main sitemap.xml, so
+// Google keeps a crawl path to each verdict and will see the noindex.
+//
+// The route is kept alive, rather than deleted, so that a copy of this sitemap already
+// submitted in Search Console keeps fetching 200 instead of erroring. It emits only
+// /library. The `Sitemap:` line for it was removed from robots.txt in the same change,
+// because /library is already listed in sitemap.xml and nothing unique remains here.
+//
+// If you re-add the verdict URLs you must also strip the noindex meta — and you should
+// not do either.
 
-const SUPABASE_URL = 'https://oqbpuspnmznqxgkmyzyb.supabase.co'
-const PUB_KEY = 'sb_publishable_hbloUBTnVl7-2kSMtCbu8A_lfzoId9Z'
 const SITE = 'https://agentinterface.app'
 
-const esc = v => String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }[c]))
-
 export async function onRequest() {
-  let rows = []
-  try {
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/council_pages?status=eq.published&select=slug,published_at,updated_at&order=published_at.desc&limit=5000`, {
-      headers: { apikey: PUB_KEY, Authorization: `Bearer ${PUB_KEY}` },
-    })
-    if (r.ok) rows = await r.json()
-  } catch { /* still emit the library URL */ }
-
-  const urls = [`<url><loc>${SITE}/library</loc><changefreq>daily</changefreq></url>`]
-  for (const a of rows || []) {
-    const lastmod = (a.updated_at || a.published_at || '').slice(0, 10)
-    urls.push(`<url><loc>${SITE}/council/${esc(a.slug)}</loc>${lastmod ? `<lastmod>${lastmod}</lastmod>` : ''}<changefreq>monthly</changefreq></url>`)
-  }
-
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${urls.join('\n')}
+<url><loc>${SITE}/library</loc><changefreq>daily</changefreq></url>
 </urlset>`
   return new Response(xml, { headers: { 'content-type': 'application/xml; charset=utf-8', 'cache-control': 'public, max-age=600, s-maxage=3600' } })
 }

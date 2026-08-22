@@ -45,4 +45,14 @@ User-agent: CCBot
 Allow: /
 
 Sitemap: https://agentinterface.app/sitemap.xml
-Sitemap: https://agentinterface.app/sitemap-council.xml
+
+# ⛔ 2026-08-22: the sitemap-council.xml reference was REMOVED, on purpose.
+# It listed 26 /council/<slug> verdict pages left over from the retired Council
+# feature — generated end-to-end by language models, no named author, no disclosure
+# that they were generated, advising on YMYL subjects (Roth IRAs, whole life
+# insurance, mortgages, heat pumps). That is Google's scaled-content-abuse shape,
+# and they returned ~114 impressions and ZERO clicks in 28 days on the one domain
+# whose whole asset is its authority. Those pages now serve
+# <meta name="robots" content="noindex, follow"> and are no longer submitted.
+# They are still LIVE and still linked from /library (which IS in sitemap.xml), so
+# Google keeps a crawl path and will see the noindex. Do not re-add this line.
