@@ -60,7 +60,16 @@ function fold(changesets) {
       if (!entry || !entry.id) continue
       if (entry.status === 'removed') { byId.delete(entry.id); continue }
       if (!byId.has(entry.id)) order.push(entry.id)
-      byId.set(entry.id, entry)
+      // Stamp the entry with the date IT was last written, unless it carries its own.
+      // The row template renders `t.checked || TRACKER_UPDATED`, and nothing ever set
+      // the per-entry field — so every row inherited the NEWEST changeset's date. On
+      // 2026-08-22 a run that verified three entries, and said so plainly in its own
+      // header, made all 28 rows read "checked 2026-08-22". Claiming a check we did
+      // not perform is the one thing this page cannot afford. A date that lags is
+      // safe; a date that overstates is not. So: a run that re-verifies an entry
+      // without changing it should still re-state it in a changeset — that restatement
+      // is what moves the date, and it is the only thing that should.
+      byId.set(entry.id, entry.checked ? entry : { ...entry, checked: cs.checked })
     }
   }
   return { entries: order.map(id => byId.get(id)).filter(Boolean), newest }

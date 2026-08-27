@@ -34,7 +34,12 @@ graveyard is the whole point of this page.
 **Never type `TRACKER_UPDATED`.** It is derived from the newest published `checked`.
 
 The files in `functions/_tracker/` are the frozen historical baseline (last repo changeset:
-2026-08-13). They still fold first; do not delete them, and do not add to them.
+2026-08-22). They still fold first; do not delete them, and do not add to them.
+
+⚠ The 2026-08-22 changeset is a FILE because the weekly-refresh section below still described
+the retired file flow, and that run followed it. The two halves of this document contradicted
+each other for ten days. The DB row is the flow; the file is the exception that should not
+recur.
 
 ## Entry rules — these are why anyone trusts this page
 
@@ -82,10 +87,17 @@ result anyway. The standing source list — check each for anything dated since 
 - LangGraph / CrewAI / AutoGen — release notes, for the framework-side entries
 - Anything already in `_tracker/*.js` `links[]` — those are the pages that go stale
 
-**A run ADDS `functions/_tracker/YYYY-MM-DD-<slug>.js` and never edits an existing changeset.**
-`_tracker-data.js` is the aggregator that folds them; `TRACKER_UPDATED` is derived, never typed.
-An entry that is unchanged does not need a changeset — silence is a valid weekly result, and
-saying "nothing moved this week" is more credible than inventing movement.
+**A run INSERTs one row into `tracker_changesets`** — see the top of this file. It does not add
+a file to `functions/_tracker/` and does not open a PR. `TRACKER_UPDATED` is derived, never typed.
+Silence is a valid weekly result: saying "nothing moved this week" is more credible than
+inventing movement.
+
+⭐ **But re-verifying an entry is not silence — re-state it.** Each entry renders its OWN
+`checked` date, stamped by `fold()` from the changeset that last wrote it. So an entry you
+checked and found accurate keeps its old date unless you include it in the changeset row
+unchanged. That restatement is the only thing that moves a row's date, which is exactly the
+point: the date has to be earned. Never hand-write a `checked` field onto an entry for a
+check you did not perform.
 
 ⭐ **The graveyard is the moat.** A protocol that died, got folded into something else, or quietly
 stopped shipping is the entry nobody else maintains. Status changes (`rising` → `stalled` → dead)
