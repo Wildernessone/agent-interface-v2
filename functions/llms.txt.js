@@ -27,6 +27,14 @@ export async function onRequestGet() {
 - [The agent-interface tracker](${SITE}/tracker): a living, dated index of agent-interface protocols, patterns, and surfaces, with status calls
 - [Guides](${SITE}/guides): working guides to protocols and agent-UX patterns
 
+## For agents
+
+This site speaks MCP. The tracker is available as callable tools, not just as a page — add
+\`${SITE}/mcp\` as a custom connector (Streamable HTTP, JSON-RPC over POST) in Claude,
+ChatGPT, Perplexity, Grok or Mistral. Tools: \`list_agent_protocols\`, \`get_agent_protocol\`,
+\`search_agent_protocols\`. Read-only; facts are facts and the editorial calls are CC BY 4.0
+with attribution to agentinterface.app. The same data is at \`${SITE}/tracker.json\`.
+
 ## Guides
 
 ${guides || '- First guides publishing soon.'}
