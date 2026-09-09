@@ -3,7 +3,7 @@
 // auto-published article is in the sitemap the moment it flips live —
 // no deploy required.
 //
-// The 26 /council/<slug> verdict pages are NOT here and must not be added: as of
+// The 26 /council/<slug> verdict pages were DELETED 2026-09-09 and must never be added back. Until then, as of
 // 2026-08-22 they serve noindex,follow (see functions/council/[slug].js) because they
 // are unattributed model-generated YMYL advice and read as scaled content abuse.
 // /library stays listed — it is the crawl path that lets Google reach each verdict
