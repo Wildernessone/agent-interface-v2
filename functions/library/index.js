@@ -1,61 +1,44 @@
-// SSR the public Council Library index at /library — lists every published
-// council verdict (council_pages, status='published'). The hub that links the
-// SEO flywheel pages together. Public read (publishable key, RLS-gated).
-
-const SUPABASE_URL = 'https://oqbpuspnmznqxgkmyzyb.supabase.co'
-const PUB_KEY = 'sb_publishable_hbloUBTnVl7-2kSMtCbu8A_lfzoId9Z'
+/* /library — the Council Library, retired 2026-09-09.
+ *
+ * This route existed for one job: to index the published council verdicts at /council/<slug>. Those
+ * pages are gone (James's call, this date), so there is nothing left to list.
+ *
+ * ⛔ IT STILL ANSWERS 200 ON PURPOSE. /library is in the site chrome, in sitemap.xml and linked from
+ *    404.html; a hard 404 here would break a nav link and a bookmark to explain a deletion. What it
+ *    must NOT do is keep pretending: the old page carried CollectionPage JSON-LD calling itself "The
+ *    AI Council — Library" and an empty state reading "The first verdicts are being deliberated.
+ *    Check back soon." With the verdicts deleted, both of those became false — the first to every
+ *    model that reads the markup, the second to every person who read the page.
+ *
+ * ⛔ No Supabase call. Leaving the fetch in would re-list the rows the moment one was republished,
+ *    which is exactly the "soft noindex forever" shape this deletion exists to end.
+ * ⛔ noindex: a retirement notice is not a page anybody should find in search.
+ */
 const SITE = 'https://agentinterface.app'
 
-const esc = v => String(v == null ? '' : v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
-const plain = s => String(s || '').replace(/[#*`_>]/g, '').replace(/\s+/g, ' ').trim()
-
 export async function onRequest() {
-  let rows = []
-  try {
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/council_pages?status=eq.published&select=slug,question,verdict,topic,published_at&order=published_at.desc&limit=500`, {
-      headers: { apikey: PUB_KEY, Authorization: `Bearer ${PUB_KEY}` },
-    })
-    if (r.ok) rows = await r.json()
-  } catch { /* render empty state */ }
-
-  const items = (rows || []).map(a => `
-    <a class="row" href="${SITE}/council/${esc(a.slug)}">
-      <span class="q">${esc(plain(a.question))}</span>
-      <span class="v">${esc(plain(a.verdict).slice(0, 120))}…</span>
-    </a>`).join('\n')
-
-  const desc = 'Real decisions, settled by five frontier AIs. Each answers independently, ranks the others blind, and a chairman hands down one verdict — read it or hear it.'
-  const jsonld = {
-    '@context': 'https://schema.org', '@type': 'CollectionPage',
-    name: 'The AI Council — Library', url: `${SITE}/library`, description: desc,
-  }
-
   const html = `<!doctype html><html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Council Library — five AIs settle real decisions | The AI Council</title>
-<meta name="description" content="${esc(desc)}">
+<title>Council Library — retired | The AI Council</title>
+<meta name="robots" content="noindex,follow">
+<meta name="description" content="The Council Library has been retired.">
 <link rel="canonical" href="${SITE}/library">
-<meta property="og:title" content="The AI Council — Library"><meta property="og:description" content="${esc(desc)}">
-<meta property="og:url" content="${SITE}/library"><meta property="og:image" content="${SITE}/og-image.png">
-<meta name="twitter:card" content="summary_large_image">
-<script type="application/ld+json">${JSON.stringify(jsonld)}</script>
 <style>
 :root{--bg:#0c0e14;--card:#141824;--bd:#262c3d;--tx:#e7e9ee;--sub:#a3aabb;--ac:#8ab4ff;--go:#ffb454}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.6 system-ui,-apple-system,Segoe UI,sans-serif}
-.wrap{max-width:760px;margin:0 auto;padding:36px 20px 80px}a{color:var(--ac);text-decoration:none}
-h1{font-size:30px;letter-spacing:-.02em;margin:0 0 6px}.lede{color:var(--sub);margin:0 0 26px}
-.row{display:block;background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px 18px;margin-bottom:12px}
-.row:hover{border-color:var(--ac)}.row .q{display:block;font-weight:650;color:var(--tx);margin-bottom:4px}
-.row .v{display:block;color:var(--sub);font-size:14px}
-.empty{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:28px;text-align:center;color:var(--sub)}
-.cta{text-align:center;margin-top:34px}.cta a{display:inline-block;background:var(--go);color:#1a1205;font-weight:700;padding:11px 22px;border-radius:8px}
-</style><script src="/clarity.js" defer></script><script src="/ga.js" defer></script></head><body><div class="wrap">
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.6 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+.wrap{max-width:640px;margin:0 auto;padding:56px 20px 80px}a{color:var(--ac);text-decoration:none}
+h1{font-size:28px;letter-spacing:-.02em;margin:0 0 10px}
+p{color:var(--sub);margin:0 0 16px}
+.cta{margin-top:30px}.cta a{display:inline-block;background:var(--go);color:#1a1205;font-weight:700;padding:12px 18px;border-radius:10px}
+</style></head><body><div class="wrap">
 <nav style="font-size:13px;color:var(--sub);margin-bottom:18px"><a href="${SITE}/">The AI Council</a> › Library</nav>
-<h1>Council Library</h1>
-<p class="lede">${esc(desc)}</p>
-${items || `<div class="empty">The first verdicts are being deliberated. Check back soon.</div>`}
-<div class="cta"><a href="${SITE}/">Explore the agent-interface reference →</a></div>
+<h1>The Council Library has been retired</h1>
+<p>It collected verdicts written by a panel of models on questions well outside what this site is for — retirement accounts, mortgages, insurance. They carried no named author, and they are gone rather than hidden.</p>
+<p>What this site is actually about is agent interfaces: what they are, which ones exist, and which ones stopped existing.</p>
+<div class="cta"><a href="${SITE}/">Go to the agent-interface reference →</a></div>
 </div></body></html>`
 
-  return new Response(html, { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'public, max-age=300, s-maxage=1800' } })
+  return new Response(html, {
+    headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'public, max-age=3600' },
+  })
 }

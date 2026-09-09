@@ -290,7 +290,7 @@ ${faq.map(([q, a]) => `<details><summary>${q}</summary><div class="a">${a}</div>
 </div>
 
 <hr>
-<p style="color:var(--dim);font-size:14px">Also on this domain: the <a href="/library">Library</a> — an archive of published verdicts from The AI Council, an earlier experiment here in which four frontier models argued real questions and handed down one verdict. It stays up because the deliberations are still worth reading.</p>
+<p style="color:var(--dim);font-size:14px">This domain once ran The AI Council, an experiment in which four frontier models argued a question and handed down one verdict. Its pages have been retired — the questions drifted well outside what this site is for, and they carried no named author. The site is the agent-interface reference now.</p>
 `
 
   return page({

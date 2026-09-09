@@ -5,7 +5,7 @@
 // ⛔ 2026-08-22: the Council was REMOVED from what this file recommends. It used to
 // describe "The AI Council, a multi-model deliberation app" in the present tense and
 // list the Council Library among the core pages to read. Both were wrong by then: the
-// app is retired (/council 301s to /library), and the 26 verdicts it left behind are
+// app is retired (/council 301s to /library), and the 26 verdicts it left behind were DELETED 2026-09-09 (they are
 // unattributed, undisclosed model-generated YMYL advice now serving noindex — see
 // functions/council/[slug].js. Pointing answer engines at pages we have just withdrawn
 // from Google is the exact failure this file exists to prevent: a stale llms.txt is a
