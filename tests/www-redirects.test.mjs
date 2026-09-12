@@ -10,7 +10,12 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
 const src = readFileSync('functions/_middleware.js', 'utf8')
-const m = src.match(/if \(url\.hostname === '[^']+'\) \{[\s\S]*?\n {2}\}/)
+/* ⚠ SHAPE-AGNOSTIC EXTRACTION, ON PURPOSE. The first version required `===`, so a mutation to
+   startsWith('www.') failed at EXTRACTION ("branch is missing") instead of at the exact-match
+   assertion below — red either way, but by the wrong mechanism, and a guard that works by accident
+   is one refactor away from not working. This matches any hostname test so the assertions that
+   follow are the ones doing the work. */
+const m = src.match(/if \(url\.hostname[\s\S]*?\) \{[\s\S]*?\n {2}\}/)
 assert.ok(m, 'the www redirect branch is missing from the middleware')
 const branch = m[0]
 
