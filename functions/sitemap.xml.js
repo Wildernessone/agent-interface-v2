@@ -3,11 +3,16 @@
 // auto-published article is in the sitemap the moment it flips live —
 // no deploy required.
 //
-// The 26 /council/<slug> verdict pages were DELETED 2026-09-09 and must never be added back. Until then, as of
-// 2026-08-22 they serve noindex,follow (see functions/council/[slug].js) because they
-// are unattributed model-generated YMYL advice and read as scaled content abuse.
-// /library stays listed — it is the crawl path that lets Google reach each verdict
-// and see the noindex. sitemap-council.xml no longer lists them either.
+// The 26 /council/<slug> verdict pages were DELETED 2026-09-09 and must never be added back. They
+// were unattributed model-generated YMYL advice and read as scaled content abuse.
+//
+// ⛔ /library IS NO LONGER LISTED (2026-09-12), and the reason it USED to be is now dead. It was
+// kept as the crawl path that let Google reach each verdict and see its noindex — but the verdicts
+// are gone: /library serves ZERO /council links, every /council/<slug> is 404, and the page's own
+// title is "Council Library — retired". There is nothing behind it to crawl, and listing a
+// noindex,follow tombstone only asks Google to spend budget being told not to index it.
+// ⭐ The page STAYS noindex and STAYS live — this removes the sitemap entry, nothing else. Lifting
+// the noindex on a hold/authority site is a separate strategy decision, not sitemap hygiene.
 import { sbRows, SITE } from './_site.js'
 
 export async function onRequest() {
@@ -17,7 +22,6 @@ export async function onRequest() {
     ['/', '1.0', 'weekly', today],
     ['/tracker', '0.9', 'daily', today],
     ['/guides', '0.8', 'daily', today],
-    ['/library', '0.7', 'daily', null],
     // Canonical paths, not the .html forms — those 308 to these, and a sitemap should never
     // list a URL that redirects. It spends crawl budget to be told to go somewhere else, and on
     // a domain with no authority to spare that is the whole cost for none of the benefit.
