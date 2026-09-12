@@ -20,7 +20,20 @@ const STATUS_KEY = {
   dead: 'Dead — merged, deprecated, or dormant',
 }
 
-export async function onRequestGet() {
+/* ⛔ `onRequest`, NEVER `onRequestGet` — AND THIS IS NOT A STYLE CHOICE (2026-09-12).
+   Every function in this project that exported a METHOD-SPECIFIC handler returned 404 in
+   production: /tracker, /guides, /guides/<slug>, /sitemap.xml, /llms.txt, /tracker.json and
+   /guides-feed.xml. The three that exported bare `onRequest` — library, feed.xml, mcp — all served
+   normally. 8 of 8 correlation, and /mcp answering 405 proved the runtime itself was fine.
+   Proven, not guessed: a preview deploy with ONLY this one file renamed brought /tracker back to
+   200 with real content while /guides and /sitemap.xml, still method-specific, stayed 404.
+   ⚠ WHY method-specific handlers stopped routing here is NOT established — the bundle compiles
+   cleanly and contains the route. It reproduces on a freshly built deploy from unchanged main and
+   on the PREVIOUS production deploy, so it is not a stale build and #149 did not cause it.
+   ⚠ Behaviour change, stated plainly: these routes now accept any method rather than 405ing on
+   non-GET. That matches what library/feed/mcp already did, so it is the house convention, not a
+   new one. tests/handlers-route.test.mjs fails the build if a method-specific export returns. */
+export async function onRequest() {
   const { TRACKER, TRACKER_UPDATED } = await loadTracker()
   const desc = 'A living, dated index of agent-interface protocols, patterns, and surfaces — status calls with sources, reviewed continuously.'
 

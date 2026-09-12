@@ -2,7 +2,7 @@
 // directly (the endoflife.date lesson: consumers who script against you stay).
 import { loadTracker } from './_tracker-data.js'
 
-export async function onRequestGet() {
+export async function onRequest() {
   const { TRACKER, TRACKER_UPDATED } = await loadTracker()
   const body = JSON.stringify({
     site: 'https://agentinterface.app',

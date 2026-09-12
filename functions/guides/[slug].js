@@ -1,7 +1,7 @@
 // /guides/<slug> — one published article, SSR with Article JSON-LD.
 import { page, esc, plain, mdToHtml, sbRows, SITE } from '../_site.js'
 
-export async function onRequestGet(context) {
+export async function onRequest(context) {
   const slug = String(context.params.slug || '').toLowerCase()
   if (!/^[a-z0-9-]{3,120}$/.test(slug)) return miss()
   const rows = await sbRows(`articles?status=eq.published&slug=eq.${encodeURIComponent(slug)}&select=slug,title,dek,body_md,hero_image,tags,published_at,updated_at&limit=1`)

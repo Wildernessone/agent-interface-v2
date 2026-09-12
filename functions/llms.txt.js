@@ -14,7 +14,7 @@
 // hidden — it is simply no longer promoted here. Do not re-add it.
 import { sbRows, SITE } from './_site.js'
 
-export async function onRequestGet() {
+export async function onRequest() {
   const rows = await sbRows('articles?status=eq.published&select=slug,title,dek&order=published_at.desc&limit=100')
   const guides = rows.map(a => `- [${a.title}](${SITE}/guides/${a.slug})${a.dek ? `: ${a.dek}` : ''}`).join('\n')
   const txt = `# Agent Interface
