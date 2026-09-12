@@ -1,7 +1,7 @@
 // /guides — index of published articles (SSR from Supabase `articles`).
 import { page, esc, sbRows, SITE } from '../_site.js'
 
-export async function onRequestGet() {
+export async function onRequest() {
   const rows = await sbRows('articles?status=eq.published&select=slug,title,dek,tags,published_at&order=published_at.desc&limit=200')
   const items = rows.map(a => `
     <a class="card" href="/guides/${esc(a.slug)}">

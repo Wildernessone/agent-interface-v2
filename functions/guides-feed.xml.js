@@ -1,7 +1,7 @@
 // RSS feed of published guides (linked from every page's <head>).
 import { esc, plain, sbRows, SITE } from './_site.js'
 
-export async function onRequestGet() {
+export async function onRequest() {
   const rows = await sbRows('articles?status=eq.published&select=slug,title,dek,body_md,published_at&order=published_at.desc&limit=50')
   const items = rows.map(a => `
   <item>

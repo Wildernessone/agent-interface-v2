@@ -10,7 +10,7 @@
 // and see the noindex. sitemap-council.xml no longer lists them either.
 import { sbRows, SITE } from './_site.js'
 
-export async function onRequestGet() {
+export async function onRequest() {
   const rows = await sbRows('articles?status=eq.published&select=slug,published_at,updated_at&order=published_at.desc&limit=500')
   const today = new Date().toISOString().slice(0, 10)
   const core = [

@@ -17,7 +17,7 @@ import { loadTracker } from './_tracker-data.js'
 
 const LAST_REVIEWED = '2026-07-24'
 
-export async function onRequestGet() {
+export async function onRequest() {
   const { TRACKER, TRACKER_UPDATED } = await loadTracker()
   const desc = 'An agent interface is the layer where an AI agent meets everything outside the model: the controls humans use to direct it, and the protocols it uses to operate software.'
 
