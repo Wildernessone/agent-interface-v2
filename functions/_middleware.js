@@ -72,6 +72,24 @@ const log = (context, table, row) => context.waitUntil(
 export async function onRequest (context) {
   const { request } = context
   const url = new URL(request.url)
+  /* ⭐ www → apex, 301. www.agentinterface.app served a full 200 COPY of the site (measured
+     2026-09-12) while the canonical tag pointed at the apex, so GA fired on both hosts and every
+     www URL was an indexable duplicate. The other four portfolio sites already 301 www → apex.
+     ⭐ WHY HERE AND NOT A CLOUDFLARE REDIRECT RULE: a zone Redirect Rule is the usual home for this,
+     but www.agentinterface.app is a Pages CUSTOM DOMAIN on this project, so Functions already run on
+     it and middleware can answer before anything else does. That also keeps the rule in version
+     control and reviewable, rather than living only in a dashboard nobody diffs.
+     ⛔ EXACT HOST MATCH, deliberately. A prefix test on 'www.' would also catch preview hosts, and
+     agent-interface-v2.pages.dev and the per-deployment URLs must keep serving so a preview can be
+     walked. Only this one hostname redirects.
+     ⭐ Placed BEFORE the AI-crawler logging on purpose: a redirect is not a pageview, and counting it
+     as one would inflate the very stats this middleware exists to keep honest. Path and query ride
+     along untouched because only the hostname is reassigned. */
+  if (url.hostname === 'www.agentinterface.app') {
+    url.hostname = 'agentinterface.app'
+    return Response.redirect(url.toString(), 301)
+  }
+
   const page = !SKIP.test(url.pathname) && !PROBE.test(url.pathname)
   if (page) {
     const ua = request.headers.get('user-agent') || ''
