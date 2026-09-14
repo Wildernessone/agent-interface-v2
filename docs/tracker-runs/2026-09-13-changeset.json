@@ -1,0 +1,414 @@
+[
+  {
+    "id": "webmcp",
+    "call": "The most literal agent interface there is, and the one worth watching, but nothing here ships on by default in any browser. Chrome runs it as an origin trial from 149 to 156, Edge runs its own trial expiring 17 November 2026, and the Chrome Platform Status entry still lists TAG, security and privacy reviews as pending. The engine picture is now clearer and less comfortable than \"origin trial\" suggests: WebKit’s opposition was stated on 2026-06-03 and its formal position: oppose label applied on 2026-06-11 (\"we do not think a parallel agent-facing tool layer is the right solution\") and on 2026-06-17 declined to debate it piece by piece, saying WebMCP \"proposes a new solution before the actual problem has been established\"; Mozilla closed its request as neutral on 2026-08-05; on the thread its engineers ask for an imperative way to call functions between environments and call the declarative variant \"not a significant factor\" in that position. One engine experimenting, one neutral, one opposed. Meanwhile the project’s own implementation-status page now lists agents as well as browsers: ChatGPT Desktop is recorded as supporting WebMCP (added 2026-08-26) and Brave’s Leo as experimental, which is where the tools will actually be called from. Note the venue: a Draft Community Group Report is not a standards-track document, though the CG is actively editing it: the draft is dated 10 September 2026, and on 2026-09-04 the README widened the stated scope to headless use. The trap for anyone reading older write-ups: the API moved objects. modelContext sat on Navigator in February 2026 and is now defined on Document, so most tutorials register tools on the wrong one. Build against document.modelContext behind a feature check, and read the security model before shipping: origin-isolated documents only, gated by a tools Permissions Policy defaulting to self, because a page describing its own tools to an agent is a prompt-injection surface by construction.",
+    "name": "WebMCP",
+    "group": "protocol",
+    "links": [
+      [
+        "Explainer",
+        "https://github.com/webmachinelearning/webmcp"
+      ],
+      [
+        "Draft CG Report",
+        "https://webmachinelearning.github.io/webmcp/"
+      ],
+      [
+        "Chrome Platform Status",
+        "https://chromestatus.com/feature/5117755740913664"
+      ],
+      [
+        "Chrome developer docs",
+        "https://developer.chrome.com/docs/ai/webmcp"
+      ],
+      [
+        "Edge origin trial",
+        "https://developer.microsoft.com/en-us/microsoft-edge/origin-trials/trials/0b76fe60-b266-458e-a285-04e375c0c31a"
+      ],
+      [
+        "WebKit position: oppose",
+        "https://github.com/WebKit/standards-positions/issues/670"
+      ],
+      [
+        "Mozilla position: neutral",
+        "https://github.com/mozilla/standards-positions/issues/1412"
+      ],
+      [
+        "Implementation status (browsers and agents)",
+        "https://github.com/webmachinelearning/webmcp/blob/main/implementation-status.md"
+      ]
+    ],
+    "short": "A browser API that lets a page hand its own functionality to an agent as callable tools — document.modelContext.registerTool(), plus a declarative path that annotates existing HTML forms. The inverse of an MCP server: nothing is replicated on a backend, and the tools run in the user’s own already-authenticated tab.",
+    "status": "early",
+    "steward": "W3C Web Machine Learning Community Group; edited by Brandon Walderman (Microsoft), Khushal Sagar and Dominic Farolino (Google)",
+    "statusLabel": "Origin trial"
+  },
+  {
+    "id": "x402",
+    "call": "Real volume, not a whitepaper — the Foundation went operational July 14, 2026 and its members page listed 52 organizations on 2026-09-13 (17 Premier, 24 General, 11 Associate), up from 49 on 2026-08-26, still including Visa, Mastercard, AWS, American Express, Ripple and Solana. Its homepage counter read 75.41M transactions and $24.24M of volume for the trailing 30 days, unchanged to the rounding we recorded on 2026-08-26; those are x402.org’s own numbers, not Chainalysis’s, which we previously credited them to in error. What Chainalysis did report (June 2026) is cumulative rather than 30-day, and it confirms the useful caveat: a chunk of the 2025 surge traced to a single meme-coin pay-to-mint scheme, while transactions of $1+ rose from 49% to 95% of volume. The new development is competitive, not technical — at GA on 2026-08-18 AWS shipped a rival payments standard alongside x402 inside Bedrock AgentCore. First credible challenger; watch whether the members follow.",
+    "name": "x402",
+    "group": "protocol",
+    "links": [
+      [
+        "Site",
+        "https://x402.org"
+      ],
+      [
+        "Members",
+        "https://x402.org/members/"
+      ],
+      [
+        "Foundation launch",
+        "https://www.linuxfoundation.org/press/linux-foundation-is-launching-the-x402-foundation-and-welcoming-the-contribution-of-the-x402-protocol"
+      ],
+      [
+        "Chainalysis: the PING pay-to-mint surge",
+        "https://www.chainalysis.com/blog/x402-agentic-payments-adoption/"
+      ],
+      [
+        "AWS ships a rival alongside it",
+        "https://aws.amazon.com/blogs/machine-learning/amazon-bedrock-agentcore-payments-is-now-generally-available-enabling-agents-to-transact-safely-and-autonomously-at-scale/"
+      ]
+    ],
+    "short": "HTTP-native machine payments reviving status code 402: a server quotes terms, the agent pays and retries with proof.",
+    "status": "rising",
+    "steward": "x402 Foundation (Linux Foundation); created at Coinbase",
+    "statusLabel": "Rising"
+  },
+  {
+    "id": "agents-md",
+    "call": "Boring, tiny, and already everywhere, the kind of standard that wins by being trivial to adopt. agents.md puts it at \"over 60k open-source projects\" (read 2026-09-13) and the format repo is still moving (last push 2026-09-10). Add one to every repo you own.",
+    "name": "AGENTS.md",
+    "group": "protocol",
+    "links": [
+      [
+        "AAIF announcement",
+        "https://www.linuxfoundation.org/press/linux-foundation-announces-the-formation-of-the-agentic-ai-foundation"
+      ],
+      [
+        "agents.md",
+        "https://agents.md/"
+      ],
+      [
+        "Format repo",
+        "https://github.com/agentsmd/agents.md"
+      ]
+    ],
+    "short": "A plain-markdown convention: one file in a repo telling coding agents how to work in that codebase. The project site counts over 60,000 open-source projects carrying one; the format is stewarded by the Agentic AI Foundation.",
+    "status": "rising",
+    "steward": "Agentic AI Foundation (Linux Foundation); originated at OpenAI",
+    "statusLabel": "Rising"
+  },
+  {
+    "id": "openai-apps",
+    "call": "We previously read this as OpenAI adopting the cross-vendor Agent Plugins format. Reading both specs side by side, that is wrong and worth correcting plainly: OpenAI’s documentation has since moved toward the common package: as of 2026-09-13 the packaging page says “For a portable Agent Plugins package, add `plugin.json` at the plugin root and declare the Agent Plugins schema”, keeps “Existing `.codex-plugin/plugin.json` files” as “a compatibility fallback”, and admits “The current scaffold uses the Codex compatibility layout, not the portable Agent Plugins layout.” The published first-party plugins (figma, notion, build-web-apps) still ship only `.codex-plugin/` with no root plugin.json. So: the documented shape is now the common one, the shipped shape is not yet. OpenAI sits on that spec’s steering committee and publishes a first-party path for converting Claude Code plugins into OpenAI submissions. One precision: the UI half renders in ChatGPT only, not in Codex. Review, featuring and the directory surface remain entirely OpenAI’s.",
+    "name": "OpenAI Apps SDK",
+    "group": "protocol",
+    "links": [
+      [
+        "Plugins (was Apps SDK)",
+        "https://developers.openai.com/plugins"
+      ],
+      [
+        "Plugin package format",
+        "https://developers.openai.com/plugins/build/plugins.md"
+      ],
+      [
+        "Converting a Claude Code plugin",
+        "https://developers.openai.com/plugins/guides/submit-claude-plugin.md"
+      ],
+      [
+        "Open submissions (Dec 2025)",
+        "https://openai.com/index/developers-can-now-submit-apps-to-chatgpt/"
+      ],
+      [
+        "Plugin Directory migration (Jul 9, 2026)",
+        "https://help.openai.com/en/articles/20001256-plugins-in-chatgpt-and-codex"
+      ],
+      [
+        "OpenAI docs index (llms.txt)",
+        "https://developers.openai.com/llms.txt"
+      ]
+    ],
+    "short": "Apps that render inside ChatGPT and act through Codex. The standalone App Directory (Dec 2025) was folded into a shared Plugin Directory on Jul 9, 2026, and developers.openai.com/apps-sdk now 301-redirects to /plugins, though OpenAI’s own docs index still titles the section “ChatGPT plugins and Apps SDK”: the URL is retired, the name is not quite.",
+    "status": "rising",
+    "steward": "OpenAI (built on MCP; distributed through OpenAI’s own plugin format)",
+    "statusLabel": "Rising"
+  },
+  {
+    "id": "zed-acp",
+    "call": "The standard seam between IDEs and coding agents, and no longer one vendor’s project — governance is shared with JetBrains under an interim model with two lead maintainers, Ben Brandt (Zed) and Sergey Ignatov (JetBrains, announced 2026-02-19), and “transitioning to an independent foundation” as the stated goal. We had this as a Zed project through 2026-08-10; that was already wrong when we wrote it. Adoption is the real story: 42 agent directories in the registry, Cursor among them, and Zed 1.0 made ACP its headline capability. A v2 draft is still a draft: schema-v2.0.0-alpha.3 (2026-08-20) is the newest v2 artifact, no release of any kind has followed it as of 2026-09-13, and v1 shipped alongside it that same day, so build on v1. Terminology trap: unqualified “ACP” now usually means this, not IBM’s dead protocol of the same acronym.",
+    "name": "ACP — Agent Client Protocol (Zed)",
+    "group": "protocol",
+    "links": [
+      [
+        "Spec",
+        "https://agentclientprotocol.com"
+      ],
+      [
+        "JetBrains adoption",
+        "https://blog.jetbrains.com/ai/2025/10/jetbrains-zed-open-interoperability-for-ai-coding-agents-in-your-ide/"
+      ],
+      [
+        "ACP Registry launch",
+        "https://blog.jetbrains.com/ai/2026/01/acp-agent-registry/"
+      ],
+      [
+        "v2 draft",
+        "https://agentclientprotocol.com/announcements/acp-v2-draft"
+      ],
+      [
+        "Governance",
+        "https://agentclientprotocol.com/community/governance"
+      ],
+      [
+        "Agent registry",
+        "https://github.com/agentclientprotocol/registry"
+      ]
+    ],
+    "short": "The \"LSP for coding agents\": a JSON-RPC protocol connecting any editor to any coding agent. The joint agent registry now lists 42 agents, including Cursor, Devin, GitHub Copilot, Gemini and Codex.",
+    "status": "live",
+    "steward": "Jointly governed by Zed Industries and JetBrains under an interim model that names an independent foundation as the eventual home",
+    "statusLabel": "Established"
+  },
+  {
+    "id": "mcp",
+    "call": "The settled winner of the agent-to-tool layer. OpenAI, Google and Microsoft all adopted it in 2025; it was donated to the Linux Foundation’s Agentic AI Foundation in Dec 2025, and the official registry passed 25,000 servers in August 2026. The 2026-07-28 revision is its biggest change yet — sessions removed, Extensions/MCP Apps/Tasks formalized, a 12-month deprecation policy added — and, in the release post's own words, “All four Tier 1 SDKs speak 2026-07-28 as of today: TypeScript, Python, Go, and C#”, while “the Rust SDK supports the new spec in beta” outside the Tier 1 set. One caveat before you upgrade a client: old servers keep working because the official SDKs speak both eras, not because the protocol guarantees it — the spec’s own matrix marks a modern client against a legacy server as failing. Roots, Sampling and Logging are now deprecated, alongside Dynamic Client Registration (in favour of CIMD) and the legacy HTTP+SSE transport, each with the twelve-month offramp the new policy promises. A roadmap published 2026-08-22 puts agentic messaging, transport unification and agent identity next. Build on it without hesitation.",
+    "name": "MCP — Model Context Protocol",
+    "group": "protocol",
+    "links": [
+      [
+        "Spec & docs",
+        "https://modelcontextprotocol.io"
+      ],
+      [
+        "Versioning",
+        "https://modelcontextprotocol.io/specification/versioning"
+      ],
+      [
+        "Official registry",
+        "https://registry.modelcontextprotocol.io"
+      ],
+      [
+        "AAIF donation",
+        "https://www.anthropic.com/news/donating-the-model-context-protocol-and-establishing-of-the-agentic-ai-foundation"
+      ],
+      [
+        "2026-07-28 release",
+        "https://blog.modelcontextprotocol.io/posts/2026-07-28/"
+      ],
+      [
+        "Roadmap (Aug 2026)",
+        "https://modelcontextprotocol.io/development/roadmap.md"
+      ]
+    ],
+    "short": "The standard connector between an agent and its tools and data, JSON-RPC based. Spec revision 2026-07-28 shipped stable, dropping protocol-level sessions for a stateless core.",
+    "status": "live",
+    "steward": "Agentic AI Foundation (Linux Foundation); created at Anthropic",
+    "statusLabel": "Established"
+  },
+  {
+    "id": "ag-ui",
+    "call": "The most serious attempt at the frontend layer, with real integrations (Microsoft Agent Framework, AWS Bedrock AgentCore, Google ADK) — and it is winning the phrase “agentic UI” in search. It has kept shipping into the gap nobody else covers: a subagent attribution surface landed through August 2026, so a UI can show which sub-agent produced which token, with LangGraph subagent support on 2026-08-25. CopilotKit raised a $27M Series A in May 2026, which deepens the vendor-stewardship question rather than resolving it: still no foundation home while every peer moved to one — A2A joined AAIF in August, leaving this the notable holdout. Watch governance before betting the stack on it. Checked again 2026-09-13: no foundation is named anywhere in the project’s own README or docs, and the repo cuts a dated release most days, 2026-09-11 the newest.",
+    "name": "AG-UI — Agent–User Interaction Protocol",
+    "group": "protocol",
+    "links": [
+      [
+        "Docs",
+        "https://docs.ag-ui.com/introduction"
+      ],
+      [
+        "Project",
+        "https://github.com/ag-ui-protocol/ag-ui"
+      ],
+      [
+        "AWS integration",
+        "https://aws.amazon.com/blogs/machine-learning/build-generative-ui-for-ai-agents-on-amazon-bedrock-agentcore-with-the-ag-ui-protocol/"
+      ],
+      [
+        "CopilotKit Series A",
+        "https://techcrunch.com/2026/05/05/copilotkit-raises-27m-to-help-devs-deploy-app-native-ai-agents/"
+      ],
+      [
+        "Subagent attribution",
+        "https://github.com/ag-ui-protocol/ag-ui/blob/main/docs/concepts/subagents.mdx"
+      ]
+    ],
+    "short": "Standardizes the agent-to-frontend seam: 31 current event types over SSE (37 documented, counting one draft and five deprecated; the two draft lifecycle variants extend RunStarted/RunFinished rather than add types) for streaming, state sync, interrupts, subagent attribution and generative UI.",
+    "status": "rising",
+    "steward": "CopilotKit — the notable foundation holdout",
+    "statusLabel": "Rising"
+  },
+  {
+    "id": "agent-plugins",
+    "call": "Real convergence on a real annoyance — one plugin directory instead of six — but check the governance claims against the repo rather than the announcements. Google announced it was joining as a core maintainer on 2026-08-06; the project’s own MAINTAINERS.md still lists five people and has not been touched since 2026-07-27, and the one-line PR adding a Google maintainer was opened by an outside contributor and is still open. The project site likewise describes a five-member committee. We said Google was a sixth core maintainer; the primary sources do not show it. On the spec itself the 1.1.0 draft is emptier than it looks: the complete diff against 1.0.0 is version strings, schema URL bumps and two de-versioned sentences — zero normative change. Build against 1.0.0. The original reservations stand: it packages two specs Anthropic wrote (MCP and Agent Skills) with Anthropic absent from the committee and Claude Code absent from the launch clients, it punts on install, trust and permission semantics, and it runs on a company-staffed TSC with no neutral foundation behind it. Re-checked 2026-09-13 and nothing has moved: no commit since 2026-08-19, PR #37 still open, MAINTAINERS.md still five names, 1.1.0 still an undated Working Draft.",
+    "name": "Agent Plugins",
+    "group": "protocol",
+    "links": [
+      [
+        "Spec 1.0.0",
+        "https://github.com/agentplugins/agent-plugins-spec/blob/main/spec/1.0.0.md"
+      ],
+      [
+        "Spec 1.1.0 (working draft)",
+        "https://github.com/agentplugins/agent-plugins-spec/blob/main/spec/1.1.0.md"
+      ],
+      [
+        "Governance",
+        "https://github.com/agentplugins/agent-plugins-spec/blob/main/GOVERNANCE.md"
+      ],
+      [
+        "Vercel announcement",
+        "https://vercel.com/blog/introducing-agent-plugins"
+      ],
+      [
+        "Google joins as core maintainer",
+        "https://developers.googleblog.com/agent-plugins-package-your-skills-tools-and-more/"
+      ],
+      [
+        "Claude Code plugin format (for comparison)",
+        "https://code.claude.com/docs/en/plugins"
+      ],
+      [
+        "MAINTAINERS.md",
+        "https://github.com/agentplugins/agent-plugins-spec/blob/main/MAINTAINERS.md"
+      ],
+      [
+        "The open PR adding a Google maintainer",
+        "https://github.com/agentplugins/agent-plugins-spec/pull/37"
+      ]
+    ],
+    "short": "A shared package format for bundling Agent Skills and MCP servers into one directory — plugin.json, skills/, mcp.json — readable by ChatGPT, Codex, Cursor, GitHub Copilot, Kiro and VS Code. v1.0.0 shipped Aug 6, 2026. A 1.1.0 file sits in the spec repo marked Working Draft.",
+    "status": "early",
+    "steward": "Technical Steering Committee (no foundation): five maintainers from Amazon, Cursor/Anysphere, Microsoft, OpenAI and Vercel; proposed by Vercel",
+    "statusLabel": "Early"
+  },
+  {
+    "id": "agent-builder",
+    "call": "Deprecation notice eight months after launch: the visual builder and evals shut down 2026-11-30, with existing evals going read-only on 2026-10-31. We said OpenAI points builders back to code alone; that is half the sentence. The deprecation page names two paths, and the second is Workspace Agents — a research preview on Business, Enterprise, Edu and Teachers plans, powered by Codex, which OpenAI positions as the successor to GPTs. So the replacement for visual agent-building is another managed surface, not just the SDK. Notably, eval users are handed to a third-party open-source tool rather than an OpenAI product. ChatKit survives.",
+    "name": "OpenAI AgentKit (Agent Builder & Evals)",
+    "group": "graveyard",
+    "links": [
+      [
+        "Deprecations page",
+        "https://developers.openai.com/api/docs/deprecations"
+      ],
+      [
+        "Workspace Agents",
+        "https://openai.com/index/introducing-workspace-agents-in-chatgpt/"
+      ]
+    ],
+    "short": "The visual agent-building suite announced at DevDay, October 2025.",
+    "status": "dead",
+    "steward": "was OpenAI",
+    "statusLabel": "Deprecated"
+  },
+  {
+    "id": "computer-use",
+    "call": "The universal fallback when no protocol exists, and the hardest to supervise — screen actions have no schema to gate on. It left the experiment stage in 2026: Anthropic shipped `computer_toolset_20260801` as stable on 2026-08-19, no beta header, a 17-member toolset, and launched a separate browser-scoped toolset the same day — so one vendor now occupies both the desktop-wide and browser-scoped positions. Google’s version stopped being browser-only in June 2026 and now documents browser, mobile and desktop environments. The supervision story is where to watch: OpenAI’s “Locked use” on macOS installs an Apple authorization plug-in so the agent participates in the OS unlock path rather than around it — the first time this pattern has reached into the operating system’s own security model. Coexists with protocols rather than losing to them.",
+    "name": "Computer use (screen-level control)",
+    "group": "protocol",
+    "links": [
+      [
+        "Anthropic computer use",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/computer-use-tool.md"
+      ],
+      [
+        "Anthropic API release notes",
+        "https://platform.claude.com/docs/en/release-notes/api.md"
+      ],
+      [
+        "OpenAI computer use",
+        "https://learn.chatgpt.com/docs/computer-use.md"
+      ],
+      [
+        "Gemini computer use",
+        "https://ai.google.dev/gemini-api/docs/computer-use"
+      ]
+    ],
+    "short": "The protocol-less path: the agent operates the same screen, cursor and keyboard a human would. Anthropic’s tool went stable on 2026-08-19 after nearly two years in beta; OpenAI runs it in ChatGPT Work and Codex on macOS and Windows; Google’s Gemini computer use covers browser, mobile and desktop.",
+    "status": "live",
+    "steward": "Anthropic, OpenAI, Google, others (an approach, not a spec)",
+    "statusLabel": "Established"
+  },
+  {
+    "id": "agent-protocol",
+    "call": "Dormant since spring 2025 — the repository’s last commit is 2025-04-08. Note what happened to the address: agentprotocol.ai is no longer the project’s site. It is now an independent commercial guide to agent protocols in general, which disclaims affiliation and describes Agent Protocol in the third person as someone else’s spec. A dead project whose domain reads as live is the most misleading kind of link, which is why this entry now points at the repository instead. Being first to a layer guarantees nothing; being adopted does.",
+    "name": "Agent Protocol (agentprotocol.ai)",
+    "group": "graveyard",
+    "links": [
+      [
+        "Repository (last commit Apr 2025)",
+        "https://github.com/agi-inc/agent-protocol"
+      ]
+    ],
+    "short": "An early attempt at a common agent API, predating the current wave.",
+    "status": "dead",
+    "steward": "was AI Engineer Foundation",
+    "statusLabel": "Dormant"
+  },
+  {
+    "id": "ibm-acp",
+    "call": "Merged into A2A August 2025; the repo is archived with a banner saying so. Its acronym was promptly claimed by Zed’s unrelated editor protocol — a trap for anyone reading 2025 coverage today.",
+    "name": "ACP — Agent Communication Protocol (IBM)",
+    "group": "graveyard",
+    "links": [
+      [
+        "LF announcement",
+        "https://lfaidata.foundation/communityblog/2025/08/29/acp-joins-forces-with-a2a-under-the-linux-foundations-lf-ai-data/"
+      ],
+      [
+        "Archived repo",
+        "https://github.com/i-am-bee/acp"
+      ]
+    ],
+    "short": "IBM’s agent-to-agent protocol, launched March 2025.",
+    "status": "dead",
+    "steward": "was IBM Research",
+    "statusLabel": "Merged into A2A"
+  },
+  {
+    "id": "operator",
+    "call": "Lived seven months: merged into ChatGPT agent in July 2025, site shut that August. The capability survived; the standalone surface didn’t — a pattern that keeps repeating.",
+    "name": "OpenAI Operator",
+    "group": "graveyard",
+    "links": [
+      [
+        "ChatGPT agent announcement",
+        "https://openai.com/index/introducing-chatgpt-agent/"
+      ]
+    ],
+    "short": "The standalone computer-use agent product, launched January 2025.",
+    "status": "dead",
+    "steward": "was OpenAI",
+    "statusLabel": "Absorbed"
+  },
+  {
+    "id": "ap2",
+    "call": "The most interesting approval-UX idea in the stack: consent as a signed artifact instead of a dismissed dialog. Google’s launch post named “a diverse group of more than 60 organizations” (Adyen, American Express, Mastercard, PayPal, Worldpay among them), and FIDO has since stood up dedicated working groups for agentic authentication and payments (the latter chaired by Mastercard and Visa), with Mastercard folding its own Verifiable Intent framework in alongside AP2. Early — but this is where agent commerce compliance is heading.",
+    "name": "AP2 — Agent Payments Protocol",
+    "group": "protocol",
+    "links": [
+      [
+        "Spec",
+        "https://ap2-protocol.org"
+      ],
+      [
+        "FIDO donation",
+        "https://fidoalliance.org/google-donates-agent-payments-protocol-to-fido-alliance/"
+      ],
+      [
+        "FIDO working groups",
+        "https://fidoalliance.org/fido-alliance-to-develop-standards-for-trusted-ai-agent-interactions/"
+      ],
+      [
+        "Google launch post (2025-09-16)",
+        "https://cloud.google.com/blog/products/ai-machine-learning/announcing-agents-to-payments-ap2-protocol"
+      ]
+    ],
+    "short": "Cryptographically signed mandates so an agent purchase carries durable, auditable proof of what the human approved. v0.2 adds human-not-present payments.",
+    "status": "early",
+    "steward": "FIDO Alliance (donated by Google, April 2026)",
+    "statusLabel": "Early"
+  }
+]
