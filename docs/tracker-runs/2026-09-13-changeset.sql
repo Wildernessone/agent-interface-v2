@@ -12,7 +12,7 @@ values (
   $j$[
   {
     "id": "webmcp",
-    "call": "The most literal agent interface there is, and the one worth watching, but nothing here ships on by default in any browser. Chrome runs it as an origin trial from 149 to 156, Edge runs its own trial expiring 17 November 2026, and the Chrome Platform Status entry still lists TAG, security and privacy reviews as pending. The engine picture is now clearer and less comfortable than \"origin trial\" suggests: WebKit filed a formal position of oppose on 2026-06-03 (\"we do not think a parallel agent-facing tool layer is the right solution\") and on 2026-06-17 declined to debate it piece by piece, saying WebMCP \"proposes a new solution before the actual problem has been established\"; Mozilla closed its request as neutral on 2026-08-05; on the thread its engineers ask for an imperative way to call functions between environments and call the declarative variant \"not a significant factor\" in that position. One engine experimenting, one neutral, one opposed. Meanwhile the project’s own implementation-status page now lists agents as well as browsers: ChatGPT Desktop is recorded as supporting WebMCP (added 2026-08-26) and Brave’s Leo as experimental, which is where the tools will actually be called from. Note the venue: a Draft Community Group Report is not a standards-track document, though the CG is actively editing it: the draft is dated 10 September 2026, and on 2026-09-04 the README widened the stated scope to headless use. The trap for anyone reading older write-ups: the API moved objects. modelContext sat on Navigator in February 2026 and is now defined on Document, so most tutorials register tools on the wrong one. Build against document.modelContext behind a feature check, and read the security model before shipping: origin-isolated documents only, gated by a tools Permissions Policy defaulting to self, because a page describing its own tools to an agent is a prompt-injection surface by construction.",
+    "call": "The most literal agent interface there is, and the one worth watching, but nothing here ships on by default in any browser. Chrome runs it as an origin trial from 149 to 156, Edge runs its own trial expiring 17 November 2026, and the Chrome Platform Status entry still lists TAG, security and privacy reviews as pending. The engine picture is now clearer and less comfortable than \"origin trial\" suggests: WebKit’s opposition was stated on 2026-06-03 and its formal position: oppose label applied on 2026-06-11 (\"we do not think a parallel agent-facing tool layer is the right solution\") and on 2026-06-17 declined to debate it piece by piece, saying WebMCP \"proposes a new solution before the actual problem has been established\"; Mozilla closed its request as neutral on 2026-08-05; on the thread its engineers ask for an imperative way to call functions between environments and call the declarative variant \"not a significant factor\" in that position. One engine experimenting, one neutral, one opposed. Meanwhile the project’s own implementation-status page now lists agents as well as browsers: ChatGPT Desktop is recorded as supporting WebMCP (added 2026-08-26) and Brave’s Leo as experimental, which is where the tools will actually be called from. Note the venue: a Draft Community Group Report is not a standards-track document, though the CG is actively editing it: the draft is dated 10 September 2026, and on 2026-09-04 the README widened the stated scope to headless use. The trap for anyone reading older write-ups: the API moved objects. modelContext sat on Navigator in February 2026 and is now defined on Document, so most tutorials register tools on the wrong one. Build against document.modelContext behind a feature check, and read the security model before shipping: origin-isolated documents only, gated by a tools Permissions Policy defaulting to self, because a page describing its own tools to an agent is a prompt-injection surface by construction.",
     "name": "WebMCP",
     "group": "protocol",
     "links": [
@@ -112,7 +112,7 @@ values (
   },
   {
     "id": "openai-apps",
-    "call": "We previously read this as OpenAI adopting the cross-vendor Agent Plugins format. Reading both specs side by side, that is wrong and worth correcting plainly: OpenAI’s documented package is a `.codex-plugin/plugin.json` manifest with `.app.json` and `.mcp.json` companions, while the Agent Plugins spec requires a root-level plugin.json that OpenAI’s published plugins do not have. Same idea, different shape. OpenAI does sit on that spec’s steering committee, and it now publishes a first-party path for converting Claude Code plugins into OpenAI submissions — the cross-vendor movement is real, but it is conversion, not a common package. One precision: the UI half renders in ChatGPT only, not in Codex. Review, featuring and the directory surface remain entirely OpenAI’s.",
+    "call": "We previously read this as OpenAI adopting the cross-vendor Agent Plugins format. Reading both specs side by side, that is wrong and worth correcting plainly: OpenAI’s documentation has since moved toward the common package: as of 2026-09-13 the packaging page says “For a portable Agent Plugins package, add `plugin.json` at the plugin root and declare the Agent Plugins schema”, keeps “Existing `.codex-plugin/plugin.json` files” as “a compatibility fallback”, and admits “The current scaffold uses the Codex compatibility layout, not the portable Agent Plugins layout.” The published first-party plugins (figma, notion, build-web-apps) still ship only `.codex-plugin/` with no root plugin.json. So: the documented shape is now the common one, the shipped shape is not yet. OpenAI sits on that spec’s steering committee and publishes a first-party path for converting Claude Code plugins into OpenAI submissions. One precision: the UI half renders in ChatGPT only, not in Codex. Review, featuring and the directory surface remain entirely OpenAI’s.",
     "name": "OpenAI Apps SDK",
     "group": "protocol",
     "links": [
@@ -184,7 +184,7 @@ values (
   },
   {
     "id": "mcp",
-    "call": "The settled winner of the agent-to-tool layer. OpenAI, Google and Microsoft all adopted it in 2025; it was donated to the Linux Foundation’s Agentic AI Foundation in Dec 2025, and the official registry passed 25,000 servers in August 2026. The 2026-07-28 revision is its biggest change yet — sessions removed, Extensions/MCP Apps/Tasks formalized, a 12-month deprecation policy added — and all five Tier 1 SDKs (TypeScript, Python, Go, C#, Rust) shipped stable support on release day, with v2 now the default install and v1 frozen to security fixes. One caveat before you upgrade a client: old servers keep working because the official SDKs speak both eras, not because the protocol guarantees it — the spec’s own matrix marks a modern client against a legacy server as failing. Roots, Sampling and Logging are now deprecated, the first use of that new policy. A roadmap published 2026-08-22 puts agentic messaging, transport unification and agent identity next. Build on it without hesitation.",
+    "call": "The settled winner of the agent-to-tool layer. OpenAI, Google and Microsoft all adopted it in 2025; it was donated to the Linux Foundation’s Agentic AI Foundation in Dec 2025, and the official registry passed 25,000 servers in August 2026. The 2026-07-28 revision is its biggest change yet — sessions removed, Extensions/MCP Apps/Tasks formalized, a 12-month deprecation policy added — and, in the release post's own words, “All four Tier 1 SDKs speak 2026-07-28 as of today: TypeScript, Python, Go, and C#”, while “the Rust SDK supports the new spec in beta” outside the Tier 1 set. One caveat before you upgrade a client: old servers keep working because the official SDKs speak both eras, not because the protocol guarantees it — the spec’s own matrix marks a modern client against a legacy server as failing. Roots, Sampling and Logging are now deprecated, alongside Dynamic Client Registration (in favour of CIMD) and the legacy HTTP+SSE transport, each with the twelve-month offramp the new policy promises. A roadmap published 2026-08-22 puts agentic messaging, transport unification and agent identity next. Build on it without hesitation.",
     "name": "MCP — Model Context Protocol",
     "group": "protocol",
     "links": [
@@ -245,7 +245,7 @@ values (
         "https://github.com/ag-ui-protocol/ag-ui/blob/main/docs/concepts/subagents.mdx"
       ]
     ],
-    "short": "Standardizes the agent-to-frontend seam: 31 current event types over SSE (34 documented, counting one draft and two deprecated) for streaming, state sync, interrupts, subagent attribution and generative UI.",
+    "short": "Standardizes the agent-to-frontend seam: 31 current event types over SSE (37 documented, counting one draft and five deprecated; the two draft lifecycle variants extend RunStarted/RunFinished rather than add types) for streaming, state sync, interrupts, subagent attribution and generative UI.",
     "status": "rising",
     "steward": "CopilotKit — the notable foundation holdout",
     "statusLabel": "Rising"
@@ -396,7 +396,7 @@ values (
   },
   {
     "id": "ap2",
-    "call": "The most interesting approval-UX idea in the stack: consent as a signed artifact instead of a dismissed dialog. 60+ payment players signed on at launch, and FIDO has since stood up dedicated working groups for agentic authentication and payments (the latter chaired by Mastercard and Visa), with Mastercard folding its own Verifiable Intent framework in alongside AP2. Early — but this is where agent commerce compliance is heading.",
+    "call": "The most interesting approval-UX idea in the stack: consent as a signed artifact instead of a dismissed dialog. Google’s launch post named “a diverse group of more than 60 organizations” (Adyen, American Express, Mastercard, PayPal, Worldpay among them), and FIDO has since stood up dedicated working groups for agentic authentication and payments (the latter chaired by Mastercard and Visa), with Mastercard folding its own Verifiable Intent framework in alongside AP2. Early — but this is where agent commerce compliance is heading.",
     "name": "AP2 — Agent Payments Protocol",
     "group": "protocol",
     "links": [
@@ -411,6 +411,10 @@ values (
       [
         "FIDO working groups",
         "https://fidoalliance.org/fido-alliance-to-develop-standards-for-trusted-ai-agent-interactions/"
+      ],
+      [
+        "Google launch post (2025-09-16)",
+        "https://cloud.google.com/blog/products/ai-machine-learning/announcing-agents-to-payments-ap2-protocol"
       ]
     ],
     "short": "Cryptographically signed mandates so an agent purchase carries durable, auditable proof of what the human approved. v0.2 adds human-not-present payments.",

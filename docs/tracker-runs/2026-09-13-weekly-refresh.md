@@ -44,6 +44,7 @@ repo baseline, not the live site. Everything below was verified against the **li
   2026-08-05T09:46:27Z. Jake Archibald (MEMBER), 2026-08-25: "I haven't really looked at the
   declarative API. It sounds like a reasonable idea, but I don't think it should be instead of
   an imperative way to call functions between environments."
+  martinthomson (MEMBER), 2026-08-26: "It's an interesting thing to contemplate, but, as Jake says, it's not a significant factor." — the sentence the entry's "not a significant factor" rests on.
   https://github.com/mozilla/standards-positions/issues/1412 (read 2026-09-13)
 - Draft CG Report date: `<time class="dt-updated" datetime="2026-09-10">10 September 2026</time>`
   (live entry said 26 August 2026). https://webmachinelearning.github.io/webmcp/ (read 2026-09-13)
@@ -114,9 +115,12 @@ repo baseline, not the live site. Everything below was verified against the **li
 
 ### ag-ui
 
-- docs.ag-ui.com/concepts/events enumerates 34 event types including "MetaEvent (draft)" and two
-  marked deprecated (THINKING_START, THINKING_END), i.e. 31 current, which matches the entry's
-  "~31"; the README's "~16 standard event types" counts something else and was not adopted.
+- docs.ag-ui.com/concepts/events (re-read 2026-09-14): 31 current event types; five marked deprecated
+  (THINKING_START, THINKING_END, THINKING_TEXT_MESSAGE_START, THINKING_TEXT_MESSAGE_CONTENT,
+  THINKING_TEXT_MESSAGE_END — "The following events are deprecated and will be removed in version
+  1.0.0. Use the corresponding Reasoning events instead."); one draft type (MetaEvent) plus two draft
+  lifecycle variants that extend RunStarted/RunFinished rather than add types. An earlier draft of this
+  report said "34 documented, two deprecated" — wrong; corrected after an independent re-read.
   (read 2026-09-13)
 - README names no foundation, governance or stewardship body (read 2026-09-13). Newest release
   `release/2026-09-11` (`gh api`, 2026-09-13). Steward line unchanged: still the holdout.
@@ -160,7 +164,7 @@ repo baseline, not the live site. Everything below was verified against the **li
   agentic stack", dated 2026-08-17. The entry's TAC-in-July / board-on-Aug-4 / Growth-vs-Impact
   stage details are not in that page's HTML (aaif.io renders client-side) and were not
   re-located, so the entry keeps its 2026-08-26 date rather than a check it did not get.
-- **atlas**: 9to5mac (Jul 9 2026) quotes OpenAI: "The current targeted date for deprecation is
+- **atlas**: 9to5mac (Jul 9 2026, https://9to5mac.com/2026/07/09/openai-is-discontinuing-chatgpt-atlas-its-standalone-desktop-browser/) quotes OpenAI: "The current targeted date for deprecation is
   8/9". Whether it actually went dark on 2026-08-09 could not be re-verified: openai.com,
   chatgpt.com/atlas and help.openai.com all answer 403 to automated fetch.
 
