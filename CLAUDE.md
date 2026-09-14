@@ -36,6 +36,16 @@ graveyard is the whole point of this page.
 The files in `functions/_tracker/` are the frozen historical baseline (last repo changeset:
 2026-08-22). They still fold first; do not delete them, and do not add to them.
 
+**A file under `functions/_tracker/` cannot override a published DB row.** `loadTracker()`
+folds `CHANGESETS.concat(db)`, so every DB row folds AFTER every repo file. The 2026-08-27
+`full-sweep-2026-08-26` row replaced all 28 baseline ids from the database (and the `webmcp` row
+of 2026-08-26 made the live tracker 29 entries), so a new file changeset would be silently
+overridden for every id it touches and would only bump `TRACKER_UPDATED` — the cosmetic-freshness
+move the weekly-refresh section forbids. Found 2026-09-13: that run, which was not allowed to
+write production, left its row as `docs/tracker-runs/2026-09-13-changeset.sql` for a human to
+execute instead. Verify the live state at `agentinterface.app/tracker.json` before a run; the
+repo files are not the live tracker.
+
 ⚠ The 2026-08-22 changeset is a FILE because the weekly-refresh section below still described
 the retired file flow, and that run followed it. The two halves of this document contradicted
 each other for ten days. The DB row is the flow; the file is the exception that should not
