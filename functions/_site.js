@@ -21,13 +21,28 @@ export function mdToHtml(md) {
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+|\/[^)\s]*)\)/g, '<a href="$2">$1</a>')
   const lines = String(md || '').replace(/\r\n/g, '\n').split('\n')
+  // Heading depth is DOCUMENT-RELATIVE. The shallowest ATX level present in THIS body
+  // becomes <h2> and deeper levels descend from it, so a body written in ##/### renders
+  // h2/h3, and one written in #/##/### renders h2/h3/h4. The page's only <h1> is the
+  // article title, emitted by the route outside this function -- never here.
+  // Why two passes: the old mapping was a per-line clamp (hashes + 1, capped at 4), which
+  // could not produce an h2 from a body whose shallowest level was ##, so 22 of the 26
+  // published guides went h1 straight to h3 with no h2 at all (measured 2026-09-14).
+  // Clamping the other way (a floor of 2 per line) is not the fix either: it flattens the
+  // four bodies that lead with a single # and were already correct.
+  // HEAD is shared by the scan and the render branch so the two can never disagree about
+  // what counts as a heading (indented hashes and ##### are not headings, in both).
+  const HEAD = /^(#{1,4})\s+(.*)$/
+  let minH = 0
+  for (const ln of lines) { const h = ln.match(HEAD); if (h && (minH === 0 || h[1].length < minH)) minH = h[1].length }
+  const hLevel = n => Math.min(2 + (n - (minH || 1)), 4)
   const out = []; let i = 0; let list = null
   const close = () => { if (list) { out.push(`</${list}>`); list = null } }
   while (i < lines.length) {
     const ln = lines[i]; let m
     if (/^\s*$/.test(ln)) { close(); i++; continue }
     if (/^\s*---+\s*$/.test(ln)) { close(); out.push('<hr>'); i++; continue }
-    if ((m = ln.match(/^(#{1,4})\s+(.*)$/))) { close(); const l = Math.min(m[1].length + 1, 4); out.push(`<h${l}>${inline(m[2])}</h${l}>`); i++; continue }
+    if ((m = ln.match(HEAD))) { close(); const l = hLevel(m[1].length); out.push(`<h${l}>${inline(m[2])}</h${l}>`); i++; continue }
     if ((m = ln.match(/^[-*]\s+(.*)$/))) { if (list !== 'ul') { close(); list = 'ul'; out.push('<ul>') } out.push(`<li>${inline(m[1])}</li>`); i++; continue }
     if ((m = ln.match(/^\d+\.\s+(.*)$/))) { if (list !== 'ol') { close(); list = 'ol'; out.push('<ol>') } out.push(`<li>${inline(m[1])}</li>`); i++; continue }
     if (/^\|.+\|\s*$/.test(ln)) {

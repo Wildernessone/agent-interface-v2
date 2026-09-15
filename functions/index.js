@@ -19,7 +19,16 @@ const LAST_REVIEWED = '2026-07-24'
 
 export async function onRequest() {
   const { TRACKER, TRACKER_UPDATED } = await loadTracker()
-  const desc = 'An agent interface is the layer where an AI agent meets everything outside the model: the controls humans use to direct it, and the protocols it uses to operate software.'
+  /* ⭐ TWO STRINGS, ON PURPOSE. `DEFINITION` is the site's canonical sentence — it is what the
+     DefinedTerm node publishes and what the page says in its own words below, and this site's
+     whole claim is being the definitive reference for that term, so it does not get reworded to
+     fit a snippet. `desc` is the SERP-fitted version: <=155 rendered chars, both halves of the
+     definition intact (the controls a human uses AND the protocols the agent uses), and every
+     word of it lifted from DEFINITION rather than rewritten — the first attempt at this trim
+     quietly replaced "the layer where an AI agent meets everything outside the model" with a
+     different claim, which would have put the structured data at odds with the visible page. */
+  const DEFINITION = 'An agent interface is the layer where an AI agent meets everything outside the model: the controls humans use to direct it, and the protocols it uses to operate software.'
+  const desc = 'The layer where an AI agent meets everything outside the model: the controls humans use to direct it, and the protocols it uses to operate software.'
 
   const protoCards = TRACKER.filter(t => t.group === 'protocol').slice(0, 6).map(t => `
     <a class="card" href="/tracker#${t.id}">
@@ -116,7 +125,7 @@ export async function onRequest() {
     {
       '@context': 'https://schema.org', '@type': 'DefinedTerm',
       name: 'agent interface',
-      description: desc,
+      description: DEFINITION,          // the canonical sentence, never the snippet-fitted one
       url: SITE,
       inDefinedTermSet: { '@type': 'DefinedTermSet', name: 'Agent Interface glossary', url: SITE },
     },
