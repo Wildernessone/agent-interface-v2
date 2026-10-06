@@ -9,18 +9,19 @@
 // server-rendered definition inside the first ~60 words, question-shaped H2s
 // answered in their first sentence, a key-facts box, a comparison table, a
 // visible review date, self-contained 2-4 sentence paragraphs.
-// Bump LAST_REVIEWED on every substantive edit — freshness is a measured
-// citation factor; a stale date is worse than none.
+// Bump HUB_CONTENT_CHANGED on every substantive edit — freshness is a measured
+// citation factor; a stale date is worse than none. It is the ONE hub date: the
+// visible "updated" line and the sitemap <lastmod> for "/" both read it, so the page
+// can never state a different date than the sitemap does.
 
 import { page, SITE } from './_site.js'
 import { loadTracker } from './_tracker-data.js'
 
-const LAST_REVIEWED = '2026-07-24'
-
-/* The date the hub's OWN copy last changed (as opposed to LAST_REVIEWED, the last full review
-   of it, which is what the visible "updated" line states). The sitemap's <lastmod> for "/" is
-   the later of this and the tracker's derived updated date, because the hub renders tracker
-   rows. Bump it in the same commit as any change to this page's visible text or JSON-LD, and
+/* The date the hub's OWN copy last changed. The visible "updated" line states it, and the
+   sitemap's <lastmod> for "/" is the later of this and the tracker's derived updated date,
+   because the hub renders tracker rows. (Until 2026-10-06 a second constant, LAST_REVIEWED,
+   drove the visible line and sat at 2026-07-24 through copy changes on 09-09, 09-15 and 10-06,
+   so the page and the sitemap disagreed. One constant now.) Bump it in the same commit as any change to this page's visible text or JSON-LD, and
    never for a change that touches only code, markup or styling — a lastmod that moves without
    the content moving is the cosmetic-freshness signal search engines discount.
    2026-10-06: the "Who maintains this site?" answer stopped describing a Library of verdicts
@@ -154,7 +155,7 @@ export async function onRequest() {
   <p><strong>An agent interface is the layer where an AI agent meets everything outside the model.</strong> It has two sides: the surface a human uses to direct, supervise, and correct the agent — and the protocols the agent uses to operate software, tools, and other agents. Chat panels, approval gates, MCP connections, and computer-use screen control are all parts of it.</p>
 </div>
 
-<p class="meta-line">updated ${LAST_REVIEWED} · status: living document · every claim sourced · <a href="/tracker">tracker updated ${TRACKER_UPDATED}</a> · <a href="/tracker.json">json</a></p>
+<p class="meta-line">updated ${HUB_CONTENT_CHANGED} · status: living document · every claim sourced · <a href="/tracker">tracker updated ${TRACKER_UPDATED}</a> · <a href="/tracker.json">json</a></p>
 
 <p style="color:var(--faint);font-size:13.5px">Disambiguation: "agent interface" also has an older meaning — the screen a human support agent uses in contact-center software. This site covers the AI sense of the term.</p>
 

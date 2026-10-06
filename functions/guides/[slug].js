@@ -37,7 +37,7 @@ ${a.hero_image ? `<p><img src="${esc(a.hero_image)}" alt="${esc(a.title)}"></p>`
 <section>${mdToHtml(a.body_md)}</section>
 </article>
 <hr>
-<p style="color:var(--dim);font-size:14px">Tracking this space daily on the <a href="/tracker">agent-interface tracker</a>. Start at the <a href="/">hub</a> if you're new to the term.</p>`,
+<p style="color:var(--dim);font-size:14px">The <a href="/tracker">agent-interface tracker</a> dates every entry to its last check against its sources. Start at the <a href="/">hub</a> if you're new to the term.</p>`,
   })
 }
 
