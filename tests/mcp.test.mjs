@@ -5,6 +5,14 @@
 // and a mapper written for objects produced a source list with every url null. A tracker
 // whose whole claim is "every fact traces somewhere" cannot ship that.
 import { onRequest } from '../functions/mcp.js'
+import { loadTracker } from '../functions/_tracker-data.js'
+
+/* ⭐ The tools serve the LIVE fold (2026-10-06). They used to import the static repo baseline, so
+   /mcp answered with 28 entries dated 2026-08-22 while /tracker.json served 29 dated 2026-09-13.
+   The expected set is whatever loadTracker() folds — the same function /tracker.json uses — so
+   this asserts the two surfaces agree rather than pinning a count that goes stale every run.
+   With no network it falls back to the baseline on both sides, and still agrees. */
+const LIVE = await loadTracker()
 
 let bad = 0
 const check = (n, c, hint = '') => { console.log(`  ${c ? 'PASS' : 'FAIL'}  ${n}${c ? '' : '  ' + hint}`); if (!c) bad++ }
@@ -61,7 +69,8 @@ const call = async (name, args) => {
 // ── the tools, against real data ──
 {
   const { data, isError } = await call('list_agent_protocols', {})
-  check('list returns the whole tracked set', !isError && data.count === 28, `count=${data?.count}`)
+  check('list returns the whole tracked set', !isError && data.count === LIVE.TRACKER.length, `count=${data?.count}, live fold=${LIVE.TRACKER.length}`)
+  check('list carries the same updated date as /tracker.json', data.updated === LIVE.TRACKER_UPDATED, `mcp=${data?.updated}, live=${LIVE.TRACKER_UPDATED}`)
   check('list carries its provenance and licence', !!data.source && /CC BY/.test(data.license || ''))
   check('list is a summary, not the full record', !('editorial_call' in (data.protocols[0] || {})))
 }

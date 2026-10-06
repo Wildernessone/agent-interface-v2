@@ -30,7 +30,10 @@
 //
 // The route is kept alive, rather than deleted, for the same reason sitemap-council.xml
 // was: any consumer already subscribed keeps fetching a valid 200 instead of erroring.
-// It emits a well-formed, item-less channel pointing at /library.
+// It emits a well-formed, item-less channel pointing at the hub.
+//
+// ⛔ 2026-10-06: the channel used to point at /library and say the verdicts "remain readable in the
+// Library". They were deleted 2026-09-09 (the paragraph above predates that), so both were false.
 //
 // ⛔ Do not re-add the items. If you ever do, you must also strip the noindex meta and
 // re-add the sitemap — and you should not do any of the three.
@@ -45,8 +48,8 @@ export async function onRequest() {
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
 <channel>
   <title>Agent Interface — The AI Council</title>
-  <link>${SITE}/library</link>
-  <description>The AI Council is retired. Its published verdicts remain readable in the Library; they are no longer syndicated.</description>
+  <link>${SITE}/</link>
+  <description>The AI Council is retired and its published verdicts have been removed. This feed carries no items; guides are at ${SITE}/guides-feed.xml.</description>
   <language>en-us</language>
   <atom:link href="${SITE}/feed.xml" rel="self" type="application/rss+xml"/>
 </channel>

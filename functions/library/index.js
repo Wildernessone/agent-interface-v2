@@ -3,8 +3,10 @@
  * This route existed for one job: to index the published council verdicts at /council/<slug>. Those
  * pages are gone (James's call, this date), so there is nothing left to list.
  *
- * ⛔ IT STILL ANSWERS 200 ON PURPOSE. /library is in the site chrome, in sitemap.xml and linked from
- *    404.html; a hard 404 here would break a nav link and a bookmark to explain a deletion. What it
+ * ⛔ IT STILL ANSWERS 200 ON PURPOSE. It was in the site chrome, sitemap.xml and 404.html when the
+ *    verdicts were deleted; a hard 404 would have broken a bookmark to explain a deletion. Since
+ *    2026-10-06 it is linked from NO page and listed in NO sitemap (tests/nav-no-library.test.mjs);
+ *    it survives only for old bookmarks and inbound links, as a 200 + noindex,follow stub. What it
  *    must NOT do is keep pretending: the old page carried CollectionPage JSON-LD calling itself "The
  *    AI Council — Library" and an empty state reading "The first verdicts are being deliberated.
  *    Check back soon." With the verdicts deleted, both of those became false — the first to every

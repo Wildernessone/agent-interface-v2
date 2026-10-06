@@ -64,11 +64,14 @@ export function mdToHtml(md) {
   close(); return out.join('\n')
 }
 
+// ⛔ No Library link (removed 2026-10-06). /library is a retired, noindexed stub: the council
+// verdicts it indexed were deleted 2026-09-09, so a nav slot for it sent every visitor to a
+// page saying there is nothing there. The route stays 200 + noindex,follow for old bookmarks;
+// it is linked from nowhere and listed in no sitemap (tests/nav-no-library.test.mjs).
 const NAV = [
   ['/', 'Hub'],
   ['/tracker', 'Tracker'],
   ['/guides', 'Guides'],
-  ['/library', 'Library'],
 ]
 
 export const CSS = `
@@ -283,8 +286,8 @@ ${crumbHtml}
 ${body}
 </div></main>
 <footer class="site"><div class="wrap">
-  <p class="about">agentinterface.app is the reference site for agent interfaces — the protocols that connect AI agents to software, and the interface patterns that keep humans in command of them. Maintained continuously, every claim sourced; corrections welcome. The Library is an archive of published multi-model verdicts from The AI Council, an earlier experiment on this domain.</p>
-  <a href="/">Hub</a><a href="/tracker">Tracker</a><a href="/guides">Guides</a><a href="/library">Library</a><a href="/llms.txt">llms.txt</a><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a>
+  <p class="about">agentinterface.app is the reference site for agent interfaces — the protocols that connect AI agents to software, and the interface patterns that keep humans in command of them. Every tracker entry shows the date it was last checked against its sources; corrections welcome.</p>
+  <a href="/">Hub</a><a href="/tracker">Tracker</a><a href="/guides">Guides</a><a href="/llms.txt">llms.txt</a><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a>
 </div></footer>
 <script>
 (function(){
