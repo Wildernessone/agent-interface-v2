@@ -19,7 +19,13 @@
 // ⛔ READ-ONLY, NO AUTH, NO PII. Everything served is already public on /tracker and
 // /tracker.json under CC BY. Nothing here writes, and nothing here can reach a user record —
 // this site has none. Any future tool that writes belongs behind a separate decision.
-import { TRACKER, TRACKER_UPDATED } from './_tracker-data.js'
+// ⭐ The LIVE tracker, not the repo baseline (2026-10-06). This imported the static TRACKER,
+// which is only the frozen file baseline (28 entries, last changeset 2026-08-22): every DB
+// changeset published since never reached this endpoint, so an agent calling it got a tracker
+// three revisions behind /tracker.json while llms.txt said "the same data is at /tracker.json".
+// loadTracker() is the same fold /tracker and /tracker.json use, and it fails open to the
+// baseline if the database is unreachable.
+import { loadTracker } from './_tracker-data.js'
 
 const SITE = 'https://agentinterface.app'
 // Echo back the client's protocol version when we know it; otherwise answer with ours.
@@ -115,7 +121,7 @@ const detail = (e) => ({
 
 const norm = (s) => String(s || '').toLowerCase().trim()
 
-function runTool(name, args) {
+function runTool(name, args, { TRACKER, TRACKER_UPDATED }) {
   const a = args || {}
   if (name === 'list_agent_protocols') {
     let rows = TRACKER
@@ -151,7 +157,7 @@ function runTool(name, args) {
   throw new Error(`Unknown tool: ${name}`)
 }
 
-async function handle(msg) {
+async function handle(msg, getTracker) {
   const { id = null, method, params } = msg || {}
 
   if (method === 'initialize') {
@@ -169,7 +175,7 @@ async function handle(msg) {
   if (method === 'tools/call') {
     const name = params && params.name
     try {
-      const result = runTool(name, params && params.arguments)
+      const result = runTool(name, params && params.arguments, await getTracker())
       return ok(id, { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }], isError: false })
     } catch (e) {
       // Tool failures are reported INSIDE the result, not as a protocol error — the agent
@@ -183,6 +189,9 @@ async function handle(msg) {
 
 export async function onRequest(context) {
   const { request } = context
+  // One fold per request, and only when a tool or the description actually needs it.
+  let tracker = null
+  const getTracker = () => (tracker ||= loadTracker())
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors })
 
   // A GET here is usually a human or a probe. Say what this is rather than 405-ing blankly.
@@ -192,7 +201,7 @@ export async function onRequest(context) {
       transport: 'Streamable HTTP (JSON-RPC 2.0 over POST to this URL)',
       connect: `Add ${SITE}/mcp as a custom connector in Claude, ChatGPT, Perplexity, Grok or Mistral.`,
       tools: TOOLS.map((t) => t.name),
-      updated: TRACKER_UPDATED,
+      updated: (await getTracker()).TRACKER_UPDATED,
       docs: `${SITE}/tracker`,
     })
   }
@@ -203,9 +212,9 @@ export async function onRequest(context) {
 
   // A batch is an array; a single call is an object. Both are valid JSON-RPC.
   if (Array.isArray(body)) {
-    const out = (await Promise.all(body.map(handle))).filter(Boolean)
+    const out = (await Promise.all(body.map((m) => handle(m, getTracker)))).filter(Boolean)
     return out.length ? json(out) : new Response(null, { status: 202, headers: cors })
   }
-  const res = await handle(body)
+  const res = await handle(body, getTracker)
   return res ? json(res) : new Response(null, { status: 202, headers: cors })
 }

@@ -35,7 +35,7 @@ const STATUS_KEY = {
    new one. tests/handlers-route.test.mjs fails the build if a method-specific export returns. */
 export async function onRequest() {
   const { TRACKER, TRACKER_UPDATED } = await loadTracker()
-  const desc = 'A living, dated index of agent-interface protocols, patterns, and surfaces — status calls with sources, reviewed continuously.'
+  const desc = 'A living, dated index of agent-interface protocols, patterns, and surfaces: status calls with sources, each entry dated to its last check.'
 
   const sections = GROUPS.map(([g, heading, sub]) => {
     const rows = TRACKER.filter(t => t.group === g).map(t => `

@@ -17,6 +17,16 @@ import { loadTracker } from './_tracker-data.js'
 
 const LAST_REVIEWED = '2026-07-24'
 
+/* The date the hub's OWN copy last changed (as opposed to LAST_REVIEWED, the last full review
+   of it, which is what the visible "updated" line states). The sitemap's <lastmod> for "/" is
+   the later of this and the tracker's derived updated date, because the hub renders tracker
+   rows. Bump it in the same commit as any change to this page's visible text or JSON-LD, and
+   never for a change that touches only code, markup or styling — a lastmod that moves without
+   the content moving is the cosmetic-freshness signal search engines discount.
+   2026-10-06: the "Who maintains this site?" answer stopped describing a Library of verdicts
+   that was deleted 2026-09-09, and stopped claiming continuous maintenance. */
+export const HUB_CONTENT_CHANGED = '2026-10-06'
+
 export async function onRequest() {
   const { TRACKER, TRACKER_UPDATED } = await loadTracker()
   /* ⭐ TWO STRINGS, ON PURPOSE. `DEFINITION` is the site's canonical sentence — it is what the
@@ -108,7 +118,7 @@ export async function onRequest() {
     ['What is the difference between MCP and an agent interface?', 'MCP (Model Context Protocol) is one protocol inside the agent-software layer of the agent interface: it standardizes how an agent connects to tools and data. The agent interface is the whole seam — MCP and its peer protocols below, plus the human-facing control surface above.'],
     ['What are the main agent-interface protocols?', 'The most established is MCP for agent-to-tool connections. Agent-to-agent communication and agent-to-frontend streaming have their own emerging protocols, and screen-level control (computer use) is a distinct approach that skips protocols by operating the same interface humans use. The tracker on this site follows each one with a current status call.'],
     ['What does a good human-agent interface include?', 'Five recurring elements: an approval gate that shows consequences rather than raw actions, graduated permission modes (read-only, suggest, auto-with-gates, scoped full-auto), live progress the human can interrupt, clean handoff when the agent is stuck, and an append-only audit trail.'],
-    ['Who maintains this site?', 'Agent Interface (agentinterface.app) is an independent reference site. The tracker and guides are maintained continuously, with every claim linked to a source. The Library is an archive of published verdicts from The AI Council, an earlier multi-model experiment on this domain.'],
+    ['Who maintains this site?', 'Agent Interface (agentinterface.app) is an independent reference site. Each tracker entry links to its sources and shows the date it was last checked against them.'],
   ]
 
   const jsonld = [
@@ -183,7 +193,7 @@ ${tickers}
 <div class="grid">
 ${protoCards}
 </div>
-<p><a href="/tracker">The full tracker →</a> is the living version of this map: statuses, stewards, spec links, and what changed, reviewed continuously.</p>
+<p><a href="/tracker">The full tracker →</a> is the living version of this map: statuses, stewards, spec links, and what changed, with the date each entry was last checked.</p>
 
 ${graveBand}
 

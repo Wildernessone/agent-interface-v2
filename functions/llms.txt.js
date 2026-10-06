@@ -9,17 +9,26 @@
 // unattributed, undisclosed model-generated YMYL advice now serving noindex — see
 // functions/council/[slug].js. Pointing answer engines at pages we have just withdrawn
 // from Google is the exact failure this file exists to prevent: a stale llms.txt is a
-// confident wrong answer handed to the systems we most want citing us. The Library is
-// still live and still linked from the site chrome and sitemap.xml, so nothing is
-// hidden — it is simply no longer promoted here. Do not re-add it.
+// confident wrong answer handed to the systems we most want citing us. /library is now a
+// retired noindex stub, linked from no page and listed in no sitemap (2026-10-06). Do not
+// re-add it.
+//
+// ⭐ "continuously updated" was retired 2026-10-06 for the same reason. The tracker is refreshed
+// by hand, on no fixed clock, and it had sat unchanged for three weeks while this file said
+// "continuously". The line now states the tracker's own derived updated date — the one
+// /tracker and /tracker.json print — so it cannot claim more freshness than the data has.
 import { sbRows, SITE } from './_site.js'
+import { loadTracker } from './_tracker-data.js'
 
 export async function onRequest() {
-  const rows = await sbRows('articles?status=eq.published&select=slug,title,dek&order=published_at.desc&limit=100')
+  const [rows, { TRACKER_UPDATED }] = await Promise.all([
+    sbRows('articles?status=eq.published&select=slug,title,dek&order=published_at.desc&limit=100'),
+    loadTracker(),
+  ])
   const guides = rows.map(a => `- [${a.title}](${SITE}/guides/${a.slug})${a.dek ? `: ${a.dek}` : ''}`).join('\n')
   const txt = `# Agent Interface
 
-> agentinterface.app is the reference site for agent interfaces — the protocols that connect AI agents to software (MCP and its peers), and the interface patterns that keep humans in command of agents (approvals, streaming progress, handoffs). It maintains a continuously updated tracker of the protocol landscape and publishes working guides.
+> agentinterface.app is the reference site for agent interfaces — the protocols that connect AI agents to software (MCP and its peers), and the interface patterns that keep humans in command of agents (approvals, streaming progress, handoffs). It maintains a dated tracker of the protocol landscape, last updated ${TRACKER_UPDATED}, in which every entry shows the date it was last checked against its sources, and publishes working guides.
 
 ## Core pages
 
