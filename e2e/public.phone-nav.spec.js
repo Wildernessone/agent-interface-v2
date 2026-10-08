@@ -23,7 +23,8 @@ async function render(page) {
     path: '/guides/fixture',
     active: '/guides',
     crumbs: [['/', 'Agent Interface'], ['/guides', 'Guides'], ['/guides/fixture', 'A guide with a reasonably long title for a phone']],
-    body: '<article><h1>A guide</h1>' + '<p>Body copy. '.repeat(40) + '</p></article>',
+    body: '<div class="demo"><div class="bar"><span class="ttl">Mode</span><button class="chip" type="button">Read-only</button><button class="chip on" type="button">Suggest</button></div></div>'
+      + '<article><h1>A guide</h1>' + '<p>Body copy. '.repeat(40) + '</p></article>',
   })
   await page.setContent(await res.text(), { waitUntil: 'load' })
   await page.evaluate(() => document.fonts && document.fonts.ready)
@@ -71,9 +72,9 @@ for (const [W, H] of [[320, 568], [375, 667]]) {
       }
     })
 
-    test('the wordmark, breadcrumb and footer links are 44px targets and on screen', async ({ page }) => {
+    test('the wordmark, breadcrumb, footer links and mode chips are 44px targets and on screen', async ({ page }) => {
       await render(page)
-      for (const sel of ['header.site a.wordmark', 'nav.crumbs a', 'footer.site a']) {
+      for (const sel of ['header.site a.wordmark', 'nav.crumbs a', 'footer.site a', 'button.chip']) {
         const links = await probe(page, sel)
         expect(links.length, `${sel} matched nothing`).toBeGreaterThan(0)
         for (const l of links) {

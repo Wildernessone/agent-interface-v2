@@ -17,8 +17,9 @@
 //                                 has overflow-x:hidden, which propagates to the viewport, so a nav running
 //                                 off the right edge produces NO sideways scroll — check 1 alone passed the
 //                                 page whose LIBRARY link could not be reached.
-//   3. covered controls           elementFromPoint at a header/nav/footer control's centre is not that control
-//   4. small tap targets          a header/nav/footer control under 44x44 CSS px (inline body links exempt)
+//   3. covered controls           elementFromPoint at a control's centre is not that control
+//   4. small tap targets          a control under 44x44 CSS px. Controls = every link in the header, a nav or the
+//                                 footer, plus every button and <summary> on the page. Inline body links are exempt.
 //   5. iOS zoom                   an input/select/textarea with font-size under 16px
 // Sheets/modals: the site has none; the count is printed so a future one is noticed.
 //
@@ -83,8 +84,9 @@ function audit(W) {
     if (!hasText && !control) continue
     out.clipped.push(`${name(el)} spans ${Math.round(r.left)}..${Math.round(r.right)} of ${vw}`)
   }
-  // 3 + 4. header / nav / footer controls.
-  const controls = [...document.querySelectorAll('header a, header button, nav a, nav button, footer a, footer button')].filter(visible)
+  // 3 + 4. header / nav / footer links, and every button and summary.
+  const controls = [...document.querySelectorAll('header a, nav a, footer a, button, summary')].filter(visible)
+  out.nControls = controls.length
   for (const el of controls) {
     el.scrollIntoView({ block: 'center', inline: 'nearest' })
     const r = el.getBoundingClientRect()
@@ -95,7 +97,9 @@ function audit(W) {
   }
   window.scrollTo(0, 0)
   // 5. iOS zoom.
-  for (const el of document.querySelectorAll('input:not([type=hidden]), select, textarea')) {
+  const fields = document.querySelectorAll('input:not([type=hidden]), select, textarea')
+  out.nInputs = fields.length
+  for (const el of fields) {
     const fs = parseFloat(getComputedStyle(el).fontSize)
     if (fs < 16) out.zoom.push(`${name(el)} ${fs}px`)
   }
@@ -139,5 +143,6 @@ for (const r of rows) {
   console.log(`${f.length ? 'FAIL' : 'pass'}  ${r.size}  ${r.path}${f.length ? '\n      ' + f.join('\n      ') : ''}`)
 }
 const pages = rows.length / SIZES.length
-console.log(`\nwalked ${pages} page(s) x ${SIZES.length} size(s) = ${rows.length} renders on ${BASE}; ${fails} failing; inputs checked: ${rows.reduce((n, r) => n + r.zoom.length, 0)} under 16px; sheets/modals present: ${Math.max(0, ...rows.map(r => r.sheets))}`)
+const sum = k => rows.reduce((n, r) => n + (r[k] || 0), 0)
+console.log(`\nwalked ${pages} page(s) x ${SIZES.length} size(s) = ${rows.length} renders on ${BASE}; ${fails} failing\n  controls checked (header/nav/footer links, buttons, summaries): ${sum('nControls')}; form fields found: ${sum('nInputs')} (${rows.reduce((n, r) => n + r.zoom.length, 0)} under 16px); sheets/modals present: ${Math.max(0, ...rows.map(r => r.sheets))}`)
 process.exit(fails ? 1 : 0)
