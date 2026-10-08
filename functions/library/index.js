@@ -30,6 +30,9 @@ export async function onRequest() {
 h1{font-size:28px;letter-spacing:-.02em;margin:0 0 10px}
 p{color:var(--sub);margin:0 0 16px}
 .cta{margin-top:30px}.cta a{display:inline-block;background:var(--go);color:#1a1205;font-weight:700;padding:12px 18px;border-radius:10px}
+/* phone pass 2026-10-08: the breadcrumb link was a 16px target. Padding cancelled by an equal negative margin
+   makes it 44px to a thumb without moving a line; a desktop with a mouse is untouched. */
+@media(max-width:640px),(pointer:coarse){nav a{display:inline-block;min-width:44px;min-height:44px;padding:12px 0;margin:-12px 0}}
 </style></head><body><div class="wrap">
 <nav style="font-size:13px;color:var(--sub);margin-bottom:18px"><a href="${SITE}/">The AI Council</a> › Library</nav>
 <h1>The Council Library has been retired</h1>

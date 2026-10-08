@@ -93,11 +93,11 @@ a:hover{text-decoration:underline;text-underline-offset:3px}
 .wrap{max-width:880px;margin:0 auto;padding:0 22px;position:relative;z-index:1}
 header.site{position:sticky;top:0;z-index:20;background:rgba(11,13,18,.86);backdrop-filter:saturate(140%) blur(10px);border-bottom:1px solid var(--border)}
 header.site .wrap{display:flex;align-items:center;gap:22px;height:56px}
-.wordmark{font-family:var(--mono);font-weight:700;font-size:14px;letter-spacing:.02em;color:var(--text);text-decoration:none}
+.wordmark{display:inline-flex;align-items:center;min-height:44px;font-family:var(--mono);font-weight:700;font-size:14px;letter-spacing:.02em;color:var(--text);text-decoration:none}
 .wordmark:hover{text-decoration:none}
 .wordmark .dot{color:var(--accent)}
-nav.main{display:flex;gap:16px;margin-left:8px}
-nav.main a{font-family:var(--mono);font-size:12.5px;letter-spacing:.04em;color:var(--dim);text-transform:uppercase}
+nav.main{display:flex;gap:0;margin-left:0}
+nav.main a{display:inline-flex;align-items:center;min-height:44px;padding:0 8px;font-family:var(--mono);font-size:12.5px;letter-spacing:.04em;color:var(--dim);text-transform:uppercase}
 nav.main a:hover{color:var(--text);text-decoration:none}
 nav.main a.on{color:var(--accent)}
 main{padding:56px 0 40px}
@@ -162,7 +162,19 @@ footer.site a{font-family:var(--mono);font-size:12px;color:var(--dim);letter-spa
 .byline{font-family:var(--mono);font-size:12px;color:var(--faint);margin:8px 0 24px}
 article h2{margin-top:40px}
 article img{max-width:100%;border-radius:12px;border:1px solid var(--border)}
-@media(max-width:640px){nav.main{gap:11px}nav.main a{font-size:11px}}
+/* ── the header and footer on a phone (Grok's phone pass, 2026-10-08) ──
+   The four-link nav ran 2px off a 375 screen and 57px off a 320 one, so LIBRARY could not be reached, and
+   every header/nav/footer link was an 18-20px target. The links now carry their own 44px height (padding
+   replaced the old gap, so the desktop row is unchanged to the pixel). Below 480 the nav takes its own row
+   under the wordmark, edge-aligned with the text column, so all four links are always on screen. flex-wrap is
+   the safety net between 481 and 640: if a fallback font ever makes the one row too wide, the nav drops to a
+   second line instead of running off the screen. Touch screens and narrow ones also get 44x44 breadcrumb and
+   footer links; a desktop with a mouse keeps the old spacing. The breadcrumb's 44px box is padding cancelled by
+   an equal negative margin, so the target grows without pushing the long guide title's wrapped lines apart.
+   The hub's permission-mode chips (buttons, 28px) get the same 44px floor. */
+@media(max-width:640px){header.site .wrap{flex-wrap:wrap;height:auto;min-height:56px;row-gap:0}nav.main a{font-size:11px}}
+@media(max-width:640px),(pointer:coarse){nav.main a{min-width:44px}footer.site a{display:inline-flex;align-items:center;min-height:44px;min-width:44px}footer.site .wrap{row-gap:0}.crumbs a{display:inline-block;min-width:44px;min-height:44px;padding:12px 0;margin:-12px 0}.chip{min-height:44px}}
+@media(max-width:480px){nav.main{flex:1 0 100%;justify-content:space-between;margin:0 -8px}}
 /* ── the layer diagram: signals travelling human ↔ agent ↔ software ── */
 .diagram{margin:34px 0 8px;border:1px solid var(--border);border-radius:16px;background:
   radial-gradient(80% 120% at 50% -20%,rgba(111,161,255,.07),transparent 60%),var(--panel);
