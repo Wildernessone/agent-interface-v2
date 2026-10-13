@@ -60,7 +60,7 @@ const sources = [
 ].map(f => ({ file: f, src: readFileSync(f, 'utf8') }))
 for (const s of sources) {
   s.ga = /src="\/ga\.js"/.test(s.src)
-  s.clarity = /src="\/clarity\.js"/.test(s.src)
+  s.clarity = /src="\/clarity\.js(\?[^"]*)?"/.test(s.src)  // ?v= is the cache-busting version (Grok SEND-BACK 1608)
   s.beacon = /rest\/v1\/analytics_events/.test(s.src)
 }
 

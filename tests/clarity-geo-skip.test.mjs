@@ -126,5 +126,18 @@ for (const host of ['agentinterface.app', 'www.agentinterface.app']) {
   check('a cookie named not_geo_test is not the override', isSkip(r), show(r))
 }
 
+// ── the cached-loader tail (Grok SEND-BACK 1608): every page asks for the CURRENT version ──
+// Production served the old /clarity.js as public, max-age=14400, so a browser that had cached it would keep running
+// the real loader for up to 4 hours after the gate shipped. A new URL is a new cache entry; the old one is never asked for.
+{
+  const { readFileSync, readdirSync, statSync } = await import('node:fs')
+  const { join } = await import('node:path')
+  const CLARITY_V = 'geo1'
+  const walk = (d, out = []) => { for (const e of readdirSync(d)) { const q = join(d, e); statSync(q).isDirectory() ? walk(q, out) : (/\.(html|js)$/.test(e) && out.push(q)) } return out }
+  const refs = [...walk('public'), ...walk('functions')].flatMap(f => [...readFileSync(f, 'utf8').matchAll(/<script[^>]*\ssrc="(\/clarity\.js[^"]*)"[^>]*\sdefer/g)].map(m => [f, m[1]]))
+  check(`every page that loads Clarity asks for /clarity.js?v=${CLARITY_V} (${refs.length} reference(s))`,
+    refs.length >= 4 && refs.every(([, src]) => src === '/clarity.js?v=' + CLARITY_V),
+    refs.filter(([, src]) => src !== '/clarity.js?v=' + CLARITY_V).map(([f, src]) => f + ': ' + src).join(', ') || `only ${refs.length} reference(s) found`)
+}
 console.log(bad ? `\n  clarity-geo-skip: ${bad} failure(s)` : '\n  clarity-geo-skip: green')
 process.exit(bad ? 1 : 0)
