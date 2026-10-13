@@ -7,6 +7,21 @@
   claims to hold data you don't hold is worse than no policy.
   Verified against the code before writing: functions/_middleware.js (ai_crawls, ai_referrals)
   and functions/_site.js (the analytics_events beacon). Plain-language, not legal advice.
+
+  ⭐ Corrected 2026-10-13. Section 4 said "no analytics vendor, and no third-party tracking script
+  on any page" — false from 2026-08-20 (Microsoft Clarity, public/clarity.js, PR #143) and again
+  from 2026-09-07 (Google Analytics 4, public/ga.js, PR #148). Both PRs added their script to this
+  page's own <head> and neither touched the sentence — the same failure as the one above, a policy
+  describing a site that no longer exists, in the other direction.
+  The ai_referrals log the 2026-08-01 version verified but never described is now described too.
+  Every sentence below was checked on 2026-10-13 against: public/ga.js, public/clarity.js,
+  functions/_site.js (beacon fields, Google Fonts, the page() shell), functions/_middleware.js,
+  functions/library/index.js (loads neither script), public/404.html + terms.html, the GA Admin API
+  for property 553053906 (retention, enhanced measurement, Google signals, no Ads links), the live
+  schemas of analytics_events (hub) and ai_crawls / ai_referrals (v2) — no IP column, no trigger,
+  no deletion job — and a cookie probe of ga.js + clarity.js with every collection hit aborted.
+  Vendor claims link to the vendor's own page. tests/privacy-discloses-analytics.test.mjs fails the
+  build if this page stops naming a script the pages load, or goes back to denying one.
 -->
 <html lang="en">
 <head>
@@ -14,7 +29,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Privacy Policy — Agent Interface</title>
   <link rel="canonical" href="https://agentinterface.app/privacy" />
-  <meta name="description" content="What agentinterface.app collects: no accounts, no user content, and a short list of anonymous traffic signals." />
+  <meta name="description" content="What agentinterface.app records: no accounts and nothing you submit, our own page-view log, Google Analytics and Microsoft Clarity, and how to block them." />
   <style>
     :root { color-scheme: dark light; }
     body { max-width: 720px; margin: 0 auto; padding: 48px 20px 96px; font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #e8e8ea; background: #0d0d10; }
@@ -22,18 +37,20 @@
     h2 { font-size: 19px; margin-top: 36px; }
     a { color: #6FA1FF; }
     .meta { color: #9a9aa2; font-size: 14px; }
-    code { background: #1c1c22; padding: 1px 5px; border-radius: 4px; }
+    code { background: #1c1c22; padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
     .lead { border-left: 3px solid #6FA1FF; padding-left: 14px; }
+    li { margin-bottom: 8px; }
   </style>
 <script src="/clarity.js" defer></script><script src="/ga.js" defer></script></head>
 <body>
   <h1>Privacy Policy</h1>
-  <p class="meta">Last updated: August 1, 2026</p>
+  <p class="meta">Last updated: October 13, 2026</p>
 
   <p class="lead">Agent Interface (<code>agentinterface.app</code>) is a reference site about the
   agent-interface category — a definitional hub, a tracker of agent protocols, and written guides.
   It is operated by Wilderness One LLC. <strong>There are no accounts. There is nothing to sign
-  into, and nothing you can submit.</strong> That makes this policy short.</p>
+  into, and nothing you can submit.</strong> The site does measure how it is read, with its own
+  records and with Google Analytics and Microsoft Clarity. This page says what each one collects.</p>
 
   <h2>1. What we do not collect</h2>
   <p>No names, no email addresses, no passwords, no payment details. We do not ask you to create an
@@ -41,20 +58,24 @@
   content. We do not hold API keys — the earlier version of this site let you supply your own
   provider keys, and that product was retired in July 2026 along with everything it stored.</p>
 
-  <h2>2. What we do collect</h2>
-  <p>Two anonymous traffic signals, both about how the page was reached rather than who you are:</p>
+  <h2>2. What we record ourselves</h2>
+  <p>Three records, all about how a page was reached rather than who you are:</p>
   <ul>
     <li><strong>AI-crawler visits.</strong> When a bot from an AI or answer engine (GPTBot,
     PerplexityBot, ClaudeBot and similar) fetches a page, we record the bot's name, the path it
     requested, its user-agent string, and the country reported by our CDN. This tells us whether
     those engines are reading the site — they crawl before they cite.</li>
-    <li><strong>Page views.</strong> A small script records the path you viewed, the referring URL,
-    your browser's user-agent string, and two random identifiers described in section 3.</li>
+    <li><strong>Arrivals from AI assistants.</strong> If you reach a page from a link in ChatGPT,
+    Perplexity, Claude, Gemini, Copilot or a similar assistant, we record which assistant it was,
+    the referring address, the page you landed on, and the country reported by our CDN.</li>
+    <li><strong>Page views.</strong> On the hub, the tracker and the guides, a small script of ours
+    records the path you viewed, the referring URL, your browser's user-agent string, and two random
+    identifiers described in section 3.</li>
   </ul>
-  <p><strong>We do not store your IP address</strong> in either case.</p>
+  <p><strong>None of these records includes your IP address.</strong></p>
 
   <h2>3. Identifiers stored in your browser</h2>
-  <p>The page-view script generates two random identifiers and keeps them in your browser's own
+  <p>Our page-view script generates two random identifiers and keeps them in your browser's own
   storage, not in cookies:</p>
   <ul>
     <li><code>cc_anon_id</code> in <code>localStorage</code> — persists between visits so repeat
@@ -63,34 +84,86 @@
     <li><code>cc_session_id</code> in <code>sessionStorage</code> — cleared when you close the tab.</li>
   </ul>
   <p>Clearing your browser's site data for this domain erases both, and a fresh random value is
-  generated on your next visit. Browsing in a private window prevents them persisting at all.</p>
+  generated on your next visit. Browsing in a private window prevents them persisting at all.
+  Google Analytics and Clarity set cookies of their own; those are listed in section 4.</p>
 
-  <h2>4. Who processes this</h2>
+  <h2>4. Google Analytics and Microsoft Clarity</h2>
+  <p>Every page on this site except the retired Library notice also loads two analytics tools run
+  by other companies. They start as soon as a page opens. There is no cookie banner and no consent
+  prompt; section 7 explains how to block them.</p>
+  <ul>
+    <li><strong>Google Analytics 4</strong> (measurement ID <code>G-WEF0SF3GYY</code>). It records
+    each page view and, because Google's enhanced measurement is switched on for this site, reaching
+    the bottom of a page, clicks on links that leave the site, file downloads, embedded video plays,
+    site searches and form interactions. Google also adds
+    <a href="https://support.google.com/analytics/answer/9234069">events of its own</a>, such as a
+    first visit, the start of a session and how long the page was in focus. It sets two cookies on
+    this domain, <code>_ga</code> and <code>_ga_WEF0SF3GYY</code>, which
+    <a href="https://business.safety.google/adscookies/">Google lists</a> as lasting two years. Google
+    says Analytics 4 <a href="https://support.google.com/analytics/answer/2763052">does not log or
+    store IP addresses</a>. Google signals, the setting that brings in data Google holds about
+    signed-in Google users, is off, and the account is not linked to Google Ads.</li>
+    <li><strong>Microsoft Clarity.</strong> It records how a page is used — mouse movements, clicks,
+    scrolling and what was on screen — and plays that back to us as session recordings and heatmaps.
+    It sets cookies on this domain (<code>_clck</code> and <code>_clsk</code>), and Microsoft sets
+    more on its own <code>clarity.ms</code> domain, including <code>CLID</code> and <code>MUID</code>
+    (<a href="https://learn.microsoft.com/en-us/clarity/setup-and-installation/clarity-cookies">Microsoft's
+    cookie list</a>). Microsoft <a href="https://learn.microsoft.com/en-us/clarity/faq">uses your IP
+    address</a> to estimate your location. Clarity masks anything typed into an input box in every
+    setting, and this site has no input boxes.</li>
+  </ul>
+  <p>Like any web request, loading these tools sends your IP address, the page address and your
+  browser's user-agent string to Google and Microsoft. They handle what they collect under their own
+  terms: <a href="https://policies.google.com/technologies/partner-sites">how Google uses information
+  from sites that use its services</a>, and the
+  <a href="https://www.microsoft.com/privacy/privacystatement">Microsoft Privacy Statement</a>.</p>
+
+  <h2>5. Who processes this</h2>
   <p><strong>Cloudflare</strong> hosts the site and serves every request. <strong>Supabase</strong>
-  stores the site's own content (the tracker and the guides) and receives the traffic signals above.
-  There is no advertising network, no analytics vendor, and no third-party tracking script on any
+  stores the site's own content (the tracker and the guides) and receives the records in section 2.
+  <strong>Google</strong> and <strong>Microsoft</strong> run the tools in section 4. The hub, the
+  tracker, the guides and the 404 page also load their fonts from <strong>Google Fonts</strong>, so
+  your browser fetches those from Google too. There are no ads and no advertising network on any
   page.</p>
 
-  <h2>5. How we use it</h2>
-  <p>Only to understand whether the site is being read and found — which pages get traffic, and
-  whether AI assistants are crawling and citing them. We do not sell or share this information, and
-  it is not used to profile or target anyone.</p>
+  <h2>6. How we use it</h2>
+  <p>Only to understand whether the site is being read and found — which pages get traffic, how
+  people move through them, and whether AI assistants are crawling and citing them. We do not sell
+  this information, and we do not use it to profile or target anyone.</p>
 
-  <h2>6. Your choices</h2>
-  <p>Because we hold no account and no identity, there is no account to export or delete. To remove
-  the browser identifiers, clear site data for this domain. If you believe we hold information about
-  you and want it removed, write to us and we will find and delete it. Depending on where you live
-  you may have further rights under the GDPR or CCPA/CPRA; contact us to exercise them.</p>
+  <h2>7. Your choices</h2>
+  <p>There is no consent prompt, so these are the ways to opt out:</p>
+  <ul>
+    <li>A content or tracker blocker that blocks <code>googletagmanager.com</code> and
+    <code>clarity.ms</code> stops both tools from loading.</li>
+    <li>Google's <a href="https://tools.google.com/dlpage/gaoptout">Analytics opt-out add-on</a>, for
+    Chrome, Safari, Firefox and Edge, tells Google Analytics not to use your visits.</li>
+    <li>Microsoft's <a href="https://learn.microsoft.com/en-us/clarity/faq">Clarity FAQ</a> explains
+    how to opt out of Clarity, and says Clarity honors the Global Privacy Control signal.</li>
+    <li>Turning off JavaScript for this site stops all three page scripts: ours, Google's and
+    Microsoft's. The crawler and AI-assistant records in section 2 are made by our server, so they
+    don't depend on JavaScript.</li>
+    <li>Clearing site data for this domain removes our two identifiers and the cookies Google and
+    Clarity set on this domain.</li>
+  </ul>
+  <p>Because we hold no account and no identity, there is no account to export or delete. If you
+  believe we hold information about you and want it removed, write to us. We will delete it from our
+  own records and use Google's and Microsoft's deletion tools where they allow it. Depending on where
+  you live you may have further rights under the GDPR or CCPA/CPRA; contact us to exercise them.</p>
 
-  <h2>7. Retention</h2>
-  <p>Traffic signals are kept in aggregate for trend analysis and are not tied to an identity, so
-  they cannot meaningfully be traced back to a person.</p>
+  <h2>8. Retention</h2>
+  <p>Our own records in section 2 have no automatic deletion date. They hold no name, email address
+  or IP address. Our Google Analytics account deletes event-level data after two months and
+  user-level data after 14 months; that setting
+  <a href="https://support.google.com/analytics/answer/7667196">does not apply</a> to Google's
+  aggregated reports. Microsoft keeps Clarity recordings for 30 days, except recordings we mark as
+  favorites and a random sample, which it keeps for up to nine months.</p>
 
-  <h2>8. Links out</h2>
+  <h2>9. Links out</h2>
   <p>The tracker and guides link to third-party projects, specifications and vendors. Once you follow
   a link you are on someone else's site under their policy, not ours.</p>
 
-  <h2>9. Contact</h2>
+  <h2>10. Contact</h2>
   <p>Questions or requests: <a href="mailto:support@agentinterface.app">support@agentinterface.app</a>.</p>
 
   <p class="meta">Governing data-protection framework: the State of California, United States
