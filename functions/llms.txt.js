@@ -19,12 +19,12 @@ export async function onRequest() {
   const guides = rows.map(a => `- [${a.title}](${SITE}/guides/${a.slug})${a.dek ? `: ${a.dek}` : ''}`).join('\n')
   const txt = `# Agent Interface
 
-> agentinterface.app is the reference site for agent interfaces — the protocols that connect AI agents to software (MCP and its peers), and the interface patterns that keep humans in command of agents (approvals, streaming progress, handoffs). It maintains a continuously updated tracker of the protocol landscape and publishes working guides.
+> agentinterface.app is the reference site for agent interfaces — the protocols that connect AI agents to software (MCP and its peers), and the interface patterns that keep humans in command of agents (approvals, streaming progress, handoffs). It maintains a dated tracker of the protocol landscape (every entry shows when it was last checked) and publishes working guides.
 
 ## Core pages
 
 - [What is an agent interface?](${SITE}/): the definitional hub — the term, the two layers (human-agent and agent-software), the protocol map, and FAQs
-- [The agent-interface tracker](${SITE}/tracker): a living, dated index of agent-interface protocols, patterns, and surfaces, with status calls
+- [The agent-interface tracker](${SITE}/tracker): a dated index of agent-interface protocols, patterns, and surfaces, with status calls
 - [Guides](${SITE}/guides): working guides to protocols and agent-UX patterns
 
 ## For agents
