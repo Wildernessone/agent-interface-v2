@@ -108,7 +108,7 @@ export async function onRequest() {
     ['What is the difference between MCP and an agent interface?', 'MCP (Model Context Protocol) is one protocol inside the agent-software layer of the agent interface: it standardizes how an agent connects to tools and data. The agent interface is the whole seam — MCP and its peer protocols below, plus the human-facing control surface above.'],
     ['What are the main agent-interface protocols?', 'The most established is MCP for agent-to-tool connections. Agent-to-agent communication and agent-to-frontend streaming have their own emerging protocols, and screen-level control (computer use) is a distinct approach that skips protocols by operating the same interface humans use. The tracker on this site follows each one with a current status call.'],
     ['What does a good human-agent interface include?', 'Five recurring elements: an approval gate that shows consequences rather than raw actions, graduated permission modes (read-only, suggest, auto-with-gates, scoped full-auto), live progress the human can interrupt, clean handoff when the agent is stuck, and an append-only audit trail.'],
-    ['Who maintains this site?', 'Agent Interface (agentinterface.app) is an independent reference site. The tracker and guides are maintained continuously, with every claim linked to a source. The Library is an archive of published verdicts from The AI Council, an earlier multi-model experiment on this domain.'],
+    ['Who maintains this site?', 'Agent Interface (agentinterface.app) is an independent reference site. The tracker and guides are maintained and periodically re-checked, with every claim linked to a source; the tracker was last updated ' + TRACKER_UPDATED + '. The Library is an archive of published verdicts from The AI Council, an earlier multi-model experiment on this domain.'],
   ]
 
   const jsonld = [
@@ -144,7 +144,7 @@ export async function onRequest() {
   <p><strong>An agent interface is the layer where an AI agent meets everything outside the model.</strong> It has two sides: the surface a human uses to direct, supervise, and correct the agent — and the protocols the agent uses to operate software, tools, and other agents. Chat panels, approval gates, MCP connections, and computer-use screen control are all parts of it.</p>
 </div>
 
-<p class="meta-line">updated ${LAST_REVIEWED} · status: living document · every claim sourced · <a href="/tracker">tracker updated ${TRACKER_UPDATED}</a> · <a href="/tracker.json">json</a></p>
+<p class="meta-line">updated ${LAST_REVIEWED} · every claim sourced · <a href="/tracker">tracker updated ${TRACKER_UPDATED}</a> · <a href="/tracker.json">json</a></p>
 
 <p style="color:var(--faint);font-size:13.5px">Disambiguation: "agent interface" also has an older meaning — the screen a human support agent uses in contact-center software. This site covers the AI sense of the term.</p>
 
@@ -183,7 +183,7 @@ ${tickers}
 <div class="grid">
 ${protoCards}
 </div>
-<p><a href="/tracker">The full tracker →</a> is the living version of this map: statuses, stewards, spec links, and what changed, reviewed continuously.</p>
+<p><a href="/tracker">The full tracker →</a> is the fuller version of this map: statuses, stewards, spec links, and what changed, last updated ${TRACKER_UPDATED}.</p>
 
 ${graveBand}
 

@@ -31,6 +31,12 @@ jobs:
           VITE_DROPBOX_CLIENT_ID=dummy
           ENV
       # Gating steps — must pass before code reaches users.
+      # tests/*.test.mjs (sitemap/noindex, meta-description length, www redirects, MCP, guide
+      # headings, and — from 2026-10-13 — the privacy policy naming every analytics script the
+      # pages load) had `npm test` but no CI step, so nothing ran them on a PR. A suite nobody
+      # runs is no suite: the privacy page denied Clarity for eight weeks and GA for five.
+      - name: Content and route tests
+        run: npm test
       - name: Build
         run: npm run build
       # The FULL deterministic smoke suite (all network mocked). Was only

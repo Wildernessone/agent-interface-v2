@@ -295,7 +295,7 @@ ${crumbHtml}
 ${body}
 </div></main>
 <footer class="site"><div class="wrap">
-  <p class="about">agentinterface.app is the reference site for agent interfaces — the protocols that connect AI agents to software, and the interface patterns that keep humans in command of them. Maintained continuously, every claim sourced; corrections welcome. The Library is an archive of published multi-model verdicts from The AI Council, an earlier experiment on this domain.</p>
+  <p class="about">agentinterface.app is the reference site for agent interfaces — the protocols that connect AI agents to software, and the interface patterns that keep humans in command of them. Every claim sourced and dated, and periodically re-checked; corrections welcome. The Library is an archive of published multi-model verdicts from The AI Council, an earlier experiment on this domain.</p>
   <a href="/">Hub</a><a href="/tracker">Tracker</a><a href="/guides">Guides</a><a href="/library">Library</a><a href="/llms.txt">llms.txt</a><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a>
 </div></footer>
 <script>

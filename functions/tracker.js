@@ -35,7 +35,7 @@ const STATUS_KEY = {
    new one. tests/handlers-route.test.mjs fails the build if a method-specific export returns. */
 export async function onRequest() {
   const { TRACKER, TRACKER_UPDATED } = await loadTracker()
-  const desc = 'A living, dated index of agent-interface protocols, patterns, and surfaces — status calls with sources, reviewed continuously.'
+  const desc = 'A dated index of agent-interface protocols, patterns, and surfaces — status calls with sources, last updated ' + TRACKER_UPDATED + '.'
 
   const sections = GROUPS.map(([g, heading, sub]) => {
     const rows = TRACKER.filter(t => t.group === g).map(t => `
@@ -70,7 +70,7 @@ export async function onRequest() {
 <p class="kicker">Tracker</p>
 <h1>The agent-interface tracker</h1>
 <p class="lede">${esc(desc)}</p>
-<p class="meta-line">updated ${esc(TRACKER_UPDATED)} · status: living document · re-checked against source repos and announcements · <a href="/tracker.json">machine-readable twin</a></p>
+<p class="meta-line">updated ${esc(TRACKER_UPDATED)} · re-checked against source repos and announcements · <a href="/tracker.json">machine-readable twin</a></p>
 <p class="stamp"><span class="pulse"></span> Statuses are editorial calls, dated and sourced — corrections welcome</p>
 <div class="tbl" style="margin-top:22px"><table>
 <thead><tr><th>Status key</th><th>Meaning</th></tr></thead>

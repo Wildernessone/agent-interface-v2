@@ -161,7 +161,7 @@ async function handle(msg) {
       capabilities: { tools: { listChanged: false } },
       serverInfo: { name: 'agent-interface-tracker', version: '1.0.0' },
       instructions:
-        'A living, sourced tracker of agent protocols, standards and frameworks — including the graveyard of ones that died, which nothing else tracks. Every factual claim carries a source link. Facts are facts; the editorial calls are CC BY 4.0 with attribution to agentinterface.app.',
+        'A sourced, dated tracker of agent protocols, standards and frameworks — including the graveyard of ones that died, which nothing else tracks. Every factual claim carries a source link. Facts are facts; the editorial calls are CC BY 4.0 with attribution to agentinterface.app.',
     })
   }
   if (method === 'ping') return ok(id, {})
