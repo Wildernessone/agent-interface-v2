@@ -16,6 +16,10 @@
         page template, or a new page() caller, fails here until the sentence is re-checked.
      4. The beacon's storage keys the policy names (cc_anon_id, cc_session_id) are the ones the
         beacon actually writes.
+     5. Where Clarity loads (added 2026-10-13). functions/clarity.js.js answers /clarity.js and skips
+        the EEA, the UK, Switzerland and unknown countries. While it exists, the policy must say
+        Clarity does not load for those visitors, and every place that sentence names must really be
+        skipped by the function. If the function is gone, the policy must stop saying it.
    ⚠ Comments are stripped before reading the policy: its own header comment quotes the old denial
      on purpose, and a check that matched it would fail the fix.
    ⚠ Denominator: public/**.html + functions/**.js. Out of scope, stated rather than skipped: the
@@ -24,8 +28,9 @@
      retention) are sourced by link in the page and cannot be checked from here.
    Run: node tests/privacy-discloses-analytics.test.mjs */
 import assert from 'node:assert/strict'
-import { readdirSync, statSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { readdirSync, statSync, readFileSync, existsSync } from 'node:fs'
+import { join, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 const PRIVACY = process.env.PRIVACY_HTML || 'public/privacy.html'
 const TERMS = process.env.TERMS_HTML || 'public/terms.html'
@@ -152,6 +157,30 @@ if (anyBeacon) {
     need(site.includes(`'${k}'`), `privacy.html names ${k} but the beacon in functions/_site.js no longer writes it`)
     need(policy.includes(k), `the beacon writes ${k} but privacy.html does not name it`)
   }
+}
+
+/* 5. Where Clarity loads. The sentence is matched whole, so a policy that drops a place, or the
+      unknown-country case, fails here; the places it names are then checked against the function. */
+const GEO_FN = process.env.CLARITY_FN || 'functions/clarity.js.js'
+const GEO_CLAIM = /Clarity does not load at all for visitors in the European Economic Area, the United Kingdom or Switzerland, or when we can't tell where a visit comes from\./
+if (existsSync(GEO_FN)) {
+  const { clarityLoads } = await import(pathToFileURL(resolve(GEO_FN)).href)
+  assert.equal(typeof clarityLoads, 'function', `${GEO_FN} no longer exports clarityLoads — the matcher broke`)
+  if (anyClarity) {
+    need(GEO_CLAIM.test(policy), `${GEO_FN} skips Clarity for the EEA, the UK, Switzerland and unknown countries, but privacy.html no longer says so`)
+  }
+  const EEA = ['AT', 'BE', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR', 'DE', 'GR', 'HU', 'IE', 'IT', 'LV', 'LT', 'LU', 'MT', 'NL', 'PL', 'PT', 'RO', 'SK', 'SI', 'ES', 'SE', 'IS', 'LI', 'NO']
+  const named = [...EEA, 'GB', 'CH']
+  const leaks = named.filter(c => clarityLoads(c) !== false)
+  need(leaks.length === 0, `privacy.html says Clarity does not load in the EEA, the UK or Switzerland, but ${GEO_FN} loads it for: ${leaks.join(' ')}`)
+  const unknownLeaks = [undefined, '', 'XX', 'T1'].filter(c => clarityLoads(c) !== false)
+  need(unknownLeaks.length === 0, `privacy.html says Clarity does not load when the country is unknown, but ${GEO_FN} loads it for: ${JSON.stringify(unknownLeaks)}`)
+  /* Anti-vacuity: a function that skips everyone would pass the two checks above for free. */
+  need(clarityLoads('US') === true, `${GEO_FN} does not load Clarity for US — the policy's "Clarity" bullet would describe nobody`)
+  console.log(`  geo: ${GEO_FN} skips ${named.length} named places + unknown; US loads`)
+} else {
+  need(!/does not load at all for visitors in the European Economic Area/.test(policy),
+    `privacy.html says Clarity is skipped by location, but ${GEO_FN} (the code that did it) is gone`)
 }
 
 if (problems.length) {
