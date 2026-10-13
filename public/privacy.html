@@ -22,6 +22,12 @@
   no deletion job — and a cookie probe of ga.js + clarity.js with every collection hit aborted.
   Vendor claims link to the vendor's own page. tests/privacy-discloses-analytics.test.mjs fails the
   build if this page stops naming a script the pages load, or goes back to denying one.
+
+  2026-10-13, later the same day: Clarity is now skipped by location (James's decision, option b).
+  functions/clarity.js.js answers /clarity.js and returns a one-line no-op comment, with no network
+  call, when Cloudflare's country for the request is in the EEA, the UK or Switzerland (plus the
+  territories listed in CLARITY_SKIP) or is unknown. Section 4 says so. Google Analytics is
+  unchanged. The privacy test reads that function and fails if the two drift apart.
 -->
 <html lang="en">
 <head>
@@ -41,7 +47,7 @@
     .lead { border-left: 3px solid #6FA1FF; padding-left: 14px; }
     li { margin-bottom: 8px; }
   </style>
-<script src="/clarity.js" defer></script><script src="/ga.js" defer></script></head>
+<script src="/clarity.js?v=geo1" defer></script><script src="/ga.js" defer></script></head>
 <body>
   <h1>Privacy Policy</h1>
   <p class="meta">Last updated: October 13, 2026</p>
@@ -89,8 +95,13 @@
 
   <h2>4. Google Analytics and Microsoft Clarity</h2>
   <p>Every page on this site except the retired Library notice also loads two analytics tools run
-  by other companies. They start as soon as a page opens. There is no cookie banner and no consent
-  prompt; section 7 explains how to block them.</p>
+  by other companies, Google Analytics and Microsoft Clarity, with one exception: <strong>Clarity
+  does not load at all for visitors in the European Economic Area, the United Kingdom or Switzerland,
+  or when we can't tell where a visit comes from.</strong> That is decided from the country our CDN
+  reports for the request, and in those cases your browser makes no request to Microsoft for
+  Clarity. Google Analytics loads wherever you are. Where a tool loads, it starts as soon as the
+  page opens. There is no cookie banner and no consent prompt; section 7 explains how to block
+  them.</p>
   <ul>
     <li><strong>Google Analytics 4</strong> (measurement ID <code>G-WEF0SF3GYY</code>). It records
     each page view and, because Google's enhanced measurement is switched on for this site, reaching
