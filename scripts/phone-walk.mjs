@@ -19,7 +19,9 @@
 //                                 page whose LIBRARY link could not be reached.
 //   3. covered controls           elementFromPoint at a control's centre is not that control
 //   4. small tap targets          a control under 44x44 CSS px. Controls = every link in the header, a nav or the
-//                                 footer, plus every button and <summary> on the page. Inline body links are exempt.
+//                                 footer, the meta line (tracker / json), stat sources, the graveyard CTA,
+//                                 404 directory links, plus every button and <summary>. Inline prose links
+//                                 and the tracker's stacked table links are exempt.
 //   5. iOS zoom                   an input/select/textarea with font-size under 16px
 // Sheets/modals: the site has none; the count is printed so a future one is noticed.
 //
@@ -85,7 +87,7 @@ function audit(W) {
     out.clipped.push(`${name(el)} spans ${Math.round(r.left)}..${Math.round(r.right)} of ${vw}`)
   }
   // 3 + 4. header / nav / footer links, and every button and summary.
-  const controls = [...document.querySelectorAll('header a, nav a, footer a, button, summary')].filter(visible)
+  const controls = [...document.querySelectorAll('header a, nav a, footer a, .meta-line a, .stat .s a, a.gcta, .grp a, button, summary')].filter(visible)
   out.nControls = controls.length
   for (const el of controls) {
     el.scrollIntoView({ block: 'center', inline: 'nearest' })

@@ -171,9 +171,15 @@ article img{max-width:100%;border-radius:12px;border:1px solid var(--border)}
    second line instead of running off the screen. Touch screens and narrow ones also get 44x44 breadcrumb and
    footer links; a desktop with a mouse keeps the old spacing. The breadcrumb's 44px box is padding cancelled by
    an equal negative margin, so the target grows without pushing the long guide title's wrapped lines apart.
-   The hub's permission-mode chips (buttons, 28px) get the same 44px floor. */
+   The hub's permission-mode chips (buttons, 28px) get the same 44px floor.
+   The meta line's tracker / json links measure 16px tall (the stat sources 14px, the graveyard CTA 16px).
+   They stay inline: vertical padding is outside the line box, so the paragraph, the cards and the grave keep
+   their height, and the meta line's horizontal padding is cancelled by the same negative margin so "json"
+   (about 29px wide) becomes a 44px target without pushing the words beside it. A desktop with a mouse is
+   untouched. Inline prose and the tracker's table links are not given this treatment — stretching every
+   citation in a sentence or a stacked <br> cell would cover the link next to it. */
 @media(max-width:640px){header.site .wrap{flex-wrap:wrap;height:auto;min-height:56px;row-gap:0}nav.main a{font-size:11px}}
-@media(max-width:640px),(pointer:coarse){nav.main a{min-width:44px}footer.site a{display:inline-flex;align-items:center;min-height:44px;min-width:44px}footer.site .wrap{row-gap:0}.crumbs a{display:inline-block;min-width:44px;min-height:44px;padding:12px 0;margin:-12px 0}.chip{min-height:44px}}
+@media(max-width:640px),(pointer:coarse){nav.main a{min-width:44px}footer.site a{display:inline-flex;align-items:center;min-height:44px;min-width:44px}footer.site .wrap{row-gap:0}.crumbs a{display:inline-block;min-width:44px;min-height:44px;padding:12px 0;margin:-12px 0}.chip{min-height:44px}.meta-line a{padding:16px 10px;margin-left:-10px;margin-right:-10px}.stat .s a{padding-top:17px;padding-bottom:17px}a.gcta{padding-top:16px;padding-bottom:16px}}
 @media(max-width:480px){nav.main{flex:1 0 100%;justify-content:space-between;margin:0 -8px}}
 /* ── the layer diagram: signals travelling human ↔ agent ↔ software ── */
 .diagram{margin:34px 0 8px;border:1px solid var(--border);border-radius:16px;background:

@@ -36,6 +36,9 @@ h1{font-family:'JetBrains Mono',ui-monospace,Menlo,monospace;font-size:29px;line
 .grp a{display:inline-block;color:var(--dim);text-decoration:none;font-size:14px;line-height:1.5;margin:3px 16px 3px 0;border-bottom:1px solid rgba(255,255,255,.14);padding-bottom:1px}
 .grp a:hover{color:var(--accent);border-color:var(--accent)}
 @media(max-width:520px){h1{font-size:22px}}
+/* Phone pass: these directory links were ~23px tall. Padding grows the box to 44px and the same
+   amount of negative margin gives it back, so the group keeps its height. A desktop mouse is unchanged. */
+@media(max-width:640px),(pointer:coarse){.grp a{box-sizing:border-box;min-height:44px;padding-top:10.5px;padding-bottom:11.5px;margin-top:-7.5px;margin-bottom:-7.5px}}
 </style>
 <script src="/clarity.js?v=geo1" defer></script><script src="/ga.js" defer></script></head>
 <body>
