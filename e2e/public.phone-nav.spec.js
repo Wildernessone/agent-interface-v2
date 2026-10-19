@@ -23,7 +23,10 @@ async function render(page) {
     path: '/guides/fixture',
     active: '/guides',
     crumbs: [['/', 'Agent Interface'], ['/guides', 'Guides'], ['/guides/fixture', 'A guide with a reasonably long title for a phone']],
-    body: '<div class="demo"><div class="bar"><span class="ttl">Mode</span><button class="chip" type="button">Read-only</button><button class="chip on" type="button">Suggest</button></div></div>'
+    body: '<p class="meta-line">updated 2026-07-24 · every claim sourced · <a href="/tracker">tracker updated 2026-09-13</a> · <a href="/tracker.json">json</a></p>'
+      + '<div class="stats"><div class="stat"><div class="n">10 <i>mo</i></div><div class="l">Atlas</div><span class="s"><a href="/tracker#atlas">the graveyard has the story</a></span></div></div>'
+      + '<p style="margin:14px 0 0"><a class="gcta" href="/tracker#ibm-acp">Every death, dated and sourced →</a></p>'
+      + '<div class="demo"><div class="bar"><span class="ttl">Mode</span><button class="chip" type="button">Read-only</button><button class="chip on" type="button">Suggest</button></div></div>'
       + '<article><h1>A guide</h1>' + '<p>Body copy. '.repeat(40) + '</p></article>',
   })
   await page.setContent(await res.text(), { waitUntil: 'load' })
@@ -72,9 +75,9 @@ for (const [W, H] of [[320, 568], [375, 667]]) {
       }
     })
 
-    test('the wordmark, breadcrumb, footer links and mode chips are 44px targets and on screen', async ({ page }) => {
+    test('the wordmark, breadcrumb, footer links, mode chips, meta line, stat source and graveyard CTA are 44px targets and on screen', async ({ page }) => {
       await render(page)
-      for (const sel of ['header.site a.wordmark', 'nav.crumbs a', 'footer.site a', 'button.chip']) {
+      for (const sel of ['header.site a.wordmark', 'nav.crumbs a', 'footer.site a', 'button.chip', '.meta-line a', '.stat .s a', 'a.gcta']) {
         const links = await probe(page, sel)
         expect(links.length, `${sel} matched nothing`).toBeGreaterThan(0)
         for (const l of links) {
@@ -102,5 +105,16 @@ test.describe('site chrome at 1280 (desktop must not change)', () => {
       expect(Math.abs(mid(l) - mid(word[0])), `${l.text} left the wordmark's row`).toBeLessThanOrEqual(2)
       expect(l.left).toBeGreaterThan(word[0].right)
     }
+  })
+
+  test('the meta line, stat source and graveyard CTA keep their text-sized boxes', async ({ page }) => {
+    await render(page)
+    for (const sel of ['.meta-line a', '.stat .s a', 'a.gcta']) {
+      for (const l of await probe(page, sel)) {
+        expect(l.h, `${sel} "${l.text}" grew to ${l.h}px on desktop`).toBeLessThan(24)
+      }
+    }
+    const meta = await page.locator('.meta-line').boundingBox()
+    expect(meta.height).toBeLessThan(32)
   })
 })
